@@ -64,4 +64,4 @@ gates al momento de añadirla.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-07-10 (aprobación delegada por el owner al agente para esta sesión)
