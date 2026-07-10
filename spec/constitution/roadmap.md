@@ -9,12 +9,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Preferencias multi-agente (local, git-ignored) + template de ejemplo.
 - [x] Repositorio git inicializado.
 
-## Fase 1 · Esqueleto de la app — ⏳ pendiente
+## Fase 1 · Esqueleto de la app — ✅ entregado
 
-- [ ] Scaffolding Electron + React + TypeScript con electron-vite (main / preload / renderer / shared).
-- [ ] Server Express + TypeScript + SQLite en `server/`, mismo repo, un solo `package.json`.
-- [ ] Test runner (Vitest), ESLint y Prettier operativos — **los gates quedan reales desde aquí**.
-- [ ] Ventana principal con navegación base (shell de la UI).
+- [x] Scaffolding Electron + React + TypeScript con electron-vite (main / preload / renderer / shared).
+- [x] Server Express + TypeScript + SQLite en `server/`, mismo repo, un solo `package.json`.
+- [x] Test runner (Vitest), ESLint y Prettier operativos — **los gates quedan reales desde aquí**.
+- [x] Ventana principal con navegación base (shell de la UI).
+
+> Nota técnica: Electron fijado en **29.3.1** exacto (la versión que usa Streamlabs Desktop,
+> cuya build de `obs-studio-node` se compila contra esa ABI). El paquete npm de osn está
+> abandonado; en la Fase 3 se instala desde el S3 de Streamlabs.
 
 ## Fase 2 · Autenticación — ⏳ pendiente
 

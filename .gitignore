@@ -6,11 +6,13 @@ node_modules/
 dist/
 out/
 release/
+*.tsbuildinfo
 
 # Datos locales
 *.sqlite
 *.sqlite3
 *.db
+server/data/
 
 # Entorno
 .env
