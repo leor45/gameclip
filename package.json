@@ -16,6 +16,7 @@
     "build": "electron-vite build"
   },
   "dependencies": {
+    "@streamlabs/obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.26.29b18-release-win64.tar.gz",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.10.0",
     "express": "^4.21.2",
