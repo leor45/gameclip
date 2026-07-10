@@ -30,13 +30,19 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > Mejora futura anotada: mover los tokens de localStorage a safeStorage si llegan a dar
 > acceso a la nube.
 
-## Fase 3 · Captura nativa (libobs) — ⏳ pendiente
+## Fase 3 · Captura nativa (libobs) — ✅ entregado
 
-- [ ] Integración de `obs-studio-node`: inicialización, contexto de video/audio, fijar versión de Electron compatible.
-- [ ] Grabación manual de escritorio (display capture) con audio de sistema y micrófono.
-- [ ] Game capture de juegos en primer plano.
-- [ ] **Clip retroactivo:** buffer de repetición + hotkey global configurable (estilo F8 de las apps de clips).
-- [ ] Ajustes de calidad: resolución, FPS, bitrate, encoder (NVENC/AMF/QSV/x264).
+- [x] Integración de `obs-studio-node`: inicialización, contexto de video/audio, fijar versión de Electron compatible.
+- [x] Grabación manual de escritorio (display capture) con audio de sistema y micrófono.
+- [x] Game capture de juegos en primer plano (any_fullscreen, apilado sobre monitor_capture).
+- [x] **Clip retroactivo:** buffer de repetición + hotkey global configurable (estilo F8 de las apps de clips).
+- [x] Ajustes de calidad: resolución, FPS, calidad (presets de libobs), encoder (NVENC/AMF/QSV/x264).
+
+> osn `0.26.29b18` desde el S3 de Streamlabs (la versión viva se lee de
+> `scripts/repositories.json` del repo de Streamlabs Desktop). Calidad como presets en vez
+> de bitrate crudo (el modo Stream de libobs exige streaming configurado). Smoke test sin
+> UI: `GAMECLIP_SELFTEST=recording npm run dev`. Verificado en máquina real: clip retroactivo
+> F8 de 45 s H.264 1440p60 + AAC y grabación manual.
 
 ## Fase 4 · Biblioteca de clips — ⏳ pendiente
 

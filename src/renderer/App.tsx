@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { AppVersionInfo } from '@shared/ipc';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import AuthGate from './auth/AuthGate';
+import CaptureBar from './components/CaptureBar';
 import Sidebar from './components/Sidebar';
 import Ajustes from './views/Ajustes';
 import Biblioteca from './views/Biblioteca';
@@ -21,14 +22,17 @@ function Shell() {
   return (
     <div className="app-shell">
       <Sidebar versionInfo={versionInfo} />
-      <main className="app-content">
-        <Routes>
-          <Route path="/" element={<Navigate to="/biblioteca" replace />} />
-          <Route path="/biblioteca" element={<Biblioteca />} />
-          <Route path="/editor" element={<Editor />} />
-          <Route path="/ajustes" element={<Ajustes />} />
-        </Routes>
-      </main>
+      <div className="app-main">
+        <CaptureBar />
+        <main className="app-content">
+          <Routes>
+            <Route path="/" element={<Navigate to="/biblioteca" replace />} />
+            <Route path="/biblioteca" element={<Biblioteca />} />
+            <Route path="/editor" element={<Editor />} />
+            <Route path="/ajustes" element={<Ajustes />} />
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }
