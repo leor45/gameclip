@@ -20,11 +20,15 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > cuya build de `obs-studio-node` se compila contra esa ABI). El paquete npm de osn está
 > abandonado; en la Fase 3 se instala desde el S3 de Streamlabs.
 
-## Fase 2 · Autenticación — ⏳ pendiente
+## Fase 2 · Autenticación — ✅ entregado
 
-- [ ] Registro y login directo (email + contraseña) contra el server: JWT access + refresh, bcrypt.
-- [ ] Sesión persistente en la app (recordar usuario, logout).
-- [ ] Pantallas de login/registro en el renderer.
+- [x] Registro y login directo (email + contraseña) contra el server: JWT access + refresh, bcrypt.
+- [x] Sesión persistente en la app (recordar usuario, logout).
+- [x] Pantallas de login/registro en el renderer.
+
+> Refresh tokens opacos, hasheados (sha256) y rotados en cada uso; revocables con logout.
+> Mejora futura anotada: mover los tokens de localStorage a safeStorage si llegan a dar
+> acceso a la nube.
 
 ## Fase 3 · Captura nativa (libobs) — ⏳ pendiente
 

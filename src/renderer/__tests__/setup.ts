@@ -6,6 +6,7 @@ import { afterEach, vi } from 'vitest';
 afterEach(() => {
   cleanup();
   window.location.hash = '';
+  localStorage.clear();
 });
 
 // El preload no existe en jsdom: se simula la API expuesta en window.gameclip.
