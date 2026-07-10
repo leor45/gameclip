@@ -1,0 +1,23 @@
+# Preferencias por máquina (nunca al repo)
+preferences.local.json
+
+# Dependencias y builds
+node_modules/
+dist/
+out/
+release/
+
+# Datos locales
+*.sqlite
+*.sqlite3
+*.db
+
+# Entorno
+.env
+.env.*
+!.env.example
+
+# Logs y temporales
+*.log
+.DS_Store
+Thumbs.db

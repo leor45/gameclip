@@ -1,0 +1,11 @@
+{
+  "$comment": "Copiar a preferences.local.json (git-ignored) y ajustar por máquina. Reglas por encima del mapa: parallelismRule (delegar solo trabajo independiente y paralelizable) e inlineRule (lo trivial o secuencial va inline).",
+  "multiAgent": {
+    "highComplexity": "opus",
+    "mediumComplexity": "sonnet",
+    "lowComplexity": "inline",
+    "unitTests": "inline",
+    "parallelismRule": "Delegar a subagentes solo trabajo independiente y paralelizable.",
+    "inlineRule": "Trabajo trivial o secuencial se hace inline en un solo agente."
+  }
+}
