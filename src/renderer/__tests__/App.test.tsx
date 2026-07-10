@@ -1,9 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import App from '../App';
+import { sesionFalsa } from './helpers';
 
-describe('App', () => {
+describe('App (con sesión activa)', () => {
+  beforeEach(() => {
+    localStorage.setItem('gameclip.session', JSON.stringify(sesionFalsa));
+  });
+
   it('muestra la navegación y arranca en Biblioteca', async () => {
     render(<App />);
 

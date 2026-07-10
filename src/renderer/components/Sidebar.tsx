@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import type { AppVersionInfo } from '@shared/ipc';
+import { useAuth } from '../auth/AuthContext';
 
 const links = [
   { to: '/biblioteca', label: 'Biblioteca' },
@@ -12,6 +13,8 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ versionInfo }: SidebarProps) {
+  const { session, logout } = useAuth();
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">GameClip</div>
@@ -26,6 +29,14 @@ export default function Sidebar({ versionInfo }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
+      {session && (
+        <div className="sidebar-user">
+          <span className="sidebar-user-name">{session.user.displayName}</span>
+          <button type="button" className="sidebar-logout" onClick={() => void logout()}>
+            Cerrar sesión
+          </button>
+        </div>
+      )}
       <footer className="sidebar-footer">
         {versionInfo ? `v${versionInfo.version} · Electron ${versionInfo.electron}` : '…'}
       </footer>

@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../app';
-import { openDatabase } from '../db/database';
+import { SCHEMA_VERSION, openDatabase } from '../db/database';
 
 const db = openDatabase(':memory:');
 const app = createApp(db);
@@ -16,7 +16,7 @@ describe('GET /api/health', () => {
     expect(res.body).toEqual({
       status: 'ok',
       version: expect.stringMatching(/^\d+\.\d+\.\d+$/),
-      schemaVersion: '1',
+      schemaVersion: String(SCHEMA_VERSION),
     });
   });
 
