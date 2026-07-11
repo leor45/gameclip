@@ -30,7 +30,19 @@ export interface AudioAppCapture {
   executable: string;
   /** Volumen 0–100. */
   volume: number;
+  /** Capturarla o no, sin quitarla de la lista. */
+  enabled: boolean;
 }
+
+/** Apps fijas de la lista en modo 'apps': siempre visibles aunque no estén corriendo. */
+export const DEFAULT_AUDIO_APPS: readonly string[] = ['Discord.exe'];
+
+/** Teclas/botones aceptados para push-to-talk (nombres de UiohookKey + botones del mouse). */
+export const PTT_HOTKEY_OPTIONS: readonly string[] = [
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+  'Ctrl', 'Alt', 'Shift', 'Space', 'CapsLock', 'Tab',
+  'Mouse4', 'Mouse5',
+];
 
 /** Micrófono del sistema enumerado vía libobs. */
 export interface AudioDeviceInfo {
@@ -61,6 +73,12 @@ export interface CaptureSettings {
   micDeviceId: string;
   /** Volumen del micrófono 0–100. */
   micVolume: number;
+  /** Push-to-talk: el mic solo se abre mientras el hotkey está pulsado. */
+  pttEnabled: boolean;
+  /** Tecla/botón de push-to-talk (PTT_HOTKEY_OPTIONS). */
+  pttHotkey: string;
+  /** Filtro RNNoise de libobs sobre el micrófono. */
+  noiseSuppressionEnabled: boolean;
   audioMode: AudioMode;
   /** Volumen del audio del escritorio 0–100 (modo 'desktop'). */
   desktopAudioVolume: number;
@@ -100,6 +118,8 @@ export interface CaptureSettings {
   showMouseCursor: boolean;
   recordingBuffer: RecordingBufferKind;
   aspectRatio: AspectRatioMode;
+  /** Aceleración por hardware de la app (aplicada antes de ready; requiere reinicio). */
+  hardwareAcceleration: boolean;
 }
 
 export interface EncoderInfo {
@@ -125,6 +145,9 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   micEnabled: true,
   micDeviceId: '',
   micVolume: 100,
+  pttEnabled: false,
+  pttHotkey: 'F9',
+  noiseSuppressionEnabled: false,
   audioMode: 'desktop',
   desktopAudioVolume: 100,
   gameAudioEnabled: true,
@@ -147,6 +170,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   showMouseCursor: false,
   recordingBuffer: 'memory',
   aspectRatio: 'game',
+  hardwareAcceleration: true,
 };
 
 function bool(value: unknown, fallback: boolean): boolean {
@@ -176,7 +200,12 @@ function normalizeAudioApps(value: unknown): AudioAppCapture[] {
     const key = executable.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ executable, volume: volume(raw.volume, 100) });
+    // `enabled` default true: migra las listas guardadas antes de existir el campo.
+    out.push({
+      executable,
+      volume: volume(raw.volume, 100),
+      enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
+    });
     if (out.length >= AUDIO_APPS_MAX) break;
   }
   return out;
@@ -219,6 +248,11 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     micEnabled: bool(raw.micEnabled, d.micEnabled),
     micDeviceId: typeof raw.micDeviceId === 'string' ? raw.micDeviceId : d.micDeviceId,
     micVolume: volume(raw.micVolume, d.micVolume),
+    pttEnabled: bool(raw.pttEnabled, d.pttEnabled),
+    pttHotkey: PTT_HOTKEY_OPTIONS.includes(raw.pttHotkey as string)
+      ? (raw.pttHotkey as string)
+      : d.pttHotkey,
+    noiseSuppressionEnabled: bool(raw.noiseSuppressionEnabled, d.noiseSuppressionEnabled),
     audioMode: oneOf(raw.audioMode, ['desktop', 'apps'], d.audioMode),
     desktopAudioVolume: volume(raw.desktopAudioVolume, d.desktopAudioVolume),
     gameAudioEnabled: bool(raw.gameAudioEnabled, d.gameAudioEnabled),
@@ -245,5 +279,6 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
       ['game', 'stretch169', 'bars169', 'crop169'],
       d.aspectRatio,
     ),
+    hardwareAcceleration: bool(raw.hardwareAcceleration, d.hardwareAcceleration),
   };
 }

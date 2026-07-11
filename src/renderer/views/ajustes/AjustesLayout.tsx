@@ -6,6 +6,7 @@ const SECCIONES = [
   { to: 'audio', label: 'Audio' },
   { to: 'almacenamiento', label: 'Almacenamiento' },
   { to: 'avanzado', label: 'Avanzado' },
+  { to: 'desarrollo', label: 'Desarrollo' },
 ];
 
 /** Layout de Ajustes: título + sub-navegación lateral; cada sección se renderiza en el <Outlet>. */

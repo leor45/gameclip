@@ -18,6 +18,7 @@ export function registerIpcHandlers(
   library: LibraryManager | null,
   exporter: ExportManager | null,
   storage: StorageManager | null = null,
+  pttAvailable: () => boolean = () => false,
 ): void {
   ipcMain.handle(
     IpcChannel.AppVersion,
@@ -37,6 +38,7 @@ export function registerIpcHandlers(
     return capture.setSettings(next);
   });
   ipcMain.handle(IpcChannel.CaptureGetAudioDevices, () => capture.getAudioDevices());
+  ipcMain.handle(IpcChannel.CaptureGetPttAvailable, () => pttAvailable());
   ipcMain.handle(IpcChannel.CaptureGetAudioApps, () => listAudioApps());
   ipcMain.handle(IpcChannel.CapturePickOutputDir, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);

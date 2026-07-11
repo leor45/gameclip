@@ -55,6 +55,8 @@ export interface CaptureBackend {
   ): void;
   /** Religa el audio del juego (modo apps) a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void;
+  /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
+  setMicMuted(muted: boolean): void;
   startReplayBuffer(): Promise<void>;
   stopReplayBuffer(): Promise<void>;
   saveReplay(): Promise<string>;
@@ -80,6 +82,8 @@ export class CaptureManager extends EventEmitter {
   private bufferRunning = false;
   /** Ejecutable del juego detectado (el proceso real que vio el detector). */
   private detectedGameExe: string | null = null;
+  /** Push-to-talk: ¿está pulsado el hotkey ahora mismo? */
+  private micHeld = false;
 
   constructor(
     private readonly store: SettingsStore,
@@ -103,6 +107,19 @@ export class CaptureManager extends EventEmitter {
 
   getAudioDevices(): AudioDeviceInfo[] {
     return this.obs.isInitialized ? this.obs.getAudioDevices() : [];
+  }
+
+  /** Push-to-talk: el hook global reporta si el hotkey está pulsado. */
+  setMicHeld(held: boolean): void {
+    this.micHeld = held;
+    this.applyMicMute();
+  }
+
+  /** Mute efectivo del mic: apagado, o PTT activo sin la tecla pulsada. */
+  private applyMicMute(): void {
+    if (!this.obs.isInitialized) return;
+    const s = this.getSettings();
+    this.obs.setMicMuted(!s.micEnabled || (s.pttEnabled && !this.micHeld));
   }
 
   /** Init completa: si libobs falla, el estado queda 'unavailable' y la app sigue. */
@@ -262,6 +279,7 @@ export class CaptureManager extends EventEmitter {
     mkdirSync(outputDir, { recursive: true });
     this.obs.buildPipeline(settings, this.env.primaryDisplay, outputDir, this.detectedGameExe);
     this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
+    this.applyMicMute(); // el rebuild resetea el mute; re-aplicar el estado del PTT
     if (this.shouldBuffer()) {
       await this.startBuffer();
       this.setStatus({ state: 'buffering', error: null });

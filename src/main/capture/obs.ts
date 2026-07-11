@@ -39,12 +39,17 @@ interface OsnProperties {
   get(name: string): OsnListProperty | null;
   count(): number;
 }
+interface OsnFilter extends OsnSource {
+  release(): void;
+}
 interface OsnInput extends OsnSource {
   muted: boolean;
   volume: number;
   audioMixers: number;
   readonly properties: OsnProperties;
   update(settings: object): void;
+  addFilter(filter: OsnFilter): void;
+  removeFilter(filter: OsnFilter): void;
 }
 interface OsnSceneItem {
   bounds: { x: number; y: number };
@@ -118,6 +123,7 @@ interface OsnModule {
   };
   VideoFactory: { create(): OsnVideoContext };
   InputFactory: { create(id: string, name: string, settings?: object): OsnInput };
+  FilterFactory: { create(id: string, name: string, settings?: object): OsnFilter };
   SceneFactory: { create(name: string): OsnScene };
   Global: { setOutputSource(channel: number, source: OsnSource | null): void };
   VideoEncoderFactory: {
@@ -279,6 +285,9 @@ export class ObsCapture extends EventEmitter {
   private outputChannels: number[] = [];
   /** Fuente de audio del juego (modo apps), religable en caliente al cambiar el juego. */
   private gameAudioSource: OsnInput | null = null;
+  /** Fuente del micrófono, para push-to-talk (mute sin rebuild). */
+  private micSource: OsnInput | null = null;
+  private micFilters: OsnFilter[] = [];
   /** Índices de pista AAC ya registrados en libobs (globales a la sesión, sin release). */
   private readonly audioTracksCreated = new Set<number>();
   private initialized = false;
@@ -489,6 +498,10 @@ export class ObsCapture extends EventEmitter {
       if (this.recording) osn.AdvancedRecordingFactory.destroy(this.recording);
       for (const enc of this.encoders) enc.release();
       for (const channel of this.outputChannels) osn.Global.setOutputSource(channel, null);
+      for (const filter of this.micFilters) {
+        this.micSource?.removeFilter(filter);
+        filter.release();
+      }
       for (const input of this.inputs) input.release();
       this.scene?.release();
       this.context?.destroy();
@@ -501,6 +514,8 @@ export class ObsCapture extends EventEmitter {
     this.outputChannels = [];
     this.inputs = [];
     this.gameAudioSource = null;
+    this.micSource = null;
+    this.micFilters = [];
     this.scene = null;
     this.context = null;
   }
@@ -541,12 +556,26 @@ export class ObsCapture extends EventEmitter {
     const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic', {
       device_id: settings.micDeviceId || 'default',
     });
-    mic.muted = !settings.micEnabled;
+    // Con push-to-talk el mic arranca cerrado hasta que el manager reporte la tecla pulsada.
+    mic.muted = !settings.micEnabled || settings.pttEnabled;
     mic.volume = settings.micVolume / 100;
     mic.audioMixers = trackMask(micTrack);
     usedTracks.add(micTrack);
     this.inputs.push(mic);
+    this.micSource = mic;
     setSource(mic);
+
+    if (settings.noiseSuppressionEnabled) {
+      try {
+        const filtro = osn.FilterFactory.create('noise_suppress_filter', 'gameclip-ruido', {
+          method: 'rnnoise',
+        });
+        mic.addFilter(filtro);
+        this.micFilters.push(filtro);
+      } catch {
+        // filtro no disponible en esta build: el mic sigue sin supresión
+      }
+    }
 
     if (settings.audioMode === 'desktop') {
       const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio');
@@ -575,6 +604,7 @@ export class ObsCapture extends EventEmitter {
         this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, desktopTrack);
       }
       for (const app of settings.audioApps) {
+        if (!app.enabled) continue; // desmarcada: sigue en la lista pero no se captura
         addProcess(app.executable, app.volume, appsTrack);
       }
       // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
@@ -605,6 +635,11 @@ export class ObsCapture extends EventEmitter {
   /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void {
     this.gameAudioSource?.update(processCaptureSettings(executable));
+  }
+
+  /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
+  setMicMuted(muted: boolean): void {
+    if (this.micSource) this.micSource.muted = muted;
   }
 
   /** Captura de audio por proceso; null si el source no existe en esta build de osn. */

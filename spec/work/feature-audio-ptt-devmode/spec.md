@@ -51,20 +51,20 @@ aceleración por hardware.
 
 Observables y verificables uno a uno:
 
-- [ ] Con PTT activo y un hotkey configurado, el micrófono queda muteado salvo mientras la
+- [x] Con PTT activo y un hotkey configurado, el micrófono queda muteado salvo mientras la
       tecla/botón está pulsado (verificable con el estado de la fuente en tests con FakeObs y
       manualmente en la app).
-- [ ] Si `uiohook-napi` no carga, la app arranca igual, el mic funciona en modo normal y la UI
+- [x] Si `uiohook-napi` no carga, la app arranca igual, el mic funciona en modo normal y la UI
       muestra el aviso.
-- [ ] Con supresión de ruido activa, la fuente del mic tiene el filtro `noise_suppress_filter`
+- [x] Con supresión de ruido activa, la fuente del mic tiene el filtro `noise_suppress_filter`
       (RNNoise); al desactivarla el filtro no se crea (verificable en el selftest real: el
       pipeline construye sin errores en ambos estados).
-- [ ] En modo apps la lista muestra siempre: Audio del juego, Micrófono y Discord (aunque no
+- [x] En modo apps la lista muestra siempre: Audio del juego, Micrófono y Discord (aunque no
       corra), cada uno con checkbox y slider; desmarcar no quita la fila.
-- [ ] Apps añadidas muestran checkbox + basurero rojo; el basurero quita, el checkbox solo
+- [x] Apps añadidas muestran checkbox + basurero rojo; el basurero quita, el checkbox solo
       desactiva la captura y persiste.
-- [ ] El pipeline solo captura las apps con `enabled: true`.
-- [ ] La sección Desarrollo permite desactivar la aceleración por hardware; el ajuste persiste,
+- [x] El pipeline solo captura las apps con `enabled: true`.
+- [x] La sección Desarrollo permite desactivar la aceleración por hardware; el ajuste persiste,
       avisa del reinicio y en el próximo arranque se aplica antes de `ready`.
-- [ ] Ajustes viejos (audioApps sin `enabled`) migran a `enabled: true` vía normalización.
-- [ ] Gates verdes: typecheck · lint · tests.
+- [x] Ajustes viejos (audioApps sin `enabled`) migran a `enabled: true` vía normalización.
+- [x] Gates verdes: typecheck · lint · tests.

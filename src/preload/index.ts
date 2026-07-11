@@ -22,6 +22,7 @@ const capture: CaptureApi = {
   getAudioDevices: () => ipcRenderer.invoke(IpcChannel.CaptureGetAudioDevices),
   getAudioApps: () => ipcRenderer.invoke(IpcChannel.CaptureGetAudioApps),
   pickOutputDir: () => ipcRenderer.invoke(IpcChannel.CapturePickOutputDir),
+  getPttAvailable: () => ipcRenderer.invoke(IpcChannel.CaptureGetPttAvailable),
   startRecording: () => ipcRenderer.invoke(IpcChannel.CaptureStartRecording),
   stopRecording: () => ipcRenderer.invoke(IpcChannel.CaptureStopRecording),
   saveReplay: () => ipcRenderer.invoke(IpcChannel.CaptureSaveReplay),

@@ -35,13 +35,16 @@ describe('Ajustes — navegación', () => {
     expect(await screen.findByRole('button', { name: /Alta/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Audio' }));
-    expect(await screen.findByLabelText('Capturar micrófono')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Supresión de ruido (RNNoise)')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Almacenamiento' }));
     expect(await screen.findByRole('button', { name: 'Cambiar…' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Avanzado' }));
     expect(await screen.findByLabelText('Mostrar cursor del mouse')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Desarrollo' }));
+    expect(await screen.findByLabelText('Aceleración por hardware')).toBeInTheDocument();
   });
 });
 
@@ -123,21 +126,101 @@ describe('Ajustes — Audio', () => {
   async function irAAudio() {
     const user = await irAAjustes();
     await user.click(screen.getByRole('link', { name: 'Audio' }));
-    await screen.findByLabelText('Capturar micrófono');
+    await screen.findByLabelText('Supresión de ruido (RNNoise)');
     return user;
   }
 
-  it('permite añadir y quitar una app de la lista en modo apps', async () => {
+  it('en modo apps muestra siempre las filas fijas: juego, micrófono y Discord', async () => {
+    const user = await irAAudio();
+    await user.click(screen.getByLabelText('Apps específicas'));
+
+    expect(screen.getByLabelText('Audio del juego')).toBeInTheDocument();
+    expect(screen.getByLabelText('Micrófono')).toBeInTheDocument();
+    // Discord no está corriendo (ni en audioApps): la fila fija aparece igual, desmarcada
+    // y sin botón de quitar.
+    const discord = screen.getByLabelText('Discord.exe');
+    expect(discord).not.toBeChecked();
+    expect(screen.queryByRole('button', { name: 'Quitar Discord.exe' })).not.toBeInTheDocument();
+  });
+
+  it('marcar Discord lo materializa en audioApps al guardar', async () => {
+    const user = await irAAudio();
+    await user.click(screen.getByLabelText('Apps específicas'));
+
+    await user.click(screen.getByLabelText('Discord.exe'));
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audioApps: [{ executable: 'Discord.exe', volume: 100, enabled: true }],
+      }),
+    );
+  });
+
+  it('permite añadir una app, desactivarla con el checkbox sin quitarla, y quitarla con el basurero', async () => {
     const user = await irAAudio();
 
     await user.click(screen.getByLabelText('Apps específicas'));
-    await user.selectOptions(screen.getByLabelText('Añadir app'), 'Discord.exe');
+    await user.selectOptions(screen.getByLabelText('Añadir app'), 'Spotify.exe');
     await user.click(screen.getByRole('button', { name: 'Añadir' }));
 
-    expect(await screen.findByText('Discord.exe')).toBeInTheDocument();
+    const fila = await screen.findByLabelText('Spotify.exe');
+    expect(fila).toBeChecked();
 
-    await user.click(screen.getByRole('button', { name: 'Quitar' }));
-    expect(screen.queryByText('Discord.exe')).not.toBeInTheDocument();
+    // Desmarcar desactiva la captura pero la app sigue en la lista.
+    await user.click(fila);
+    expect(screen.getByLabelText('Spotify.exe')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Quitar Spotify.exe' })).toBeInTheDocument();
+
+    // El basurero sí la quita.
+    await user.click(screen.getByRole('button', { name: 'Quitar Spotify.exe' }));
+    expect(screen.queryByLabelText('Spotify.exe')).not.toBeInTheDocument();
+  });
+
+  it('guarda push to talk con su tecla y la supresión de ruido', async () => {
+    const user = await irAAudio();
+
+    await user.click(screen.getByLabelText(/Push to talk/));
+    await user.selectOptions(screen.getByLabelText('Tecla de push to talk'), 'Mouse4');
+    await user.click(screen.getByLabelText('Supresión de ruido (RNNoise)'));
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pttEnabled: true,
+        pttHotkey: 'Mouse4',
+        noiseSuppressionEnabled: true,
+      }),
+    );
+  });
+
+  it('con el hook no disponible deshabilita PTT y muestra el aviso', async () => {
+    mock().capture.getPttAvailable.mockResolvedValueOnce(false);
+    const user = await irAAudio();
+
+    expect(screen.getByLabelText(/Push to talk/)).toBeDisabled();
+    expect(screen.getByText(/hook global de teclado no está disponible/)).toBeInTheDocument();
+    void user;
+  });
+});
+
+describe('Ajustes — Desarrollo', () => {
+  it('desactivar la aceleración por hardware se guarda y avisa del reinicio', async () => {
+    const user = await irAAjustes();
+    await user.click(screen.getByRole('link', { name: 'Desarrollo' }));
+
+    const toggle = await screen.findByLabelText('Aceleración por hardware');
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(screen.getByText(/al reiniciar GameClip/)).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ hardwareAcceleration: false }),
+    );
   });
 });
 

@@ -106,6 +106,21 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > modo apps con pista única y CQP automático. `wasapi_process_output_capture` presente en
 > osn 0.26.29; si faltara, degrada a captura de escritorio clásica.
 
+## Fase 8 · Audio avanzado y modo desarrollo — ✅ entregado
+
+- [x] Push-to-talk global (teclado o Mouse4/5) con hook `uiohook-napi`; el mic solo se abre con
+      la tecla pulsada, sin reconstruir el pipeline; degradación limpia si el hook no carga.
+- [x] Supresión de ruido del micrófono (filtro RNNoise de libobs vía `FilterFactory`).
+- [x] Lista de audio estilo de las apps de clips en modo apps: filas fijas (Audio del juego, Micrófono,
+      Discord siempre visible) con checkbox para pausar sin quitar; apps del usuario con
+      checkbox + basurero rojo; `audioApps.enabled` en el modelo (migración automática).
+- [x] Sección Desarrollo: toggle de aceleración por hardware, aplicado antes de `ready`
+      (requiere reinicio; advertencia estilo de las apps de clips).
+
+> Verificado en máquina real: MP4 con 3 pistas AAC (juego/mic/apps) respetando apps
+> deshabilitadas, y arranque con la aceleración desactivada. PTT emite `held` desde el hook
+> de bajo nivel y el manager recalcula el mute tras cada rebuild.
+
 ## Futuro (fuera de alcance por ahora)
 
 - Guardado en la nube y compartir alojado.
