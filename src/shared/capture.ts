@@ -7,7 +7,12 @@ export interface CaptureStatus {
   error: string | null;
   /** Ruta del último clip guardado (replay o grabación), si hay. */
   lastClipPath: string | null;
+  /** Nombre del juego en ejecución detectado, si hay. */
+  detectedGame: string | null;
 }
+
+/** 'always': buffer siempre activo · 'game': solo mientras hay un juego detectado. */
+export type BufferMode = 'always' | 'game';
 
 export type OutputResolution = 'native' | '1080p' | '720p';
 export type RecordingQuality = 'high' | 'higher' | 'lossless';
@@ -25,6 +30,11 @@ export interface CaptureSettings {
   replayHotkey: string;
   /** Carpeta de salida; '' = default (Videos/GameClip). */
   outputDir: string;
+  bufferMode: BufferMode;
+  /** Overlay in-game (indicador REC y confirmación de clip guardado). */
+  overlayEnabled: boolean;
+  /** Arrancar GameClip con Windows (minimizada a la bandeja). */
+  autoLaunch: boolean;
 }
 
 export interface EncoderInfo {
@@ -44,6 +54,9 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   micEnabled: true,
   replayHotkey: 'F8',
   outputDir: '',
+  bufferMode: 'always',
+  overlayEnabled: true,
+  autoLaunch: false,
 };
 
 // Acepta un parcial de origen no confiable (disco/IPC) y devuelve settings válidos,
@@ -71,6 +84,23 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
       ? raw.replayHotkey.trim()
       : d.replayHotkey;
   const outputDir = typeof raw.outputDir === 'string' ? raw.outputDir : d.outputDir;
+  const bufferMode =
+    raw.bufferMode === 'always' || raw.bufferMode === 'game' ? raw.bufferMode : d.bufferMode;
+  const overlayEnabled =
+    typeof raw.overlayEnabled === 'boolean' ? raw.overlayEnabled : d.overlayEnabled;
+  const autoLaunch = typeof raw.autoLaunch === 'boolean' ? raw.autoLaunch : d.autoLaunch;
 
-  return { resolution, fps, quality, encoderId, replaySeconds, micEnabled, replayHotkey, outputDir };
+  return {
+    resolution,
+    fps,
+    quality,
+    encoderId,
+    replaySeconds,
+    micEnabled,
+    replayHotkey,
+    outputDir,
+    bufferMode,
+    overlayEnabled,
+    autoLaunch,
+  };
 }

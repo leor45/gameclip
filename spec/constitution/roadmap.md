@@ -69,11 +69,21 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > `out_time_ms`, cancelable. Portapapeles de archivos vía PowerShell `Set-Clipboard`
 > (Electron no expone CF_HDROP). Verificado con recorte real: MP4 2.50 s exactos y GIF.
 
-## Fase 6 · Pulido de paridad — ⏳ pendiente
+## Fase 6 · Pulido de paridad — ✅ entregado
 
-- [ ] Detección automática de juegos en ejecución (auto-inicio del buffer).
-- [ ] Overlay in-game (indicador de grabación, confirmación de clip guardado).
-- [ ] Auto-arranque con Windows, minimizar a bandeja del sistema.
+- [x] Detección automática de juegos en ejecución (auto-inicio del buffer).
+- [x] Overlay in-game (indicador de grabación, confirmación de clip guardado).
+- [x] Auto-arranque con Windows, minimizar a bandeja del sistema.
+
+> Detección por sondeo de `tasklist` cada 5 s contra una lista curada de procesos
+> (`src/shared/games.ts`, ampliable), con debounce de 2 sondeos al cerrar. Nuevo ajuste
+> `bufferMode` (`always` default · `game` = buffer solo con juego); el juego detectado
+> viaja en `CaptureStatus`, se muestra en la barra y nombra los clips. Overlay como
+> BrowserWindow transparente click-through (página `overlay.html`), visible solo grabando
+> o con toast — **no cubre fullscreen exclusivo** (requeriría inyección). Cerrar la ventana
+> minimiza a la bandeja (menú Abrir/Guardar clip/Salir, icono rojo al grabar); auto-arranque
+> vía `setLoginItemSettings` con `--hidden`, solo app empaquetada. Verificado en máquina
+> real: proceso falso `Terraria.exe` → buffer auto-on, cierre → auto-off.
 
 ## Futuro (fuera de alcance por ahora)
 

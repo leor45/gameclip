@@ -49,16 +49,16 @@ y auto-arranque con Windows).
 
 ## Criterios de aceptación
 
-- [ ] Con `bufferMode: 'game'`, al iniciar la app sin juego el estado queda `idle`; al
+- [x] Con `bufferMode: 'game'`, al iniciar la app sin juego el estado queda `idle`; al
       aparecer un proceso de la lista el buffer arranca solo, y al desaparecer se detiene.
-- [ ] Una grabación manual en curso nunca se detiene por la salida del juego.
-- [ ] `CaptureStatus.detectedGame` viaja al renderer y la barra de captura lo muestra.
-- [ ] Un clip guardado con juego detectado se cataloga con ese nombre de juego.
-- [ ] El overlay muestra ● REC mientras se graba y «Clip guardado ✓» al guardar; con
+- [x] Una grabación manual en curso nunca se detiene por la salida del juego.
+- [x] `CaptureStatus.detectedGame` viaja al renderer y la barra de captura lo muestra.
+- [x] Un clip guardado con juego detectado se cataloga con ese nombre de juego.
+- [x] El overlay muestra ● REC mientras se graba y «Clip guardado ✓» al guardar; con
       `overlayEnabled: false` no aparece nunca.
-- [ ] Cerrar la ventana principal deja la app viva en la bandeja; desde el menú de la
+- [x] Cerrar la ventana principal deja la app viva en la bandeja; desde el menú de la
       bandeja se puede reabrir, guardar clip y salir de verdad.
-- [ ] `autoLaunch` llama a `setLoginItemSettings` con `--hidden` solo en app empaquetada;
+- [x] `autoLaunch` llama a `setLoginItemSettings` con `--hidden` solo en app empaquetada;
       con `--hidden` la ventana arranca oculta.
-- [ ] `normalizeCaptureSettings` acepta/normaliza los tres ajustes nuevos con sus defaults.
-- [ ] Gates verdes: typecheck · lint · tests.
+- [x] `normalizeCaptureSettings` acepta/normaliza los tres ajustes nuevos con sus defaults.
+- [x] Gates verdes: typecheck · lint · tests.

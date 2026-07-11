@@ -1,27 +1,37 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, globalShortcut, protocol, shell } from 'electron';
+import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { IpcEvent } from '@shared/ipc';
-import type { ClipSource } from '@shared/library';
 import ffmpegPath from 'ffmpeg-static';
 import { CaptureManager } from './capture/manager';
+import type { ClipSavedInfo } from './capture/manager';
+import { GameDetector } from './capture/game-detector';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
 import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
 import { LibraryManager } from './library/manager';
+import { OverlayController } from './overlay';
+import { createTray } from './tray';
+import type { AppTray } from './tray';
 import { registerIpcHandlers } from './ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let capture: CaptureManager | null = null;
 let library: LibraryManager | null = null;
+let overlay: OverlayController | null = null;
+let tray: AppTray | null = null;
+let detector: GameDetector | null = null;
+// Cerrar la ventana la oculta a la bandeja; solo 'Salir' (o quit del SO) cierra de verdad.
+let quitting = false;
 
 // El scheme de medios necesita privilegios (stream para <video>) antes de 'ready'.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gameclip-media', privileges: { secure: true, stream: true } },
 ]);
 
-function createMainWindow(): void {
+function createMainWindow(options: { hidden?: boolean } = {}): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -37,7 +47,15 @@ function createMainWindow(): void {
     },
   });
 
-  win.on('ready-to-show', () => win.show());
+  if (!options.hidden) {
+    win.on('ready-to-show', () => win.show());
+  }
+  win.on('close', (event) => {
+    if (!quitting) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
   win.on('closed', () => {
     mainWindow = null;
   });
@@ -53,6 +71,15 @@ function createMainWindow(): void {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
   mainWindow = win;
+}
+
+function showMainWindow(): void {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    createMainWindow();
+  }
 }
 
 function setupCapture(): CaptureManager {
@@ -71,10 +98,13 @@ function setupCapture(): CaptureManager {
     },
   });
 
-  manager.on('status', (status) => {
+  manager.on('status', (status: CaptureStatus) => {
     console.log('[capture]', JSON.stringify(status));
     mainWindow?.webContents.send(IpcEvent.CaptureStatusChanged, status);
+    overlay?.setRecording(status.state === 'recording');
+    tray?.setRecording(status.state === 'recording');
   });
+  manager.on('clip-saved', () => overlay?.showToast('Clip guardado ✓'));
 
   registerReplayHotkey(manager);
   return manager;
@@ -91,8 +121,8 @@ function setupLibrary(manager: CaptureManager): LibraryManager | null {
       getForegroundTitle: getForegroundWindowTitle,
     });
 
-    manager.on('clip-saved', (info: { filePath: string; source: ClipSource }) => {
-      void lib.registerSavedClip(info.filePath, info.source);
+    manager.on('clip-saved', (info: ClipSavedInfo) => {
+      void lib.registerSavedClip(info.filePath, info.source, info.game);
     });
     manager.on('settings', () => lib.reconcile(manager.outputDir()));
     lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
@@ -102,6 +132,20 @@ function setupLibrary(manager: CaptureManager): LibraryManager | null {
     console.error('[library] no se pudo abrir el catálogo:', err);
     return null;
   }
+}
+
+function setupGameDetection(manager: CaptureManager): GameDetector {
+  const d = new GameDetector();
+  d.on('game-started', (game: string) => {
+    console.log('[games] detectado:', game);
+    void manager.setGameDetected(game);
+  });
+  d.on('game-stopped', () => {
+    console.log('[games] juego cerrado');
+    void manager.setGameDetected(null);
+  });
+  d.start();
+  return d;
 }
 
 // gameclip-media://clip/<id> y gameclip-media://thumb/<id>: el renderer nunca maneja rutas.
@@ -133,26 +177,48 @@ function registerReplayHotkey(manager: CaptureManager): void {
   }
 }
 
+// En dev registraría electron.exe en el arranque de Windows; solo aplica empaquetada.
+function applyAutoLaunch(settings: CaptureSettings): void {
+  if (!app.isPackaged) return;
+  app.setLoginItemSettings({ openAtLogin: settings.autoLaunch, args: ['--hidden'] });
+}
+
 app.whenReady().then(() => {
   capture = setupCapture();
   library = setupLibrary(capture);
+  detector = setupGameDetection(capture);
+  overlay = new OverlayController(capture.getSettings().overlayEnabled);
+  tray = createTray({
+    onShow: showMainWindow,
+    onSaveReplay: () => void capture?.saveReplay(),
+    onQuit: () => app.quit(),
+  });
   const exporter = new ExportManager(ffmpegPath ?? 'ffmpeg');
   exporter.on('progress', (progress) =>
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
   registerMediaProtocol();
   registerIpcHandlers(capture, library, exporter);
-  createMainWindow();
+  applyAutoLaunch(capture.getSettings());
+  createMainWindow({ hidden: process.argv.includes('--hidden') });
 
   // Init de libobs sin bloquear la ventana; el estado llega por evento.
   void capture.initialize().then(() => runSelfTest(capture!));
 
-  // Si cambian los ajustes (p. ej. el hotkey), se re-registra.
-  capture.on('settings', () => registerReplayHotkey(capture!));
+  // Si cambian los ajustes (p. ej. hotkey, overlay o auto-arranque), se re-aplican.
+  capture.on('settings', (settings: CaptureSettings) => {
+    registerReplayHotkey(capture!);
+    overlay?.setEnabled(settings.overlayEnabled);
+    applyAutoLaunch(settings);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
+});
+
+app.on('before-quit', () => {
+  quitting = true;
 });
 
 app.on('window-all-closed', () => {
@@ -161,6 +227,9 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  detector?.stop();
+  overlay?.destroy();
+  tray?.destroy();
   capture?.shutdown();
 });
 

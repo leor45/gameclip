@@ -16,7 +16,7 @@ export function crearGameclipMock() {
     capture: {
       getStatus: vi
         .fn()
-        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: null }),
+        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: null, detectedGame: null }),
       getSettings: vi.fn().mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS }),
       setSettings: vi
         .fn()
@@ -29,13 +29,19 @@ export function crearGameclipMock() {
       ]),
       startRecording: vi
         .fn()
-        .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null }),
-      stopRecording: vi
-        .fn()
-        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: 'C:\\v\\clip.mp4' }),
-      saveReplay: vi
-        .fn()
-        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: 'C:\\v\\replay.mp4' }),
+        .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null, detectedGame: null }),
+      stopRecording: vi.fn().mockResolvedValue({
+        state: 'buffering',
+        error: null,
+        lastClipPath: 'C:\\v\\clip.mp4',
+        detectedGame: null,
+      }),
+      saveReplay: vi.fn().mockResolvedValue({
+        state: 'buffering',
+        error: null,
+        lastClipPath: 'C:\\v\\replay.mp4',
+        detectedGame: null,
+      }),
       onStatusChanged: vi.fn().mockReturnValue(() => undefined),
     },
     library: {
@@ -56,6 +62,9 @@ export function crearGameclipMock() {
       copyLast: vi.fn().mockResolvedValue(true),
       showLast: vi.fn().mockResolvedValue(undefined),
       onProgress: vi.fn().mockReturnValue(() => undefined),
+    },
+    overlay: {
+      onState: vi.fn().mockReturnValue(() => undefined),
     },
   };
 }

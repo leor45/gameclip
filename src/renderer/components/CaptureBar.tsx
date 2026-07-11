@@ -43,6 +43,11 @@ export default function CaptureBar() {
     <div className="capture-bar" data-state={status.state}>
       <span className={`capture-dot ${grabando ? 'rec' : activo ? 'on' : 'off'}`} />
       <span className="capture-label">{STATE_LABEL[status.state]}</span>
+      {status.detectedGame && (
+        <span className="capture-game" title="Juego detectado">
+          🎮 {status.detectedGame}
+        </span>
+      )}
       {status.error && <span className="capture-error">{status.error}</span>}
       <span className="capture-spacer" />
       {status.lastClipPath && (

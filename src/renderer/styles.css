@@ -801,3 +801,65 @@ body {
 .auth-switch:hover {
   color: var(--text);
 }
+
+/* Chip del juego detectado en la barra de captura */
+
+.capture-game {
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+/* Overlay in-game (página aparte, fondo transparente) */
+
+.overlay-body {
+  background: transparent;
+  overflow: hidden;
+}
+
+.overlay-root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px;
+}
+
+.overlay-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(17, 19, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.overlay-rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e53935;
+  animation: overlay-blink 1.2s ease-in-out infinite;
+}
+
+.overlay-toast {
+  color: #7ee787;
+}
+
+@keyframes overlay-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
