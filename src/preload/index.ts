@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IpcChannel, IpcEvent } from '@shared/ipc';
-import type { AppVersionInfo, CaptureApi, ExporterApi, GameclipApi, LibraryApi } from '@shared/ipc';
+import type {
+  AppVersionInfo,
+  CaptureApi,
+  ExporterApi,
+  GameclipApi,
+  LibraryApi,
+  OverlayApi,
+  OverlayState,
+} from '@shared/ipc';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import type { ExportProgress, ExportRequest } from '@shared/export';
 import type { ClipPatch, ClipsQuery } from '@shared/library';
@@ -50,11 +58,20 @@ const exporter: ExporterApi = {
   },
 };
 
+const overlay: OverlayApi = {
+  onState: (listener: (state: OverlayState) => void) => {
+    const wrapped = (_event: unknown, state: OverlayState) => listener(state);
+    ipcRenderer.on(IpcEvent.OverlayState, wrapped);
+    return () => ipcRenderer.removeListener(IpcEvent.OverlayState, wrapped);
+  },
+};
+
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
   capture,
   library,
   exporter,
+  overlay,
 };
 
 contextBridge.exposeInMainWorld('gameclip', api);

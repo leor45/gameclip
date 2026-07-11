@@ -23,6 +23,9 @@ describe('normalizeCaptureSettings', () => {
       micEnabled: false,
       replayHotkey: 'F9',
       outputDir: 'D:\\clips',
+      bufferMode: 'game',
+      overlayEnabled: false,
+      autoLaunch: true,
     };
     expect(normalizeCaptureSettings(entrada)).toEqual(entrada);
   });
@@ -39,6 +42,19 @@ describe('normalizeCaptureSettings', () => {
       outputDir: null,
     });
     expect(result).toEqual(DEFAULT_CAPTURE_SETTINGS);
+  });
+
+  it('normaliza los ajustes de comportamiento (Fase 6) con sus defaults', () => {
+    // Defaults: comportamiento previo a la Fase 6 (buffer siempre, overlay sí, autostart no).
+    const defaults = normalizeCaptureSettings({});
+    expect(defaults.bufferMode).toBe('always');
+    expect(defaults.overlayEnabled).toBe(true);
+    expect(defaults.autoLaunch).toBe(false);
+
+    expect(normalizeCaptureSettings({ bufferMode: 'game' }).bufferMode).toBe('game');
+    expect(normalizeCaptureSettings({ bufferMode: 'auto' }).bufferMode).toBe('always');
+    expect(normalizeCaptureSettings({ overlayEnabled: 'no' }).overlayEnabled).toBe(true);
+    expect(normalizeCaptureSettings({ autoLaunch: 1 }).autoLaunch).toBe(false);
   });
 
   it('acota replaySeconds al rango permitido y lo redondea', () => {

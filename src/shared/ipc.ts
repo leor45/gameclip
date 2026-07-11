@@ -32,7 +32,15 @@ export const IpcEvent = {
   CaptureStatusChanged: 'capture:status-changed',
   LibraryChanged: 'library:changed',
   ExportProgress: 'export:progress',
+  OverlayState: 'overlay:state',
 } as const;
+
+// Estado que el main empuja a la página del overlay in-game.
+export interface OverlayState {
+  recording: boolean;
+  /** Texto del toast (p. ej. «Clip guardado ✓») o null si no hay. */
+  toast: string | null;
+}
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
 
@@ -109,10 +117,16 @@ export interface ExporterApi {
   onProgress(listener: (progress: ExportProgress) => void): () => void;
 }
 
+export interface OverlayApi {
+  /** Suscribe al estado del overlay; devuelve la función para desuscribirse. */
+  onState(listener: (state: OverlayState) => void): () => void;
+}
+
 // API que el preload expone en window.gameclip.
 export interface GameclipApi {
   getAppVersion(): Promise<AppVersionInfo>;
   capture: CaptureApi;
   library: LibraryApi;
   exporter: ExporterApi;
+  overlay: OverlayApi;
 }

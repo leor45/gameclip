@@ -18,5 +18,14 @@ export default defineConfig({
     resolve: {
       alias: { '@shared': resolve(__dirname, 'src/shared') },
     },
+    build: {
+      rollupOptions: {
+        // Dos páginas: la app principal y el overlay in-game.
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          overlay: resolve(__dirname, 'src/renderer/overlay.html'),
+        },
+      },
+    },
   },
 });

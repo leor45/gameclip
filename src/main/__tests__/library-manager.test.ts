@@ -50,6 +50,17 @@ describe('LibraryManager — ingesta', () => {
     expect(cambio).toHaveBeenCalledOnce();
   });
 
+  it('el gameHint de la detección tiene prioridad sobre la ventana en primer plano', async () => {
+    const manager = crearManager('Terminal — pwsh');
+
+    const conHint = await manager.registerSavedClip(video('a.mp4'), 'replay', 'Valorant');
+    expect(conHint?.game).toBe('Valorant');
+
+    // Sin hint (null) se cae al título de la ventana en primer plano.
+    const sinHint = await manager.registerSavedClip(video('b.mp4'), 'replay', null);
+    expect(sinHint?.game).toBe('Terminal — pwsh');
+  });
+
   it('ignora rutas inexistentes o ya registradas', async () => {
     const manager = crearManager();
     const ruta = video('clip.mp4');

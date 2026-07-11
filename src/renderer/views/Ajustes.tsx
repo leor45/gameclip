@@ -142,6 +142,34 @@ export default function Ajustes() {
           </label>
         </fieldset>
 
+        <fieldset>
+          <legend>Comportamiento</legend>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={settings.bufferMode === 'game'}
+              onChange={(e) => set('bufferMode', e.target.checked ? 'game' : 'always')}
+            />
+            Iniciar el buffer solo al detectar un juego
+          </label>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={settings.overlayEnabled}
+              onChange={(e) => set('overlayEnabled', e.target.checked)}
+            />
+            Mostrar overlay al grabar (indicador y confirmación de clip)
+          </label>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={settings.autoLaunch}
+              onChange={(e) => set('autoLaunch', e.target.checked)}
+            />
+            Iniciar GameClip con Windows (en la bandeja)
+          </label>
+        </fieldset>
+
         <div className="settings-actions">
           <button type="submit" disabled={guardando}>
             {guardando ? 'Guardando…' : 'Guardar ajustes'}

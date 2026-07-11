@@ -64,6 +64,18 @@ describe('CaptureBar', () => {
     await screen.findByText('Buffer activo');
     expect(mock().capture.onStatusChanged).toHaveBeenCalledOnce();
   });
+
+  it('muestra el chip del juego detectado', async () => {
+    mock().capture.getStatus.mockResolvedValue({
+      state: 'buffering',
+      error: null,
+      lastClipPath: null,
+      detectedGame: 'Valorant',
+    });
+    render(<CaptureBar />);
+
+    expect(await screen.findByText(/Valorant/)).toBeInTheDocument();
+  });
 });
 
 describe('Ajustes', () => {
@@ -87,6 +99,29 @@ describe('Ajustes', () => {
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
     expect(mock().capture.setSettings).toHaveBeenCalledWith(
       expect.objectContaining({ resolution: '720p', fps: 30 }),
+    );
+  });
+
+  it('muestra y guarda los ajustes de comportamiento (Fase 6)', async () => {
+    const user = userEvent.setup();
+    render(<Ajustes />);
+
+    const soloJuego = await screen.findByLabelText('Iniciar el buffer solo al detectar un juego');
+    const overlay = screen.getByLabelText(
+      'Mostrar overlay al grabar (indicador y confirmación de clip)',
+    );
+    const autostart = screen.getByLabelText('Iniciar GameClip con Windows (en la bandeja)');
+    // Defaults: buffer siempre, overlay activo, sin auto-arranque.
+    expect(soloJuego).not.toBeChecked();
+    expect(overlay).toBeChecked();
+    expect(autostart).not.toBeChecked();
+
+    await user.click(soloJuego);
+    await user.click(autostart);
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ bufferMode: 'game', autoLaunch: true, overlayEnabled: true }),
     );
   });
 });

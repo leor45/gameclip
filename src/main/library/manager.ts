@@ -39,13 +39,20 @@ export class LibraryManager extends EventEmitter {
     return this.repo.get(id);
   }
 
-  /** Registra un clip recién guardado por la captura (replay o grabación manual). */
-  async registerSavedClip(filePath: string, source: ClipSource): Promise<Clip | null> {
+  /**
+   * Registra un clip recién guardado por la captura (replay o grabación manual).
+   * `gameHint` (detección de juegos) tiene prioridad sobre la ventana en primer plano.
+   */
+  async registerSavedClip(
+    filePath: string,
+    source: ClipSource,
+    gameHint?: string | null,
+  ): Promise<Clip | null> {
     if (!existsSync(filePath) || this.repo.getByPath(filePath)) return null;
     const stats = statSync(filePath);
-    const game = await (this.opts.getForegroundTitle?.() ?? Promise.resolve(null)).catch(
-      () => null,
-    );
+    const game =
+      gameHint ??
+      (await (this.opts.getForegroundTitle?.() ?? Promise.resolve(null)).catch(() => null));
     const clip = this.repo.insert({
       filePath,
       title: titleFromFileName(fileName(filePath)),
