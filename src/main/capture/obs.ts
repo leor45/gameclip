@@ -299,6 +299,8 @@ export class ObsCapture extends EventEmitter {
   private outputChannels: number[] = [];
   /** Fuente de audio del juego (modo apps), religable en caliente al cambiar el juego. */
   private gameAudioSource: OsnInput | null = null;
+  /** Fuente de video game_capture, re-apuntable al cambiar el juego (modo window). */
+  private gameCaptureSource: OsnInput | null = null;
   /** Fuente del micrófono, para push-to-talk (mute sin rebuild). */
   private micSource: OsnInput | null = null;
   private micFilters: OsnFilter[] = [];
@@ -418,6 +420,7 @@ export class ObsCapture extends EventEmitter {
       );
       const gameItem = scene.add(game);
       this.inputs.push(game);
+      this.gameCaptureSource = game;
       items.push(gameItem);
     }
     this.applyBounds(items, sizes);
@@ -534,6 +537,7 @@ export class ObsCapture extends EventEmitter {
     this.outputChannels = [];
     this.inputs = [];
     this.gameAudioSource = null;
+    this.gameCaptureSource = null;
     this.micSource = null;
     this.micFilters = [];
     this.scene = null;
@@ -651,6 +655,14 @@ export class ObsCapture extends EventEmitter {
   /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void {
     this.gameAudioSource?.update(processCaptureSettings(executable));
+  }
+
+  /** Re-apunta el game capture de video (modo window) a otro ejecutable. */
+  updateGameCaptureTarget(executable: string | null): void {
+    this.gameCaptureSource?.update({
+      window: executable ? `::${executable}` : '',
+      priority: 2, // 2 = coincidencia por ejecutable
+    });
   }
 
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */

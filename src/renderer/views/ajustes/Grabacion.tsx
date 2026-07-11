@@ -45,6 +45,7 @@ export default function AjustesGrabacion() {
   const [juegoLibre, setJuegoLibre] = useState('');
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [mostrarModal, setMostrarModal] = useState(false);
+  const [avisoEscritorio, setAvisoEscritorio] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -87,8 +88,15 @@ export default function AjustesGrabacion() {
   async function grabarEscritorio(index: number) {
     set('screenMonitorIndex', index);
     await window.gameclip.capture.setSettings({ screenMonitorIndex: index });
-    await window.gameclip.capture.startRecording();
+    const status = await window.gameclip.capture.startRecording();
     setMostrarModal(false);
+    // startRecording es no-op en modo apagado o si ya hay una grabación en curso:
+    // sin este aviso el modal cerraría con sensación de éxito falso.
+    setAvisoEscritorio(
+      status.state === 'recording'
+        ? null
+        : 'No se pudo iniciar: la grabación está apagada o ya hay una en curso.',
+    );
   }
 
   return (
@@ -229,9 +237,17 @@ export default function AjustesGrabacion() {
 
         <fieldset>
           <legend>Grabación de escritorio</legend>
-          <button type="button" onClick={() => setMostrarModal(true)}>
+          <button
+            type="button"
+            disabled={settings.recordingMode === 'off'}
+            onClick={() => setMostrarModal(true)}
+          >
             Grabar escritorio…
           </button>
+          {settings.recordingMode === 'off' && (
+            <p className="settings-hint">La grabación está apagada (modo de grabación).</p>
+          )}
+          {avisoEscritorio && <p className="settings-warning">{avisoEscritorio}</p>}
           <label>
             Monitor
             <select

@@ -46,6 +46,11 @@ class FakeObs implements CaptureBackend {
     this.ultimoGameAudioTarget = executable;
     this.updateGameAudioCount++;
   }
+  ultimoGameCaptureTarget: string | null = null;
+  updateGameCaptureTarget(executable: string | null): void {
+    this.llamadas.push('updateGameCaptureTarget');
+    this.ultimoGameCaptureTarget = executable;
+  }
   micMuted: boolean | null = null;
   setMicMuted(muted: boolean): void {
     this.micMuted = muted;
@@ -286,6 +291,54 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     expect(manager.getAudioDevices()).toEqual([]);
   });
 
+  it('modo auto: al cambiar de juego, el clip que termina se etiqueta con el juego ANTERIOR', async () => {
+    const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+    await manager.initialize();
+    const guardados: ClipSavedInfo[] = [];
+    manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+    await manager.setRunningGames([{ name: 'Terraria', executable: 'terraria.exe' }]);
+    expect(manager.getStatus().state).toBe('recording');
+
+    await manager.setRunningGames([
+      { name: 'Terraria', executable: 'terraria.exe' },
+      { name: 'Valorant', executable: 'valorant.exe' },
+    ]);
+    await manager.switchGame('Valorant');
+
+    expect(guardados).toHaveLength(1);
+    expect(guardados[0].game).toBe('Terraria'); // la sesión cortada era de Terraria
+    expect(manager.getStatus()).toMatchObject({ state: 'recording', detectedGame: 'Valorant' });
+  });
+
+  it('modo auto: tras un corte manual, cambiar de juego reanuda la grabación de sesión', async () => {
+    const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+    await manager.initialize();
+    await manager.setRunningGames([
+      { name: 'Terraria', executable: 'terraria.exe' },
+      { name: 'Valorant', executable: 'valorant.exe' },
+    ]);
+    expect(manager.getStatus().state).toBe('recording');
+
+    await manager.stopRecording(); // el usuario corta a mano; el juego sigue abierto
+    expect(manager.getStatus().state).toBe('buffering');
+
+    await manager.switchGame('Valorant');
+    expect(manager.getStatus().state).toBe('recording'); // la sesión del nuevo juego arranca
+  });
+
+  it('con forceWindowCapture el cambio de juego re-apunta también el video', async () => {
+    const manager = crear({ bufferMode: 'always', forceWindowCapture: true });
+    await manager.initialize();
+    await manager.setRunningGames([
+      { name: 'Terraria', executable: 'terraria.exe' },
+      { name: 'Valorant', executable: 'valorant.exe' },
+    ]);
+
+    await manager.switchGame('Valorant');
+    expect(obs.ultimoGameCaptureTarget).toBe('valorant.exe');
+  });
+
   it('gameExecutableForName (fallback) mapea el nombre a un ejecutable conocido, o null', () => {
     // Es un fallback lossy (varios exes por juego): el camino principal es el ejecutable
     // que emite el detector.
@@ -341,9 +394,9 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       await manager.setRunningGames([]);
       expect(manager.getStatus()).toMatchObject({ state: 'buffering', detectedGame: null });
       expect(obs.grabando).toBe(false);
-      // La sesión cerrada deja un clip de grabación.
+      // La sesión cerrada deja un clip de grabación etiquetado con el juego que la generó.
       expect(guardados).toEqual([
-        { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: null },
+        { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: 'Counter-Strike 2' },
       ]);
     });
 
@@ -360,9 +413,9 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       await manager.switchGame(); // rota a Rocket League
       expect(manager.getStatus()).toMatchObject({ state: 'recording', detectedGame: 'Rocket League' });
       expect(obs.grabando).toBe(true);
-      // El corte de la sesión anterior guardó un clip (juego = el activo al cortar).
+      // El corte de la sesión anterior guardó un clip del juego ANTERIOR (no del nuevo).
       expect(guardados).toEqual([
-        { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: 'Rocket League' },
+        { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: 'Counter-Strike 2' },
       ]);
     });
 

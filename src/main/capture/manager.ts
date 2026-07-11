@@ -58,6 +58,8 @@ export interface CaptureBackend {
   ): void;
   /** Religa el audio del juego (modo apps) a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void;
+  /** Re-apunta el game capture de VIDEO a otro ejecutable (solo importa en modo window). */
+  updateGameCaptureTarget(executable: string | null): void;
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
   setMicMuted(muted: boolean): void;
   startReplayBuffer(): Promise<void>;
@@ -127,18 +129,22 @@ export class CaptureManager extends EventEmitter {
    * corta y arranca una grabación nueva. Con 0/1 juegos (o un target inválido) es no-op.
    */
   async switchGame(targetName?: string): Promise<CaptureStatus> {
-    if (this.runningGames.length === 0) return this.getStatus();
-    let next: RunningGameMatch;
-    if (targetName) {
-      const found = this.runningGames.find((g) => g.name === targetName);
-      if (!found || found.name === this.activeGame?.name) return this.getStatus();
-      next = found;
-    } else {
-      if (this.runningGames.length < 2) return this.getStatus();
-      const idx = this.runningGames.findIndex((g) => g.name === this.activeGame?.name);
-      next = this.runningGames[(idx + 1) % this.runningGames.length];
-    }
-    await this.applyActiveGame(next);
+    // La selección se resuelve DENTRO de la tarea encolada: entre encolar y ejecutar, otro
+    // cambio pudo alterar la lista o el activo.
+    await this.queueTask(async () => {
+      if (this.runningGames.length === 0) return;
+      let next: RunningGameMatch;
+      if (targetName) {
+        const found = this.runningGames.find((g) => g.name === targetName);
+        if (!found || found.name === this.activeGame?.name) return;
+        next = found;
+      } else {
+        if (this.runningGames.length < 2) return;
+        const idx = this.runningGames.findIndex((g) => g.name === this.activeGame?.name);
+        next = this.runningGames[(idx + 1) % this.runningGames.length];
+      }
+      await this.applyActiveGame(next);
+    });
     return this.getStatus();
   }
 
@@ -178,17 +184,23 @@ export class CaptureManager extends EventEmitter {
   }
 
   /**
-   * Serializa reconstrucciones si llegan varias seguidas. El fallo de un rebuild queda en
-   * el estado (error) pero NUNCA deja la cadena rechazada: una cadena envenenada saltearía
-   * todos los rebuilds futuros y congelaría la captura hasta reiniciar.
+   * Serializa operaciones que mutan el pipeline/la grabación (rebuilds y cambios de juego):
+   * dos entradas concurrentes (timer del auto-switcher + hotkey, p. ej.) no deben poder leer
+   * el mismo estado y duplicar stop/start de OBS. El fallo de una tarea queda en el estado
+   * (error) pero NUNCA deja la cadena rechazada: una cadena envenenada saltearía todas las
+   * tareas futuras y congelaría la captura hasta reiniciar.
+   * OJO: solo los puntos de entrada públicos encolan; los internos llaman directo (encolar
+   * desde dentro de una tarea encolada sería deadlock).
    */
-  private queueRebuild(): Promise<void> {
-    this.applying = this.applying
-      .then(() => this.rebuildPipeline())
-      .catch((err) => {
-        this.setStatus({ error: err instanceof Error ? err.message : String(err) });
-      });
+  private queueTask(task: () => Promise<void>): Promise<void> {
+    this.applying = this.applying.then(task).catch((err) => {
+      this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+    });
     return this.applying;
+  }
+
+  private queueRebuild(): Promise<void> {
+    return this.queueTask(() => this.rebuildPipeline());
   }
 
   /**
@@ -197,13 +209,15 @@ export class CaptureManager extends EventEmitter {
    * en `applyActiveGame` el religado de audio, el buffer y (en modo auto) la grabación.
    */
   async setRunningGames(games: RunningGameMatch[]): Promise<void> {
-    this.runningGames = games;
-    const activeStillRunning =
-      this.activeGame !== null && games.some((g) => g.name === this.activeGame!.name);
-    const next = activeStillRunning
-      ? games.find((g) => g.name === this.activeGame!.name)!
-      : (games[0] ?? null);
-    await this.applyActiveGame(next);
+    await this.queueTask(async () => {
+      this.runningGames = games;
+      const activeStillRunning =
+        this.activeGame !== null && games.some((g) => g.name === this.activeGame!.name);
+      const next = activeStillRunning
+        ? games.find((g) => g.name === this.activeGame!.name)!
+        : (games[0] ?? null);
+      await this.applyActiveGame(next);
+    });
   }
 
   /**
@@ -242,6 +256,15 @@ export class CaptureManager extends EventEmitter {
         this.setStatus({ error: err instanceof Error ? err.message : String(err) });
       }
     }
+    // Con captura de ventana forzada, el VIDEO también debe seguir al juego activo; si no,
+    // quedaría clavado en la ventana del juego anterior.
+    if (changed && settings.forceWindowCapture) {
+      try {
+        this.obs.updateGameCaptureTarget(this.detectedGameExe);
+      } catch (err) {
+        this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+      }
+    }
 
     // Modo auto: la presencia/cambio de juego dirige la grabación de sesión.
     if (settings.recordingMode === 'auto') {
@@ -270,13 +293,17 @@ export class CaptureManager extends EventEmitter {
     nextName: string | null,
   ): Promise<void> {
     try {
-      if (changed && prevName && nextName && this.status.state === 'recording') {
-        await this.stopSessionRecording();
-        await this.startSessionRecording();
+      if (changed && prevName && nextName) {
+        // El clip que termina pertenece al juego anterior. Si el usuario había cortado a
+        // mano (idle/buffering), el cambio de juego reanuda la sesión con el nuevo.
+        if (this.status.state === 'recording') await this.stopSessionRecording(prevName);
+        if (this.status.state === 'idle' || this.status.state === 'buffering') {
+          await this.startSessionRecording();
+        }
       } else if (nextName && !prevName) {
         await this.startSessionRecording();
       } else if (!nextName && prevName) {
-        await this.stopSessionRecording();
+        await this.stopSessionRecording(prevName);
       }
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
@@ -292,8 +319,12 @@ export class CaptureManager extends EventEmitter {
     this.setStatus({ state: 'recording', error: null });
   }
 
-  /** Corta la grabación de sesión (modo auto), guarda el clip y reconcilia el buffer. */
-  private async stopSessionRecording(): Promise<void> {
+  /**
+   * Corta la grabación de sesión (modo auto), guarda el clip y reconcilia el buffer.
+   * `game` etiqueta el clip: al cambiar de juego, el status ya apunta al NUEVO y la
+   * sesión que termina pertenece al anterior.
+   */
+  private async stopSessionRecording(game: string | null = this.status.detectedGame): Promise<void> {
     if (this.status.state !== 'recording') return;
     const file = await this.obs.stopRecording();
     await this.reconcileBuffer();
@@ -302,7 +333,7 @@ export class CaptureManager extends EventEmitter {
       error: null,
       lastClipPath: file,
     });
-    this.emitClipSaved(file, 'recording');
+    this.emitClipSaved(file, 'recording', game);
   }
 
   async startRecording(): Promise<CaptureStatus> {
@@ -407,8 +438,12 @@ export class CaptureManager extends EventEmitter {
     }
   }
 
-  private emitClipSaved(filePath: string, source: ClipSource): void {
-    const info: ClipSavedInfo = { filePath, source, game: this.status.detectedGame };
+  private emitClipSaved(
+    filePath: string,
+    source: ClipSource,
+    game: string | null = this.status.detectedGame,
+  ): void {
+    const info: ClipSavedInfo = { filePath, source, game };
     this.emit('clip-saved', info);
   }
 

@@ -207,10 +207,17 @@ function registerMediaProtocol(): void {
 function registerHotkeys(manager: CaptureManager): void {
   globalShortcut.unregisterAll();
   const s = manager.getSettings();
+  const usados = new Set<string>();
   const registrar = (accel: string, accion: () => void): void => {
     if (!accel) return;
+    // Dos acciones con el mismo acelerador: la segunda fallaría en silencio; mejor avisar.
+    const key = accel.toLowerCase();
+    if (usados.has(key)) {
+      console.warn(`[hotkeys] '${accel}' ya está asignado a otra acción; se ignora el duplicado`);
+      return;
+    }
     try {
-      globalShortcut.register(accel, accion);
+      if (globalShortcut.register(accel, accion)) usados.add(key);
     } catch {
       // acelerador inválido: la acción sigue disponible desde la UI
     }
