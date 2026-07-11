@@ -993,12 +993,38 @@ body {
 }
 
 .audio-app-name {
-  min-width: 120px;
+  min-width: 150px;
+  flex: 0 0 auto;
   color: var(--text);
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.audio-app-volume {
+  flex: 1;
+}
+
+/* Botón solo-icono para quitar una app de la lista (basurero rojo). */
+.audio-app-trash {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(244, 67, 54, 0.35);
+  border-radius: 6px;
+  background: transparent;
+  color: #f44336;
+  cursor: pointer;
+}
+
+.audio-app-trash:hover {
+  background: rgba(244, 67, 54, 0.15);
+  color: #ff6b60;
 }
 
 .audio-app-add {

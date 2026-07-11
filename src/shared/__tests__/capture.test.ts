@@ -61,6 +61,34 @@ describe('normalizeCaptureSettings', () => {
     expect(normalizeCaptureSettings({ autoLaunch: 1 }).autoLaunch).toBe(false);
   });
 
+  it('audioApps guardados sin `enabled` migran a enabled: true', () => {
+    const result = normalizeCaptureSettings({
+      audioApps: [
+        { executable: 'Discord.exe', volume: 80 },
+        { executable: 'Spotify.exe', volume: 50, enabled: false },
+      ],
+    });
+    expect(result.audioApps).toEqual([
+      { executable: 'Discord.exe', volume: 80, enabled: true },
+      { executable: 'Spotify.exe', volume: 50, enabled: false },
+    ]);
+  });
+
+  it('normaliza PTT, supresión de ruido y aceleración por hardware', () => {
+    const defaults = normalizeCaptureSettings({});
+    expect(defaults.pttEnabled).toBe(false);
+    expect(defaults.pttHotkey).toBe('F9');
+    expect(defaults.noiseSuppressionEnabled).toBe(false);
+    expect(defaults.hardwareAcceleration).toBe(true);
+
+    expect(normalizeCaptureSettings({ pttHotkey: 'Mouse4' }).pttHotkey).toBe('Mouse4');
+    // Tecla fuera de la lista blanca: cae al default.
+    expect(normalizeCaptureSettings({ pttHotkey: 'Escape' }).pttHotkey).toBe('F9');
+    expect(normalizeCaptureSettings({ hardwareAcceleration: 'no' }).hardwareAcceleration).toBe(
+      true,
+    );
+  });
+
   it('acota replaySeconds al rango permitido y lo redondea', () => {
     expect(normalizeCaptureSettings({ replaySeconds: 1 }).replaySeconds).toBe(REPLAY_SECONDS_MIN);
     expect(normalizeCaptureSettings({ replaySeconds: 9999 }).replaySeconds).toBe(

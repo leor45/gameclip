@@ -46,6 +46,10 @@ class FakeObs implements CaptureBackend {
     this.ultimoGameAudioTarget = executable;
     this.updateGameAudioCount++;
   }
+  micMuted: boolean | null = null;
+  setMicMuted(muted: boolean): void {
+    this.micMuted = muted;
+  }
   startReplayBuffer(): Promise<void> {
     this.llamadas.push('startReplayBuffer');
     this.bufferActivo = true;
@@ -240,6 +244,41 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     await manager.setGameDetected('Valorant');
     expect(obs.buildCount).toBe(buildsTrasInit);
     expect(obs.updateGameAudioCount).toBe(0);
+  });
+
+  it('push-to-talk: la tecla pulsada abre el mic y al soltarla se cierra', async () => {
+    const manager = crear({ micEnabled: true, pttEnabled: true });
+    await manager.initialize();
+
+    manager.setMicHeld(true);
+    expect(obs.micMuted).toBe(false);
+    manager.setMicHeld(false);
+    expect(obs.micMuted).toBe(true);
+  });
+
+  it('push-to-talk: con el mic desactivado la tecla no lo abre', async () => {
+    const manager = crear({ micEnabled: false, pttEnabled: true });
+    await manager.initialize();
+
+    manager.setMicHeld(true);
+    expect(obs.micMuted).toBe(true);
+  });
+
+  it('sin push-to-talk el mute solo depende de micEnabled', async () => {
+    const manager = crear({ micEnabled: true, pttEnabled: false });
+    await manager.initialize();
+
+    manager.setMicHeld(false); // sin PTT la tecla no debe cerrar el mic
+    expect(obs.micMuted).toBe(false);
+  });
+
+  it('el estado del PTT sobrevive a un rebuild (guardar ajustes con la tecla pulsada)', async () => {
+    const manager = crear({ micEnabled: true, pttEnabled: true });
+    await manager.initialize();
+    manager.setMicHeld(true);
+
+    await manager.setSettings({ fps: 30 }); // rebuild: buildPipeline resetea el mute
+    expect(obs.micMuted).toBe(false); // re-aplicado: la tecla sigue pulsada
   });
 
   it('getAudioDevices devuelve [] mientras libobs no está inicializado', () => {

@@ -10,6 +10,7 @@ import AjustesAlmacenamiento from './views/ajustes/Almacenamiento';
 import AjustesAudio from './views/ajustes/Audio';
 import AjustesAvanzado from './views/ajustes/Avanzado';
 import AjustesCalidad from './views/ajustes/Calidad';
+import AjustesDesarrollo from './views/ajustes/Desarrollo';
 import AjustesGeneral from './views/ajustes/General';
 import Biblioteca from './views/Biblioteca';
 import Editor from './views/Editor';
@@ -42,6 +43,7 @@ function Shell() {
               <Route path="audio" element={<AjustesAudio />} />
               <Route path="almacenamiento" element={<AjustesAlmacenamiento />} />
               <Route path="avanzado" element={<AjustesAvanzado />} />
+              <Route path="desarrollo" element={<AjustesDesarrollo />} />
             </Route>
           </Routes>
         </main>

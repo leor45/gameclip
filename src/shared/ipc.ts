@@ -20,6 +20,7 @@ export const IpcChannel = {
   CaptureGetAudioDevices: 'capture:get-audio-devices',
   CaptureGetAudioApps: 'capture:get-audio-apps',
   CapturePickOutputDir: 'capture:pick-output-dir',
+  CaptureGetPttAvailable: 'capture:get-ptt-available',
   CaptureStartRecording: 'capture:start-recording',
   CaptureStopRecording: 'capture:stop-recording',
   CaptureSaveReplay: 'capture:save-replay',
@@ -73,6 +74,8 @@ export interface IpcContract {
   [IpcChannel.CaptureGetAudioApps]: { request: void; response: AudioAppInfo[] };
   /** Diálogo nativo de carpeta; null si el usuario cancela. */
   [IpcChannel.CapturePickOutputDir]: { request: void; response: string | null };
+  /** false si el hook global de push-to-talk no pudo cargar. */
+  [IpcChannel.CaptureGetPttAvailable]: { request: void; response: boolean };
   [IpcChannel.CaptureStartRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureStopRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
@@ -102,6 +105,8 @@ export interface CaptureApi {
   getAudioApps(): Promise<AudioAppInfo[]>;
   /** Diálogo nativo para elegir la carpeta de clips; null si se cancela. */
   pickOutputDir(): Promise<string | null>;
+  /** ¿El hook global de push-to-talk está disponible en esta máquina? */
+  getPttAvailable(): Promise<boolean>;
   startRecording(): Promise<CaptureStatus>;
   stopRecording(): Promise<CaptureStatus>;
   saveReplay(): Promise<CaptureStatus>;

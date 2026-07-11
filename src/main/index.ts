@@ -6,6 +6,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
 import { GameDetector } from './capture/game-detector';
+import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
 import { ClipsRepository } from './library/clips-repository';
@@ -32,6 +33,15 @@ let quitting = false;
 protocol.registerSchemesAsPrivileged([
   { scheme: 'gameclip-media', privileges: { secure: true, stream: true } },
 ]);
+
+// Store único de ajustes de captura; se lee ya mismo porque la aceleración por hardware
+// solo puede desactivarse ANTES de 'ready' (y de crear ventanas).
+const settingsStore = new SettingsStore(join(app.getPath('userData'), 'capture-settings.json'));
+if (!settingsStore.load().hardwareAcceleration) {
+  app.disableHardwareAcceleration();
+  console.log('[app] aceleración por hardware desactivada por ajustes');
+}
+const pushToTalk = new PushToTalk();
 
 function createMainWindow(options: { hidden?: boolean } = {}): void {
   const win = new BrowserWindow({
@@ -89,8 +99,7 @@ function setupCapture(): CaptureManager {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { screen } = require('electron') as typeof import('electron');
   const primary = screen.getPrimaryDisplay();
-  const store = new SettingsStore(join(app.getPath('userData'), 'capture-settings.json'));
-  const manager = new CaptureManager(store, {
+  const manager = new CaptureManager(settingsStore, {
     obsDataPath: join(app.getPath('userData'), 'obs-data'),
     defaultOutputDir: join(app.getPath('videos'), 'GameClip'),
     appVersion: app.getVersion(),
@@ -221,7 +230,14 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
   registerMediaProtocol();
-  registerIpcHandlers(capture, library, exporter, storage);
+  registerIpcHandlers(capture, library, exporter, storage, () => pushToTalk.available);
+
+  // Push-to-talk: el hook global reporta el estado de la tecla al manager.
+  pushToTalk.on('held', (held: boolean) => capture?.setMicHeld(held));
+  {
+    const s = capture.getSettings();
+    pushToTalk.configure(s.pttEnabled && s.micEnabled, s.pttHotkey);
+  }
   applyAutoLaunch(capture.getSettings());
   createMainWindow({ hidden: process.argv.includes('--hidden') });
 
@@ -233,6 +249,7 @@ app.whenReady().then(() => {
     registerReplayHotkey(capture!);
     overlay?.setEnabled(settings.overlayEnabled);
     applyAutoLaunch(settings);
+    pushToTalk.configure(settings.pttEnabled && settings.micEnabled, settings.pttHotkey);
   });
 
   app.on('activate', () => {
@@ -250,6 +267,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  pushToTalk.stop();
   detector?.stop();
   overlay?.destroy();
   tray?.destroy();

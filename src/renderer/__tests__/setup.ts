@@ -36,6 +36,7 @@ export function crearGameclipMock() {
         { executable: 'Spotify.exe', windowTitle: 'Spotify' },
       ]),
       pickOutputDir: vi.fn().mockResolvedValue(null),
+      getPttAvailable: vi.fn().mockResolvedValue(true),
       startRecording: vi
         .fn()
         .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null, detectedGame: null }),
