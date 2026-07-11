@@ -51,16 +51,16 @@ las apps de clips) y sub-opciones (cambio automático a captura de juego, select
 
 ## Criterios de aceptación
 
-- [ ] Modo `off`: no arranca buffer, el hotkey de replay no guarda y grabar manual no hace nada.
-- [ ] Modo `auto`: al detectar un juego arranca la grabación; al cerrarse el juego se guarda
+- [x] Modo `off`: no arranca buffer, el hotkey de replay no guarda y grabar manual no hace nada.
+- [x] Modo `auto`: al detectar un juego arranca la grabación; al cerrarse el juego se guarda
       el archivo y se registra en la biblioteca.
-- [ ] El hotkey de cambio de juego rota entre juegos en ejecución y re-liga el audio del juego;
+- [x] El hotkey de cambio de juego rota entre juegos en ejecución y re-liga el audio del juego;
       en modo `auto` corta y arranca grabaciones.
-- [ ] Con cambio automático activo, enfocar otro juego conocido ~20 s cambia el juego activo.
-- [ ] El hotkey de captura guarda un PNG en Capturas y el toggle lo desactiva.
-- [ ] Un `.exe` añadido manualmente se detecta como juego (buffer/audio/nombrado) y puede
+- [x] Con cambio automático activo, enfocar otro juego conocido ~20 s cambia el juego activo.
+- [x] El hotkey de captura guarda un PNG en Capturas y el toggle lo desactiva.
+- [x] Un `.exe` añadido manualmente se detecta como juego (buffer/audio/nombrado) y puede
       quitarse de la lista.
-- [ ] El modal de displays muestra un preview por monitor y "Empezar a grabar" graba el
+- [x] El modal de displays muestra un preview por monitor y "Empezar a grabar" graba el
       monitor elegido; el selector de la sección cambia el monitor sin modal.
-- [ ] Ajustes inválidos caen a defaults campo a campo.
-- [ ] Gates verdes: typecheck · lint · tests.
+- [x] Ajustes inválidos caen a defaults campo a campo.
+- [x] Gates verdes: typecheck · lint · tests.
