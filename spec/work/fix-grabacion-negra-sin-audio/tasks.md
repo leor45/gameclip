@@ -42,24 +42,20 @@ Camino feliz **y** casos borde. Si es un Fix: el test de regresión va primero (
 
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
-- [x] Tests verdes (`npm run test`) — 241 tests, 32 archivos
+- [x] Tests verdes (`npm run test`) — 245 tests, 33 archivos
 - [x] Comprobación manual (E2E máquina real, selftest de grabación):
       - Video: log de libobs `display: MO27Q28G (2560x1440)` + `method: WGC` +
         `setting_id` = device id resuelto; `blackdetect` sin ningún intervalo negro
         (3 pasadas consecutivas; antes del fix: negro el 100 % del clip).
-      - Audio: tono de 440 Hz por altavoces capturado en la pista 1 a −22.6 dB de media
-        (max 0 dB) y cero avisos de `audio is lagging` (antes: −91 dB y descarte total).
-      - Audio (adenda — causa raíz 3 del spec): el silencio reapareció de forma
-        consistente; el diagnóstico completo está en el spec. Interferencia externa
-        (stack NVIDIA App/ShadowPlay/Virtual Audio instalado el 2026-07-07) que silencia
-        el loopback de TODA la familia libobs — OBS Studio 31.1.1 incluido — mientras el
-        WASAPI crudo captura bien en los mismos dispositivos. Pendiente de acción del
-        owner: deshabilitar Instant Replay/overlay de la NVIDIA App (o el dispositivo
-        "NVIDIA Virtual Audio Device (Wave Extensible)" en el Administrador de
-        dispositivos), reiniciar y reprobar la grabación con audio.
+      - Audio (verificación final, causa raíz 3 resuelta — 2026-07-11 18:01): con el mic
+        DESACTIVADO para aislar el loopback, el tono de 440 Hz quedó en la pista 1 a
+        −12.6 dB max / −19.9 dB media; `blackdetect` 0 intervalos. Antes del fix del setter
+        `volume`: −91 dB (silencio digital). La hipótesis de interferencia NVIDIA quedó
+        refutada por el bisect con repros (ver spec): osn captura bien con todo ese stack
+        instalado en cuanto se deja de usar `Input.volume`.
 
 ## Cierre
 
-- [x] Aprobación del owner (delegada en esta sesión)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner (delegada en esta sesión; merge pedido explícitamente 2026-07-11)
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado
