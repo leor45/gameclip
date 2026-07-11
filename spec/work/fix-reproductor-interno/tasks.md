@@ -27,6 +27,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada — cuando el owner lo pida
-- [ ] `spec/constitution/roadmap.md` actualizado (nota de fix post-entrega)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada — cuando el owner lo pida
+- [x] `spec/constitution/roadmap.md` actualizado (nota de fix post-entrega; el commit de la
+       nota viajó en la rama apilada `feature/config-grabacion`)
