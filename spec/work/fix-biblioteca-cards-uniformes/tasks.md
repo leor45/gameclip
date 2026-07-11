@@ -26,5 +26,5 @@ Camino feliz **y** casos borde. Si es un Fix: el test de regresión va primero (
 ## Cierre
 
 - [x] Aprobación del owner (delegada en esta sesión)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado
