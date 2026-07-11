@@ -1,9 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import {
+  audioTrackPlan,
   computePipelineSizes,
   encoderFamily,
   encoderRateControlSettings,
 } from '../capture/obs';
+
+describe('audioTrackPlan', () => {
+  it('sin tracks separados: todo a la pista 1', () => {
+    expect(audioTrackPlan(false)).toEqual({
+      desktopMask: 0b001,
+      micMask: 0b001,
+      appsMask: 0b001,
+    });
+  });
+
+  it('con tracks separados la pista 1 SIEMPRE lleva la mezcla completa (regresión: los reproductores solo reproducen la primera pista)', () => {
+    const plan = audioTrackPlan(true);
+    // mic → pistas 1+2 · apps → pistas 1+3 · juego/escritorio → pista 1.
+    expect(plan.desktopMask).toBe(0b001);
+    expect(plan.micMask).toBe(0b011);
+    expect(plan.appsMask).toBe(0b101);
+    // Invariante de la regresión: toda máscara incluye el bit de la pista 1.
+    expect(plan.micMask & 0b001).toBe(0b001);
+    expect(plan.appsMask & 0b001).toBe(0b001);
+  });
+});
 
 describe('encoderFamily', () => {
   it('clasifica los ids de encoder por familia', () => {

@@ -14,6 +14,7 @@ import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
 import { LibraryManager } from './library/manager';
 import { StorageManager } from './library/storage-manager';
+import { MEDIA_SCHEME, MEDIA_SCHEME_PRIVILEGES } from './media-protocol';
 import { OverlayController } from './overlay';
 import { createTray } from './tray';
 import type { AppTray } from './tray';
@@ -29,9 +30,9 @@ let detector: GameDetector | null = null;
 // Cerrar la ventana la oculta a la bandeja; solo 'Salir' (o quit del SO) cierra de verdad.
 let quitting = false;
 
-// El scheme de medios necesita privilegios (stream para <video>) antes de 'ready'.
+// El scheme de medios necesita privilegios antes de 'ready' (ver media-protocol.ts).
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'gameclip-media', privileges: { secure: true, stream: true } },
+  { scheme: MEDIA_SCHEME, privileges: MEDIA_SCHEME_PRIVILEGES },
 ]);
 
 // Store único de ajustes de captura; se lee ya mismo porque la aceleración por hardware
@@ -180,7 +181,7 @@ function setupGameDetection(manager: CaptureManager): GameDetector {
 
 // gameclip-media://clip/<id> y gameclip-media://thumb/<id>: el renderer nunca maneja rutas.
 function registerMediaProtocol(): void {
-  protocol.registerFileProtocol('gameclip-media', (request, callback) => {
+  protocol.registerFileProtocol(MEDIA_SCHEME, (request, callback) => {
     try {
       const url = new URL(request.url);
       const id = Number(url.pathname.replace(/^\//, ''));
