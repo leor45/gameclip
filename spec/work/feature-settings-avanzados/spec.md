@@ -56,19 +56,20 @@ gigante: hay que desglosar Ajustes en submenús.
 
 Observables y verificables uno a uno:
 
-- [ ] Ajustes muestra un submenú lateral con 5 secciones; `/ajustes` redirige a General y no hay
+- [x] Ajustes muestra un submenú lateral con 5 secciones; `/ajustes` redirige a General y no hay
       un scroll monolítico.
-- [ ] Puedo elegir el micrófono entre los dispositivos del sistema y ajustar su volumen; se
+- [x] Puedo elegir el micrófono entre los dispositivos del sistema y ajustar su volumen; se
       persiste y sobrevive a reinicio.
-- [ ] Puedo elegir entre capturar todo el escritorio o apps específicas; en modo apps puedo
+- [x] Puedo elegir entre capturar todo el escritorio o apps específicas; en modo apps puedo
       añadir/quitar apps en ejecución y ajustar volumen por app.
-- [ ] Con "tracks separados" activo, el MP4 resultante contiene pistas de audio separadas
-      (verificable con ffprobe en el selftest).
-- [ ] Puedo elegir bitrate (3–100 Mbps) o dejar calidad automática; el pipeline lo aplica.
-- [ ] Puedo cambiar la carpeta de clips con un diálogo nativo y ver el uso de disco.
-- [ ] Con límite de almacenamiento y auto-borrado activos, al superar el límite se borran los
+- [x] Con "tracks separados" activo, el MP4 resultante contiene pistas de audio separadas
+      (verificado con ffmpeg en el selftest: streams 0:1 y 0:2).
+- [x] Puedo elegir bitrate (3–100 Mbps) o dejar calidad automática; el pipeline lo aplica
+      (verificado: ~15 Mbps CBR vs ~4.4 Mb/s CQP automático).
+- [x] Puedo cambiar la carpeta de clips con un diálogo nativo y ver el uso de disco.
+- [x] Con límite de almacenamiento y auto-borrado activos, al superar el límite se borran los
       archivos más viejos respetando "solo grabaciones largas" y "papelera de reciclaje".
-- [ ] Todas las opciones avanzadas se persisten y las que tienen mapeo real (cursor, aspect
+- [x] Todas las opciones avanzadas se persisten y las que tienen mapeo real (cursor, aspect
       ratio, HDR, modos de captura) alteran el pipeline.
-- [ ] Ajustes inválidos desde disco/IPC caen a defaults campo a campo (normalización extendida).
-- [ ] Gates verdes: typecheck · lint · tests.
+- [x] Ajustes inválidos desde disco/IPC caen a defaults campo a campo (normalización extendida).
+- [x] Gates verdes: typecheck · lint · tests.
