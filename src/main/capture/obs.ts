@@ -42,9 +42,10 @@ interface OsnProperties {
 interface OsnFilter extends OsnSource {
   release(): void;
 }
+// OJO: OsnInput NO expone `volume` a propósito. El setter `Input.volume` de osn está roto
+// (deja la fuente wasapi en silencio digital); el volumen va por FaderFactory.
 interface OsnInput extends OsnSource {
   muted: boolean;
-  volume: number;
   audioMixers: number;
   readonly properties: OsnProperties;
   update(settings: object): void;
@@ -72,6 +73,12 @@ interface OsnEncoder {
 interface OsnAudioTrack {
   bitrate: number;
   name: string;
+}
+interface OsnFader {
+  deflection: number;
+  attach(input: OsnInput): void;
+  detach(): void;
+  destroy(): void;
 }
 interface OutputSignal {
   type: string;
@@ -134,6 +141,7 @@ interface OsnModule {
     create(bitrate: number, name: string): OsnAudioTrack;
     setAtIndex(track: OsnAudioTrack, index: number): void;
   };
+  FaderFactory: { create(type: number): OsnFader };
   AdvancedRecordingFactory: {
     create(): OsnAdvancedRecording;
     destroy(r: OsnAdvancedRecording): void;
@@ -272,6 +280,99 @@ export function audioTrackPlan(separateTracks: boolean): {
   return { desktopMask: 0b001, micMask: 0b011, appsMask: 0b101 };
 }
 
+/** Display objetivo de la captura: tamaño y origen en píxeles físicos del escritorio virtual. */
+export interface DisplayInfo {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
+/** Item de la propiedad-lista `monitor_id` del source monitor_capture. */
+export interface MonitorIdItem {
+  name: string;
+  value: string | number;
+}
+
+// El nombre de cada item viene como "NOMBRE: WxH @ x,y" (más "(Monitor principal)" a veces).
+const MONITOR_ITEM_RE = /(\d+)x(\d+)\s*@\s*(-?\d+),\s*(-?\d+)/;
+
+/**
+ * Elige el device id (`monitor_id`) del display objetivo entre los items del source
+ * monitor_capture. La key legacy `monitor` (índice) NO sirve: libobs enumera los monitores
+ * en otro orden que Electron y esta build solo respeta `monitor_id`. Matching por prioridad:
+ * tamaño+posición exactos → posición sola → tamaño inequívoco → 'Auto' (default de libobs).
+ */
+export function resolveMonitorId(items: MonitorIdItem[], display: DisplayInfo): string {
+  const parsed = items.flatMap((item) => {
+    const m = MONITOR_ITEM_RE.exec(item.name);
+    if (!m || String(item.value) === 'Auto') return [];
+    return [
+      {
+        value: String(item.value),
+        width: Number(m[1]),
+        height: Number(m[2]),
+        x: Number(m[3]),
+        y: Number(m[4]),
+      },
+    ];
+  });
+
+  const exact = parsed.find(
+    (p) =>
+      p.width === display.width &&
+      p.height === display.height &&
+      p.x === display.x &&
+      p.y === display.y,
+  );
+  if (exact) return exact.value;
+
+  const byPosition = parsed.find((p) => p.x === display.x && p.y === display.y);
+  if (byPosition) return byPosition.value;
+
+  const bySize = parsed.filter((p) => p.width === display.width && p.height === display.height);
+  if (bySize.length === 1) return bySize[0].value;
+
+  return 'Auto';
+}
+
+/**
+ * Settings del loopback de escritorio (wasapi_output_capture). `use_device_timing: false`
+ * es obligatorio: con el reloj del dispositivo, las salidas HDMI/DP en reposo entregan
+ * timestamps atrasados y libobs descarta todo el audio ("audio is lagging ... at max
+ * audio buffering"); con false, libobs timestampa con el reloj del OS.
+ */
+export const DESKTOP_AUDIO_SETTINGS = { use_device_timing: false } as const;
+
+// Fader logarítmico (el del mixer de OBS). El volumen SIEMPRE va por fader: el setter
+// `Input.volume` de osn deja la fuente en silencio digital (causa raíz 3 del fix de audio).
+const FADER_TYPE_LOG = 2;
+
+/** Posición del fader (0..1) para un volumen de UI en porcentaje (0..100). */
+export function faderDeflection(volumePercent: number): number {
+  if (!Number.isFinite(volumePercent)) return 1;
+  return Math.min(100, Math.max(0, volumePercent)) / 100;
+}
+
+// Métodos del monitor_capture: 1 = duplicación DXGI, 2 = Windows Graphics Capture.
+const MONITOR_METHOD_WGC = 2;
+
+/**
+ * Settings del source de monitor (helper puro, testeable sin libobs).
+ * - Siempre método WGC: la duplicación DXGI entrega frames NEGROS sin error en setups
+ *   modernos (verificado en máquina real con HAGS activo); WGC captura bien y es la API
+ *   vigente desde Win10 1903 (Windows es la plataforma objetivo).
+ * - Sin la key legacy `monitor` (índice): esta build la ignora con `monitor_id` presente
+ *   y su orden de enumeración no coincide con el de Electron. El monitor va por device id
+ *   (`monitor_id`), resuelto aparte porque la propiedad-lista vive en el source ya creado.
+ */
+export function monitorCaptureSettings(settings: CaptureSettings): Record<string, unknown> {
+  return {
+    capture_cursor: settings.showMouseCursor,
+    method: MONITOR_METHOD_WGC,
+  };
+}
+
 /** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
 function processCaptureSettings(executable: string | null): object {
   // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
@@ -304,6 +405,8 @@ export class ObsCapture extends EventEmitter {
   /** Fuente del micrófono, para push-to-talk (mute sin rebuild). */
   private micSource: OsnInput | null = null;
   private micFilters: OsnFilter[] = [];
+  /** Faders de volumen (uno por fuente de audio); se sueltan en el teardown. */
+  private faders: OsnFader[] = [];
   /** Índices de pista AAC ya registrados en libobs (globales a la sesión, sin release). */
   private readonly audioTracksCreated = new Set<number>();
   private initialized = false;
@@ -376,7 +479,7 @@ export class ObsCapture extends EventEmitter {
   /** (Re)construye contexto, escena, fuentes y salidas según los ajustes. */
   buildPipeline(
     settings: CaptureSettings,
-    screen: { width: number; height: number },
+    screen: DisplayInfo,
     outputDir: string,
     gameExecutable: string | null,
   ): void {
@@ -407,8 +510,12 @@ export class ObsCapture extends EventEmitter {
     const monitor = osn.InputFactory.create(
       'monitor_capture',
       'gameclip-monitor',
-      this.monitorSettings(settings),
+      monitorCaptureSettings(settings),
     );
+    // El monitor se elige por device id: la propiedad-lista `monitor_id` solo existe en el
+    // source ya creado, así que se resuelve contra el display objetivo y se aplica en update.
+    const monitorId = resolveMonitorId(this.monitorIdItems(monitor), screen);
+    if (monitorId !== 'Auto') monitor.update({ monitor_id: monitorId });
     const monitorItem = scene.add(monitor);
     this.inputs = [monitor];
     const items: OsnSceneItem[] = [monitorItem];
@@ -525,6 +632,10 @@ export class ObsCapture extends EventEmitter {
         this.micSource?.removeFilter(filter);
         filter.release();
       }
+      for (const fader of this.faders) {
+        fader.detach();
+        fader.destroy();
+      }
       for (const input of this.inputs) input.release();
       this.scene?.release();
       this.context?.destroy();
@@ -540,6 +651,7 @@ export class ObsCapture extends EventEmitter {
     this.gameCaptureSource = null;
     this.micSource = null;
     this.micFilters = [];
+    this.faders = [];
     this.scene = null;
     this.context = null;
   }
@@ -579,7 +691,7 @@ export class ObsCapture extends EventEmitter {
     });
     // Con push-to-talk el mic arranca cerrado hasta que el manager reporte la tecla pulsada.
     mic.muted = !settings.micEnabled || settings.pttEnabled;
-    mic.volume = settings.micVolume / 100;
+    this.applyVolume(osn, mic, settings.micVolume);
     mic.audioMixers = plan.micMask;
     usedMask |= plan.micMask;
     this.inputs.push(mic);
@@ -599,8 +711,12 @@ export class ObsCapture extends EventEmitter {
     }
 
     if (settings.audioMode === 'desktop') {
-      const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio');
-      desktop.volume = settings.desktopAudioVolume / 100;
+      const desktop = osn.InputFactory.create(
+        'wasapi_output_capture',
+        'gameclip-audio',
+        DESKTOP_AUDIO_SETTINGS,
+      );
+      this.applyVolume(osn, desktop, settings.desktopAudioVolume);
       desktop.audioMixers = plan.desktopMask;
       usedMask |= plan.desktopMask;
       this.inputs.push(desktop);
@@ -631,7 +747,11 @@ export class ObsCapture extends EventEmitter {
       // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
       // no trae el source): con una parcial, sumar el escritorio duplicaría el audio.
       if (requested > 0 && added === 0) {
-        const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio-fallback');
+        const desktop = osn.InputFactory.create(
+          'wasapi_output_capture',
+          'gameclip-audio-fallback',
+          DESKTOP_AUDIO_SETTINGS,
+        );
         desktop.audioMixers = plan.desktopMask;
         usedMask |= plan.desktopMask;
         this.inputs.push(desktop);
@@ -650,6 +770,17 @@ export class ObsCapture extends EventEmitter {
       }
     }
     return usedMask;
+  }
+
+  /**
+   * Volumen de una fuente vía obs_fader. NUNCA usar el setter `Input.volume` de osn:
+   * silencia la fuente (verificado en b18 y b3; ver spec del fix de audio).
+   */
+  private applyVolume(osn: OsnModule, input: OsnInput, volumePercent: number): void {
+    const fader = osn.FaderFactory.create(FADER_TYPE_LOG);
+    fader.attach(input);
+    fader.deflection = faderDeflection(volumePercent);
+    this.faders.push(fader);
   }
 
   /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
@@ -682,22 +813,16 @@ export class ObsCapture extends EventEmitter {
         `gameclip-app-${executable ?? 'juego'}`,
         processCaptureSettings(executable),
       );
-      src.volume = volume / 100;
+      this.applyVolume(osn, src, volume);
       return src;
     } catch {
       return null;
     }
   }
 
-  private monitorSettings(settings: CaptureSettings): Record<string, unknown> {
-    const s: Record<string, unknown> = {
-      capture_cursor: settings.showMouseCursor,
-      // Índice del monitor a capturar (0 = primario). El lienzo base ya llega del display.
-      monitor: settings.screenMonitorIndex,
-    };
-    // Método 2 = Windows Graphics Capture (captura ventanas fuera de foco).
-    if (settings.advancedWindowCapture) s.method = 2;
-    return s;
+  /** Items de la propiedad-lista `monitor_id` del source de monitor (vacío si no existe). */
+  private monitorIdItems(source: OsnInput): MonitorIdItem[] {
+    return this.findProperty(source.properties, 'monitor_id')?.details?.items ?? [];
   }
 
   private gameSettings(

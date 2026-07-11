@@ -1,10 +1,185 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import {
+  DESKTOP_AUDIO_SETTINGS,
+  ObsCapture,
   audioTrackPlan,
   computePipelineSizes,
   encoderFamily,
   encoderRateControlSettings,
+  faderDeflection,
+  monitorCaptureSettings,
+  resolveMonitorId,
 } from '../capture/obs';
+
+// Items reales de la propiedad `monitor_id` en la máquina del bug (probe 2026-07-11).
+const REAL_ITEMS = [
+  { name: 'Auto', value: 'Auto' },
+  {
+    name: 'ASUS VG24VQE: 1080x1920 @ -1080,-208',
+    value: '\\\\?\\DISPLAY#AUS2406#5&1584ecd8&7&UID4357#{e6f07b5f}',
+  },
+  {
+    name: 'MO27Q28G: 2560x1440 @ 0,0 (Monitor principal)',
+    value: '\\\\?\\DISPLAY#GBT273C#5&1584ecd8&7&UID4353#{e6f07b5f}',
+  },
+];
+
+describe('resolveMonitorId', () => {
+  it('regresión: elige el display por tamaño+posición (el bug grababa el monitor equivocado)', () => {
+    // El owner eligió el display de Electron índice 1 (MO27Q28G); con la key legacy
+    // `monitor` libobs capturaba el ASUS vertical. El id resuelto debe ser el del MO27Q28G.
+    expect(resolveMonitorId(REAL_ITEMS, { width: 2560, height: 1440, x: 0, y: 0 })).toBe(
+      '\\\\?\\DISPLAY#GBT273C#5&1584ecd8&7&UID4353#{e6f07b5f}',
+    );
+    expect(resolveMonitorId(REAL_ITEMS, { width: 1080, height: 1920, x: -1080, y: -208 })).toBe(
+      '\\\\?\\DISPLAY#AUS2406#5&1584ecd8&7&UID4357#{e6f07b5f}',
+    );
+  });
+
+  it('sin match exacto, la posición sola decide (tamaño reportado con DPI raro)', () => {
+    expect(resolveMonitorId(REAL_ITEMS, { width: 1728, height: 3072, x: -1080, y: -208 })).toBe(
+      '\\\\?\\DISPLAY#AUS2406#5&1584ecd8&7&UID4357#{e6f07b5f}',
+    );
+  });
+
+  it('sin match de posición, el tamaño decide solo si es inequívoco', () => {
+    expect(resolveMonitorId(REAL_ITEMS, { width: 2560, height: 1440, x: 999, y: 999 })).toBe(
+      '\\\\?\\DISPLAY#GBT273C#5&1584ecd8&7&UID4353#{e6f07b5f}',
+    );
+    // Dos monitores idénticos en posiciones que no cuadran: ambiguo → Auto.
+    const gemelos = [
+      { name: 'X: 1920x1080 @ 0,0', value: 'id-a' },
+      { name: 'X: 1920x1080 @ 1920,0', value: 'id-b' },
+    ];
+    expect(resolveMonitorId(gemelos, { width: 1920, height: 1080, x: 5000, y: 0 })).toBe('Auto');
+  });
+
+  it('sin items o con nombres no parseables cae a Auto (nunca peor que hoy)', () => {
+    expect(resolveMonitorId([], { width: 2560, height: 1440, x: 0, y: 0 })).toBe('Auto');
+    expect(
+      resolveMonitorId([{ name: 'Auto', value: 'Auto' }, { name: 'monitor raro', value: 'id-x' }], {
+        width: 2560,
+        height: 1440,
+        x: 0,
+        y: 0,
+      }),
+    ).toBe('Auto');
+  });
+});
+
+describe('monitorCaptureSettings', () => {
+  it('regresión: método WGC siempre y sin la key legacy `monitor`', () => {
+    // DXGI entrega frames negros sin error en setups modernos (HAGS); y la key `monitor`
+    // indexa con la enumeración de libobs (≠ Electron) — el monitor va por monitor_id.
+    const s = monitorCaptureSettings(DEFAULT_CAPTURE_SETTINGS);
+    expect(s).toMatchObject({ method: 2 });
+    expect(s).not.toHaveProperty('monitor');
+  });
+
+  it('respeta el ajuste de cursor', () => {
+    expect(
+      monitorCaptureSettings({ ...DEFAULT_CAPTURE_SETTINGS, showMouseCursor: true }),
+    ).toMatchObject({ capture_cursor: true });
+  });
+});
+
+describe('DESKTOP_AUDIO_SETTINGS', () => {
+  it('regresión: el loopback de escritorio usa el reloj del OS (use_device_timing false)', () => {
+    // Con el reloj del dispositivo, las salidas HDMI/DP en reposo acumulan lag y libobs
+    // descarta TODO el audio ("audio is lagging ... at max audio buffering").
+    expect(DESKTOP_AUDIO_SETTINGS).toMatchObject({ use_device_timing: false });
+  });
+});
+
+// Fake mínimo de osn para auditar cómo buildAudioSources configura las fuentes de audio.
+function fakeOsnAudio() {
+  const volumeSets: { name: string; value: number }[] = [];
+  const faders: { attachedTo: string | null; deflection: number }[] = [];
+  const makeInput = (name: string) => {
+    const input = {
+      name,
+      muted: false,
+      audioMixers: 0,
+      release() {},
+      update() {},
+      addFilter() {},
+      removeFilter() {},
+      properties: { first: () => null, get: () => null, count: () => 0 },
+    };
+    // El setter volume de osn está roto (silencia la fuente): el fake lo registra para
+    // poder afirmar que NADIE lo llama.
+    Object.defineProperty(input, 'volume', {
+      set(value: number) {
+        volumeSets.push({ name, value });
+      },
+      get: () => 1,
+    });
+    return input;
+  };
+  const osn = {
+    InputFactory: { create: (_id: string, name: string) => makeInput(name) },
+    FilterFactory: { create: () => ({ release() {} }) },
+    AudioTrackFactory: {
+      create: () => ({ bitrate: 160, name: '' }),
+      setAtIndex: () => {},
+    },
+    FaderFactory: {
+      create: () => {
+        const fader = {
+          attachedTo: null as string | null,
+          deflection: 0,
+          attach(input: { name: string }) {
+            this.attachedTo = input.name;
+          },
+          detach() {},
+          destroy() {},
+        };
+        faders.push(fader);
+        return fader;
+      },
+    },
+  };
+  return { osn, volumeSets, faders };
+}
+
+type BuildAudioSources = {
+  buildAudioSources(
+    osn: unknown,
+    settings: unknown,
+    gameExecutable: string | null,
+    setSource: (src: unknown) => void,
+  ): number;
+};
+
+describe('volumen por fader', () => {
+  it('regresión: buildAudioSources nunca usa el setter volume (silencia la fuente) y ata un fader por fuente', () => {
+    const { osn, volumeSets, faders } = fakeOsnAudio();
+    const capture = new ObsCapture() as unknown as BuildAudioSources;
+    const mask = capture.buildAudioSources(
+      osn,
+      { ...DEFAULT_CAPTURE_SETTINGS, separateAudioTracks: false },
+      null,
+      () => {},
+    );
+    // El bug: volume=1 (y cualquier valor) deja la fuente wasapi en silencio digital.
+    expect(volumeSets).toEqual([]);
+    // Volumen 100 % → deflection 1 (0 dB), un fader por fuente (mic + escritorio).
+    expect(faders.map((f) => [f.attachedTo, f.deflection])).toEqual([
+      ['gameclip-mic', 1],
+      ['gameclip-audio', 1],
+    ]);
+    expect(mask).toBe(0b001);
+  });
+
+  it('faderDeflection clampa 0..100 → 0..1 y cae a 1 con valores no finitos', () => {
+    expect(faderDeflection(100)).toBe(1);
+    expect(faderDeflection(80)).toBe(0.8);
+    expect(faderDeflection(0)).toBe(0);
+    expect(faderDeflection(250)).toBe(1);
+    expect(faderDeflection(Number.NaN)).toBe(1);
+  });
+});
 
 describe('audioTrackPlan', () => {
   it('sin tracks separados: todo a la pista 1', () => {

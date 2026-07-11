@@ -10,6 +10,7 @@ import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
 import { ObsCapture } from './obs';
+import type { DisplayInfo } from './obs';
 import type { SettingsStore } from './settings-store';
 
 /**
@@ -31,9 +32,10 @@ export interface CaptureEnvironment {
   /** Carpeta de salida por defecto (Videos/GameClip). */
   defaultOutputDir: string;
   appVersion: string;
-  primaryDisplay: { width: number; height: number };
-  /** Tamaño (en píxeles reales) del display de un índice, o null si no existe. */
-  displayByIndex?: (index: number) => { width: number; height: number } | null;
+  /** Display primario: tamaño y origen en píxeles físicos (para resolver el monitor_id). */
+  primaryDisplay: DisplayInfo;
+  /** Display de un índice (tamaño+origen en píxeles físicos), o null si no existe. */
+  displayByIndex?: (index: number) => DisplayInfo | null;
 }
 
 /** Payload del evento 'clip-saved'. */
@@ -52,7 +54,7 @@ export interface CaptureBackend {
   getAudioDevices(): AudioDeviceInfo[];
   buildPipeline(
     settings: CaptureSettings,
-    screen: { width: number; height: number },
+    screen: DisplayInfo,
     outputDir: string,
     gameExecutable: string | null,
   ): void;

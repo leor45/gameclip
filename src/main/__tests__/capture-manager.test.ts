@@ -32,7 +32,7 @@ class FakeObs implements CaptureBackend {
   }
   buildPipeline(
     _settings: CaptureSettings,
-    _screen: { width: number; height: number },
+    _screen: { width: number; height: number; x: number; y: number },
     _outputDir: string,
     gameExecutable: string | null,
   ): void {
@@ -105,7 +105,7 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
         obsDataPath: join(dir, 'obs'),
         defaultOutputDir: join(dir, 'salida'),
         appVersion: '0.0.0-test',
-        primaryDisplay: { width: 1920, height: 1080 },
+        primaryDisplay: { width: 1920, height: 1080, x: 0, y: 0 },
       },
       obs,
     );
