@@ -29,6 +29,7 @@ function Shell() {
             <Route path="/" element={<Navigate to="/biblioteca" replace />} />
             <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/editor" element={<Editor />} />
+            <Route path="/editor/:clipId" element={<Editor />} />
             <Route path="/ajustes" element={<Ajustes />} />
           </Routes>
         </main>

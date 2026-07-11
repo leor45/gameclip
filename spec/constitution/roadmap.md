@@ -58,11 +58,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > duración: video → canvas en el renderer, sin ffmpeg. Juego = ventana activa al guardar
 > (best-effort); la detección seria llega en la Fase 6.
 
-## Fase 5 · Editor de clips — ⏳ pendiente
+## Fase 5 · Editor de clips — ✅ entregado (base)
 
-- [ ] Recorte (trim) con vista previa.
-- [ ] Exportación (calidad/formato/GIF) y compartir a portapapeles/archivo.
-- [ ] Resto de herramientas del editor de las apps de clips, de forma incremental.
+- [x] Recorte (trim) con vista previa.
+- [x] Exportación (calidad/formato/GIF) y compartir a portapapeles/archivo.
+- [ ] Resto de herramientas del editor de las apps de clips, de forma incremental (specs propios).
+
+> Exportación con ffmpeg (`ffmpeg-static`) en el main: MP4 (libx264, CRF 18/23/28) y GIF
+> (palettegen/paletteuse), `-ss` antes de `-i` (corte exacto al reencodear), progreso por
+> `out_time_ms`, cancelable. Portapapeles de archivos vía PowerShell `Set-Clipboard`
+> (Electron no expone CF_HDROP). Verificado con recorte real: MP4 2.50 s exactos y GIF.
 
 ## Fase 6 · Pulido de paridad — ⏳ pendiente
 

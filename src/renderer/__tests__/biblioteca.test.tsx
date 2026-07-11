@@ -146,6 +146,17 @@ describe('Biblioteca — acciones', () => {
     expect(mock().library.remove).not.toHaveBeenCalled();
   });
 
+  it('el botón Editar navega al editor del clip', async () => {
+    const user = userEvent.setup();
+    const clip = crearClip();
+    mock().library.list.mockResolvedValue([clip]);
+    render(<Biblioteca />);
+
+    await user.click(await screen.findByRole('button', { name: 'Editar' }));
+
+    expect(window.location.hash).toBe(`#/editor/${clip.id}`);
+  });
+
   it('abrir carpeta llama a openFolder', async () => {
     const user = userEvent.setup();
     const clip = crearClip();

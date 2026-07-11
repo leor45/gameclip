@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IpcChannel, IpcEvent } from '@shared/ipc';
-import type { AppVersionInfo, CaptureApi, GameclipApi, LibraryApi } from '@shared/ipc';
+import type { AppVersionInfo, CaptureApi, ExporterApi, GameclipApi, LibraryApi } from '@shared/ipc';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
+import type { ExportProgress, ExportRequest } from '@shared/export';
 import type { ClipPatch, ClipsQuery } from '@shared/library';
 
 const capture: CaptureApi = {
@@ -22,6 +23,7 @@ const capture: CaptureApi = {
 
 const library: LibraryApi = {
   list: (query?: ClipsQuery) => ipcRenderer.invoke(IpcChannel.LibraryList, query ?? {}),
+  get: (id: number) => ipcRenderer.invoke(IpcChannel.LibraryGet, { id }),
   games: () => ipcRenderer.invoke(IpcChannel.LibraryGames),
   update: (id: number, patch: ClipPatch) =>
     ipcRenderer.invoke(IpcChannel.LibraryUpdate, { id, patch }),
@@ -36,10 +38,23 @@ const library: LibraryApi = {
   },
 };
 
+const exporter: ExporterApi = {
+  run: (request: ExportRequest) => ipcRenderer.invoke(IpcChannel.ExportRun, request),
+  cancel: () => ipcRenderer.invoke(IpcChannel.ExportCancel),
+  copyLast: () => ipcRenderer.invoke(IpcChannel.ExportCopyLast),
+  showLast: () => ipcRenderer.invoke(IpcChannel.ExportShowLast),
+  onProgress: (listener: (progress: ExportProgress) => void) => {
+    const wrapped = (_event: unknown, progress: ExportProgress) => listener(progress);
+    ipcRenderer.on(IpcEvent.ExportProgress, wrapped);
+    return () => ipcRenderer.removeListener(IpcEvent.ExportProgress, wrapped);
+  },
+};
+
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
   capture,
   library,
+  exporter,
 };
 
 contextBridge.exposeInMainWorld('gameclip', api);
