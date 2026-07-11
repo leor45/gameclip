@@ -126,7 +126,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > deshabilitadas, y arranque con la aceleración desactivada. PTT emite `held` desde el hook
 > de bajo nivel y el manager recalcula el mute tras cada rebuild.
 
-## Fase 9 · Configuración de grabación y escritorio — ✅ entregado (pendiente de merge)
+## Fase 9 · Configuración de grabación y escritorio — ✅ entregado
 
 - [x] Modos de grabación: manual (hotkeys) · auto (graba la sesión completa del juego,
       corta al cerrarse o al cambiar de juego) · apagado (sin buffer ni grabaciones).
