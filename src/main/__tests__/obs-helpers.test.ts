@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import {
   DESKTOP_AUDIO_SETTINGS,
+  ObsCapture,
   audioTrackPlan,
   computePipelineSizes,
   encoderFamily,
   encoderRateControlSettings,
+  faderDeflection,
   monitorCaptureSettings,
   resolveMonitorId,
 } from '../capture/obs';
@@ -87,6 +89,95 @@ describe('DESKTOP_AUDIO_SETTINGS', () => {
     // Con el reloj del dispositivo, las salidas HDMI/DP en reposo acumulan lag y libobs
     // descarta TODO el audio ("audio is lagging ... at max audio buffering").
     expect(DESKTOP_AUDIO_SETTINGS).toMatchObject({ use_device_timing: false });
+  });
+});
+
+// Fake mínimo de osn para auditar cómo buildAudioSources configura las fuentes de audio.
+function fakeOsnAudio() {
+  const volumeSets: { name: string; value: number }[] = [];
+  const faders: { attachedTo: string | null; deflection: number }[] = [];
+  const makeInput = (name: string) => {
+    const input = {
+      name,
+      muted: false,
+      audioMixers: 0,
+      release() {},
+      update() {},
+      addFilter() {},
+      removeFilter() {},
+      properties: { first: () => null, get: () => null, count: () => 0 },
+    };
+    // El setter volume de osn está roto (silencia la fuente): el fake lo registra para
+    // poder afirmar que NADIE lo llama.
+    Object.defineProperty(input, 'volume', {
+      set(value: number) {
+        volumeSets.push({ name, value });
+      },
+      get: () => 1,
+    });
+    return input;
+  };
+  const osn = {
+    InputFactory: { create: (_id: string, name: string) => makeInput(name) },
+    FilterFactory: { create: () => ({ release() {} }) },
+    AudioTrackFactory: {
+      create: () => ({ bitrate: 160, name: '' }),
+      setAtIndex: () => {},
+    },
+    FaderFactory: {
+      create: () => {
+        const fader = {
+          attachedTo: null as string | null,
+          deflection: 0,
+          attach(input: { name: string }) {
+            this.attachedTo = input.name;
+          },
+          detach() {},
+          destroy() {},
+        };
+        faders.push(fader);
+        return fader;
+      },
+    },
+  };
+  return { osn, volumeSets, faders };
+}
+
+type BuildAudioSources = {
+  buildAudioSources(
+    osn: unknown,
+    settings: unknown,
+    gameExecutable: string | null,
+    setSource: (src: unknown) => void,
+  ): number;
+};
+
+describe('volumen por fader', () => {
+  it('regresión: buildAudioSources nunca usa el setter volume (silencia la fuente) y ata un fader por fuente', () => {
+    const { osn, volumeSets, faders } = fakeOsnAudio();
+    const capture = new ObsCapture() as unknown as BuildAudioSources;
+    const mask = capture.buildAudioSources(
+      osn,
+      { ...DEFAULT_CAPTURE_SETTINGS, separateAudioTracks: false },
+      null,
+      () => {},
+    );
+    // El bug: volume=1 (y cualquier valor) deja la fuente wasapi en silencio digital.
+    expect(volumeSets).toEqual([]);
+    // Volumen 100 % → deflection 1 (0 dB), un fader por fuente (mic + escritorio).
+    expect(faders.map((f) => [f.attachedTo, f.deflection])).toEqual([
+      ['gameclip-mic', 1],
+      ['gameclip-audio', 1],
+    ]);
+    expect(mask).toBe(0b001);
+  });
+
+  it('faderDeflection clampa 0..100 → 0..1 y cae a 1 con valores no finitos', () => {
+    expect(faderDeflection(100)).toBe(1);
+    expect(faderDeflection(80)).toBe(0.8);
+    expect(faderDeflection(0)).toBe(0);
+    expect(faderDeflection(250)).toBe(1);
+    expect(faderDeflection(Number.NaN)).toBe(1);
   });
 });
 

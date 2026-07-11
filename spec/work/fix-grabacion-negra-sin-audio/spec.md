@@ -38,39 +38,57 @@ reposo), así que los timestamps llegan ~2,5 min atrás y libobs **descarta todo
 Con `use_device_timing: false` libobs timestampa con el reloj del OS y el audio entra a la
 mezcla. Introducido en la Fase 3 junto con la fuente.
 
-**Causa raíz 3 — audio aún mudo tras el fix 2: interferencia externa con libobs
-(diagnóstico 2026-07-11 tarde, tras el reporte del owner).** Con los fixes 1/1b/2 el video
-quedó perfecto pero el audio siguió en silencio digital. Matriz de evidencia en esta máquina
-(Windows 11 25H2, build 26200.8037):
+**Causa raíz 3 — audio aún mudo tras el fix 2: el setter `Input.volume` de osn silencia
+la fuente (diagnóstico cerrado 2026-07-11 tarde-noche, por bisect con repros mínimos).**
+Con los fixes 1/1b/2 el video quedó perfecto pero el audio siguió en silencio digital.
+El bisect definitivo (scripts `repro*.js` fuera de la app, tono en loop verificado con el
+medidor del endpoint, `volumedetect` sobre cada corrida) aisló la línea culpable: **asignar
+`input.volume` a una fuente de audio la deja en silencio digital**. El pipeline de la app
+setea `desktop.volume = desktopAudioVolume/100 = 100/100 = 1` desde la Fase 7 (6a2602c,
+que introdujo los sliders de volumen) — ahí murió el audio de escritorio, no antes.
 
-| Prueba | Resultado |
+Matriz del bisect (misma máquina, mismo tono, mismo dispositivo default MO27Q28G, corridas
+consecutivas con AdvancedRecording + pista 1, osn **b18** — la build de la app):
+
+| Variante | Resultado |
 |---|---|
-| GameClip: loopback de escritorio (MO27Q28G, C3-1 USB, WG1 BT) con tono sonando y medidor del endpoint en señal | **silencio −91 dB** (paquetes llegan: `adding N ms of audio buffering`) |
-| GameClip: captura por proceso (`wasapi_process_output_capture` → powershell.exe con tono) | **silencio −91 dB** |
-| GameClip: micrófono (`wasapi_input_capture`) | **funciona** (14:19: tono por altavoces a −22.6 dB) |
-| **OBS Studio 31.1.1** (mismo equipo, mismo device default, tono sonando) | **silencio −91 dB** |
-| WASAPI **crudo** (C#, mismo device): polling · event-driven · flags exactos de libobs (`LOOPBACK\|EVENTCALLBACK\|AUTOCONVERTPCM\|SRC_DEFAULT_QUALITY`, 44.1 k y 48 k) · incluso con el proceso renombrado `obs64.exe` | **captura señal SIEMPRE** (picos 0.09–0.17) |
+| Sin tocar `volume` | **captura −14.6 dB** ✔ |
+| `volume = 1` | silencio −91 dB |
+| `volume = 0.8` | silencio −91 dB |
+| `audioMixers = 1` (sin volume) | **captura −14.2 dB** ✔ |
+| Volumen vía `FaderFactory` (log), deflection 1 | **captura −14.4 dB, 0 dB de fader** ✔ |
+| Volumen vía `FaderFactory` (log), deflection 0.5 | **captura −34.9 dB (−18.7 dB aplicados)** ✔ |
 
-Conclusión: el loopback de Windows está sano; lo que graba ceros es **la familia libobs**
-(OBS Studio y osn por igual). Cronología del gatillo: OBS capturaba bien el 2026-07-05;
-el **2026-07-07 se instaló la NVIDIA App 11.0.8 + ShadowPlay + NVIDIA Virtual Audio 4.65**
-(driver de tap de audio del sistema); ningún KB de Windows desde marzo. Todo apunta a que
-ese stack interfiere con la captura de libobs (los `obs64.exe` reales crean contexto D3D11,
-donde inyectan los hooks de NVIDIA; mi `obs64.exe` falso sin D3D no fue afectado). Verificarlo
-requiere acciones con permisos de usuario/admin (deshabilitar Instant Replay/overlay en la
-NVIDIA App o el dispositivo "NVIDIA Virtual Audio Device (Wave Extensible)" y reiniciar) —
-fuera del alcance de esta sesión sin elevación. Los fixes 1/1b/2 quedan correctos y
-necesarios; el 2 se verificó E2E una vez (14:19) antes de que la interferencia se
-manifestara de forma consistente.
+En la build b3 (probada por descarte de regresión de build) el setter también está roto,
+con síntomas distintos (1/2/0.999999 → silencio; 0.8 → boost hasta clipping): el bug es de
+osn/IPC, no de una build puntual. Esto explica **toda** la matriz anterior sin excepciones:
+el mic de la app funcionaba porque el owner tenía `micVolume: 80` → `0.8`… en b18 también
+silencia, así que la lectura de 14:19 (−22.6 dB) fue el tono colándose por el **micrófono
+físico** hacia la pista 1 (mezcla completa), no el loopback. La captura por proceso
+(`wasapi_process_output_capture`) también setea `volume` → también muda. Y las grabaciones
+de las Fases 3–6 tenían audio de verdad (loopback de escritorio + Discord, confirmado por
+el owner) porque el pipeline Simple de la Fase 3 **no tocaba `volume`**.
+
+Las hipótesis intermedias quedaron **refutadas por el repro controlado**: no es interferencia
+del stack NVIDIA (osn captura perfecto en esta máquina sin el setter, con la NVIDIA App
+instalada), no es la escena ni el monitor WGC ni el canal de salida (la correlación del
+bisect anterior venía de que esos scripts seteaban `volume = 1` en todas las variantes), y
+no es el dispositivo. El silencio de OBS Studio 31.1.1 del 2026-07-11 queda como anomalía
+aparte a re-verificar manualmente (probable test contaminado); no bloquea este fix.
+
+**Fix:** no usar NUNCA el setter `volume` de osn. El volumen de cada fuente va por
+`osn.FaderFactory` (fader logarítmico, el mismo mecanismo del mixer de OBS): `attach(input)`
++ `deflection = volumen/100`. Se elimina `volume` del tipado `OsnInput` para que el compilador
+prohíba reintroducirlo.
 
 **Hallazgo adicional (documentado, fuera de alcance):** en modo de audio `apps` sin juego
 corriendo, la única fuente es la captura por proceso "dormida" (window vacío) → una
 grabación de escritorio en ese modo queda estructuralmente muda (así salió el clip
 13-45-56). Comportamiento por diseño de la Fase 8; si molesta, lleva su propio spec.
 
-**Mejora futura anotada (spec propio si se confirma la causa 3):** selector de dispositivo
-para el audio de escritorio (hoy captura el default del sistema; con varios dispositivos —
-auriculares WG1, monitores — conviene elegir el que se escucha, como hacen OBS y las apps de clips).
+**Mejora futura anotada (spec propio):** selector de dispositivo para el audio de
+escritorio (hoy captura el default del sistema; con varios dispositivos — auriculares WG1,
+monitores — conviene elegir el que se escucha, como hacen OBS y las apps de clips).
 
 ## Alcance
 
@@ -82,6 +100,11 @@ auriculares WG1, monitores — conviene elegir el que se escucha, como hacen OBS
   nativo), no solo `{width, height}`.
 - `use_device_timing: false` en las fuentes de audio de escritorio (`wasapi_output_capture`,
   incluida la de fallback).
+- Volumen por `FaderFactory` en TODAS las fuentes de audio (mic, escritorio, capturas por
+  proceso); quitar todo uso del setter `volume` y sacarlo del tipado `OsnInput`; faders con
+  detach/destroy en el teardown.
+- Quitar los probes temporales del diagnóstico (volmeter en `obs.ts`,
+  `GAMECLIP_DEBUG_NO_BUFFER` en `manager.ts`).
 - Método WGC fijo para `monitor_capture` (helper puro `monitorCaptureSettings()`); DXGI
   queda descartado por entregar frames negros sin error.
 - Verificación E2E en máquina real: grabar con contenido visible y audio sonando; el clip
@@ -98,14 +121,18 @@ auriculares WG1, monitores — conviene elegir el que se escucha, como hacen OBS
 
 Observables y verificables uno a uno:
 
-- [ ] Test de regresión (rojo→verde): `resolveMonitorId()` elige el device id cuyo tamaño y
+- [x] Test de regresión (rojo→verde): `resolveMonitorId()` elige el device id cuyo tamaño y
       posición coinciden con el display objetivo (datos reales de esta máquina: ASUS
       1080x1920 vs MO27Q28G 2560x1440) y cae a `Auto` si no hay match.
-- [ ] Test de regresión (rojo→verde): los settings del audio de escritorio llevan
+- [x] Test de regresión (rojo→verde): los settings del audio de escritorio llevan
       `use_device_timing: false` (fuente principal y fallback).
-- [ ] `monitor_capture` recibe `monitor_id` resuelto (visible en el log de libobs:
+- [x] Test de regresión (rojo→verde): `buildAudioSources` no toca el setter `volume` de
+      ninguna fuente y ata un fader por fuente de audio con la deflection correcta
+      (volumen 100 → 1.0; el setter roto silenciaba la fuente).
+- [x] `monitor_capture` recibe `monitor_id` resuelto (visible en el log de libobs:
       `setting_id` ya no es `Auto` y `display` es el monitor elegido).
-- [ ] E2E en máquina real: clip grabado con el monitor seleccionado mostrando contenido y
+- [x] E2E en máquina real: clip grabado con el monitor seleccionado mostrando contenido y
       audio reproduciéndose → `blackdetect` no marca todo el clip y `volumedetect` > −60 dB
-      en la pista 1.
-- [ ] Suite completa verde (typecheck · lint · tests).
+      en la pista 1. (2026-07-11 18:01, selftest con mic desactivado para aislar el
+      loopback: pista 1 a −12.6 dB max / −19.9 dB media, `blackdetect` 0 intervalos.)
+- [x] Suite completa verde (typecheck · lint · tests — 245 tests, 33 archivos).

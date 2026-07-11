@@ -12,6 +12,15 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] 5. Retirar el probe temporal (`debugMonitorProperties`, modo `probe-monitors`).
 - [x] 6. Método WGC fijo en `monitorCaptureSettings()` (causa 1b, descubierta en la E2E:
        DXGI entrega frames negros sin error en esta máquina).
+- [x] 7. Bisect con repros mínimos fuera de la app (causa raíz 3 real): el setter
+       `Input.volume` de osn silencia la fuente; hipótesis NVIDIA/escena/canal/dispositivo
+       refutadas por repro controlado (matriz en el spec).
+- [x] 8. Test de regresión (rojo): `buildAudioSources` no usa el setter `volume` y ata un
+       fader por fuente con la deflection correcta.
+- [x] 9. Volumen por `FaderFactory` en mic, escritorio y capturas por proceso; `volume`
+       eliminado del tipado `OsnInput`; faders con detach/destroy en el teardown (verde).
+- [x] 10. Retirar los probes temporales del diagnóstico (volmeter en `obs.ts`,
+       `GAMECLIP_DEBUG_NO_BUFFER` en `manager.ts`).
 
 ## Tests unitarios (obligatorios)
 
@@ -25,6 +34,9 @@ Camino feliz **y** casos borde. Si es un Fix: el test de regresión va primero (
 - [x] Settings de `wasapi_output_capture` (principal y fallback) llevan
        `use_device_timing: false`.
 - [x] `monitorCaptureSettings`: método WGC siempre y sin la key legacy `monitor`.
+- [x] `buildAudioSources` (fake de osn): cero llamadas al setter `volume`; un fader por
+       fuente (mic + escritorio) con deflection 1 al 100 %.
+- [x] `faderDeflection`: clamp 0..100 → 0..1 y valores no finitos → 1.
 
 ## Verificación (gates)
 

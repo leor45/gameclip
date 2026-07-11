@@ -42,9 +42,10 @@ interface OsnProperties {
 interface OsnFilter extends OsnSource {
   release(): void;
 }
+// OJO: OsnInput NO expone `volume` a propósito. El setter `Input.volume` de osn está roto
+// (deja la fuente wasapi en silencio digital); el volumen va por FaderFactory.
 interface OsnInput extends OsnSource {
   muted: boolean;
-  volume: number;
   audioMixers: number;
   readonly properties: OsnProperties;
   update(settings: object): void;
@@ -72,6 +73,12 @@ interface OsnEncoder {
 interface OsnAudioTrack {
   bitrate: number;
   name: string;
+}
+interface OsnFader {
+  deflection: number;
+  attach(input: OsnInput): void;
+  detach(): void;
+  destroy(): void;
 }
 interface OutputSignal {
   type: string;
@@ -134,6 +141,7 @@ interface OsnModule {
     create(bitrate: number, name: string): OsnAudioTrack;
     setAtIndex(track: OsnAudioTrack, index: number): void;
   };
+  FaderFactory: { create(type: number): OsnFader };
   AdvancedRecordingFactory: {
     create(): OsnAdvancedRecording;
     destroy(r: OsnAdvancedRecording): void;
@@ -336,6 +344,16 @@ export function resolveMonitorId(items: MonitorIdItem[], display: DisplayInfo): 
  */
 export const DESKTOP_AUDIO_SETTINGS = { use_device_timing: false } as const;
 
+// Fader logarítmico (el del mixer de OBS). El volumen SIEMPRE va por fader: el setter
+// `Input.volume` de osn deja la fuente en silencio digital (causa raíz 3 del fix de audio).
+const FADER_TYPE_LOG = 2;
+
+/** Posición del fader (0..1) para un volumen de UI en porcentaje (0..100). */
+export function faderDeflection(volumePercent: number): number {
+  if (!Number.isFinite(volumePercent)) return 1;
+  return Math.min(100, Math.max(0, volumePercent)) / 100;
+}
+
 // Métodos del monitor_capture: 1 = duplicación DXGI, 2 = Windows Graphics Capture.
 const MONITOR_METHOD_WGC = 2;
 
@@ -387,6 +405,8 @@ export class ObsCapture extends EventEmitter {
   /** Fuente del micrófono, para push-to-talk (mute sin rebuild). */
   private micSource: OsnInput | null = null;
   private micFilters: OsnFilter[] = [];
+  /** Faders de volumen (uno por fuente de audio); se sueltan en el teardown. */
+  private faders: OsnFader[] = [];
   /** Índices de pista AAC ya registrados en libobs (globales a la sesión, sin release). */
   private readonly audioTracksCreated = new Set<number>();
   private initialized = false;
@@ -612,6 +632,10 @@ export class ObsCapture extends EventEmitter {
         this.micSource?.removeFilter(filter);
         filter.release();
       }
+      for (const fader of this.faders) {
+        fader.detach();
+        fader.destroy();
+      }
       for (const input of this.inputs) input.release();
       this.scene?.release();
       this.context?.destroy();
@@ -627,6 +651,7 @@ export class ObsCapture extends EventEmitter {
     this.gameCaptureSource = null;
     this.micSource = null;
     this.micFilters = [];
+    this.faders = [];
     this.scene = null;
     this.context = null;
   }
@@ -666,7 +691,7 @@ export class ObsCapture extends EventEmitter {
     });
     // Con push-to-talk el mic arranca cerrado hasta que el manager reporte la tecla pulsada.
     mic.muted = !settings.micEnabled || settings.pttEnabled;
-    mic.volume = settings.micVolume / 100;
+    this.applyVolume(osn, mic, settings.micVolume);
     mic.audioMixers = plan.micMask;
     usedMask |= plan.micMask;
     this.inputs.push(mic);
@@ -691,7 +716,7 @@ export class ObsCapture extends EventEmitter {
         'gameclip-audio',
         DESKTOP_AUDIO_SETTINGS,
       );
-      desktop.volume = settings.desktopAudioVolume / 100;
+      this.applyVolume(osn, desktop, settings.desktopAudioVolume);
       desktop.audioMixers = plan.desktopMask;
       usedMask |= plan.desktopMask;
       this.inputs.push(desktop);
@@ -747,6 +772,17 @@ export class ObsCapture extends EventEmitter {
     return usedMask;
   }
 
+  /**
+   * Volumen de una fuente vía obs_fader. NUNCA usar el setter `Input.volume` de osn:
+   * silencia la fuente (verificado en b18 y b3; ver spec del fix de audio).
+   */
+  private applyVolume(osn: OsnModule, input: OsnInput, volumePercent: number): void {
+    const fader = osn.FaderFactory.create(FADER_TYPE_LOG);
+    fader.attach(input);
+    fader.deflection = faderDeflection(volumePercent);
+    this.faders.push(fader);
+  }
+
   /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void {
     this.gameAudioSource?.update(processCaptureSettings(executable));
@@ -777,7 +813,7 @@ export class ObsCapture extends EventEmitter {
         `gameclip-app-${executable ?? 'juego'}`,
         processCaptureSettings(executable),
       );
-      src.volume = volume / 100;
+      this.applyVolume(osn, src, volume);
       return src;
     } catch {
       return null;

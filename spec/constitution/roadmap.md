@@ -46,11 +46,14 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > UI: `GAMECLIP_SELFTEST=recording npm run dev`. Verificado en máquina real: clip retroactivo
 > F8 de 45 s H.264 1440p60 + AAC y grabación manual.
 > Fix post-entrega (2026-07-11, `fix/grabacion-negra-sin-audio`): TODA grabación salía en
-> negro y muda. Tres causas: la key legacy `monitor` (índice de Electron) no la respeta esta
-> build — el monitor va por `monitor_id` (device id, resuelto por tamaño+posición del
-> display); DXGI entrega frames negros sin error (HAGS) — método WGC fijo; y el loopback de
-> escritorio con `use_device_timing` descartaba todo el audio por lag — reloj del OS.
-> Verificado E2E con ffmpeg: blackdetect limpio y tono capturado en la pista 1.
+> negro y muda. Cuatro causas: la key legacy `monitor` (índice de Electron) no la respeta
+> esta build — el monitor va por `monitor_id` (device id, resuelto por tamaño+posición del
+> display); DXGI entrega frames negros sin error (HAGS) — método WGC fijo; el loopback de
+> escritorio con `use_device_timing` descartaba audio por lag — reloj del OS; y la causa
+> del silencio persistente: **el setter `Input.volume` de osn silencia la fuente** (los
+> sliders de la Fase 7 lo introdujeron) — el volumen ahora va por `FaderFactory` (fader
+> log) y `volume` quedó fuera del tipado. Verificado E2E con ffmpeg: blackdetect limpio y
+> tono del loopback en la pista 1 a −12.6 dB con el mic desactivado.
 
 ## Fase 4 · Biblioteca de clips — ✅ entregado
 
