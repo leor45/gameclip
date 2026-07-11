@@ -336,6 +336,25 @@ export function resolveMonitorId(items: MonitorIdItem[], display: DisplayInfo): 
  */
 export const DESKTOP_AUDIO_SETTINGS = { use_device_timing: false } as const;
 
+// Métodos del monitor_capture: 1 = duplicación DXGI, 2 = Windows Graphics Capture.
+const MONITOR_METHOD_WGC = 2;
+
+/**
+ * Settings del source de monitor (helper puro, testeable sin libobs).
+ * - Siempre método WGC: la duplicación DXGI entrega frames NEGROS sin error en setups
+ *   modernos (verificado en máquina real con HAGS activo); WGC captura bien y es la API
+ *   vigente desde Win10 1903 (Windows es la plataforma objetivo).
+ * - Sin la key legacy `monitor` (índice): esta build la ignora con `monitor_id` presente
+ *   y su orden de enumeración no coincide con el de Electron. El monitor va por device id
+ *   (`monitor_id`), resuelto aparte porque la propiedad-lista vive en el source ya creado.
+ */
+export function monitorCaptureSettings(settings: CaptureSettings): Record<string, unknown> {
+  return {
+    capture_cursor: settings.showMouseCursor,
+    method: MONITOR_METHOD_WGC,
+  };
+}
+
 /** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
 function processCaptureSettings(executable: string | null): object {
   // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
@@ -471,7 +490,7 @@ export class ObsCapture extends EventEmitter {
     const monitor = osn.InputFactory.create(
       'monitor_capture',
       'gameclip-monitor',
-      this.monitorSettings(settings),
+      monitorCaptureSettings(settings),
     );
     // El monitor se elige por device id: la propiedad-lista `monitor_id` solo existe en el
     // source ya creado, así que se resuelve contra el display objetivo y se aplica en update.
@@ -763,17 +782,6 @@ export class ObsCapture extends EventEmitter {
     } catch {
       return null;
     }
-  }
-
-  private monitorSettings(settings: CaptureSettings): Record<string, unknown> {
-    // OJO: la key legacy `monitor` (índice) no se pasa: esta build la ignora con
-    // `monitor_id` presente y su orden de enumeración no coincide con el de Electron.
-    const s: Record<string, unknown> = {
-      capture_cursor: settings.showMouseCursor,
-    };
-    // Método 2 = Windows Graphics Capture (captura ventanas fuera de foco).
-    if (settings.advancedWindowCapture) s.method = 2;
-    return s;
   }
 
   /** Items de la propiedad-lista `monitor_id` del source de monitor (vacío si no existe). */

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import {
   DESKTOP_AUDIO_SETTINGS,
   audioTrackPlan,
   computePipelineSizes,
   encoderFamily,
   encoderRateControlSettings,
+  monitorCaptureSettings,
   resolveMonitorId,
 } from '../capture/obs';
 
@@ -61,6 +63,22 @@ describe('resolveMonitorId', () => {
         y: 0,
       }),
     ).toBe('Auto');
+  });
+});
+
+describe('monitorCaptureSettings', () => {
+  it('regresión: método WGC siempre y sin la key legacy `monitor`', () => {
+    // DXGI entrega frames negros sin error en setups modernos (HAGS); y la key `monitor`
+    // indexa con la enumeración de libobs (≠ Electron) — el monitor va por monitor_id.
+    const s = monitorCaptureSettings(DEFAULT_CAPTURE_SETTINGS);
+    expect(s).toMatchObject({ method: 2 });
+    expect(s).not.toHaveProperty('monitor');
+  });
+
+  it('respeta el ajuste de cursor', () => {
+    expect(
+      monitorCaptureSettings({ ...DEFAULT_CAPTURE_SETTINGS, showMouseCursor: true }),
+    ).toMatchObject({ capture_cursor: true });
   });
 });
 

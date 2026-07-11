@@ -22,6 +22,13 @@ lienzo era 2560x1440 (el display índice 1 de Electron que eligió el owner). Se
 escritorio secundario vacío → negro. Introducido en la Fase 3 (captura libobs): el índice
 funcionaba de casualidad solo si el monitor elegido era el primario.
 
+**Causa raíz 1b — video negro (método DXGI).** Corregido el monitor, el clip seguía negro:
+en esta máquina (RTX 4070 Ti, HAGS activo, Windows 11) la duplicación de escritorio **DXGI
+entrega frames negros sin loguear error alguno**. Con el método **WGC** (Windows Graphics
+Capture, `method: 2`) la captura funciona (verificado E2E: `blackdetect` pasa de "todo el
+clip" a cero). El fix hace WGC el método fijo del monitor capture — es la API vigente desde
+Win10 1903 y Windows es la plataforma objetivo.
+
 **Causa raíz 2 — audio en silencio (timestamps del loopback).** La fuente
 `wasapi_output_capture` (audio del escritorio) se crea con el default
 `use_device_timing: true`. Con dispositivos como la salida HDMI/DP (`MO27Q28G NVIDIA High
@@ -46,13 +53,15 @@ grabación de escritorio en ese modo queda estructuralmente muda (así salió el
   nativo), no solo `{width, height}`.
 - `use_device_timing: false` en las fuentes de audio de escritorio (`wasapi_output_capture`,
   incluida la de fallback).
+- Método WGC fijo para `monitor_capture` (helper puro `monitorCaptureSettings()`); DXGI
+  queda descartado por entregar frames negros sin error.
 - Verificación E2E en máquina real: grabar con contenido visible y audio sonando; el clip
   resultante debe pasar `blackdetect` (sin negro) y `volumedetect` (señal > −60 dB).
 
 **Fuera (explícito):**
 - El silencio estructural del modo `apps` sin juego (hallazgo documentado arriba).
-- El selector de método de captura (DXGI vs WGC) más allá de lo ya existente
-  (`advancedWindowCapture`).
+- Exponer el método de captura (DXGI vs WGC) como ajuste de UI: WGC queda fijo; si algún
+  setup lo necesitara, lleva su propio spec.
 - Miniaturas negras de la biblioteca: son consecuencia (se generan del video); no hay fix
   aparte.
 

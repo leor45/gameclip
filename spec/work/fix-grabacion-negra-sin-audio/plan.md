@@ -22,6 +22,11 @@ El display objetivo viaja por `CaptureEnvironment.displayByIndex`, que pasa de d
 el fallback `Auto`, donde además indexa con OTRO orden de enumeración — es la trampa que
 causó el bug).
 
+**Video (método WGC).** Aun con el monitor correcto, DXGI entregó frames negros sin error
+(E2E en esta máquina, HAGS activo). `monitorCaptureSettings()` (helper puro) fija
+`method: 2` (WGC) siempre; el toggle `advancedWindowCapture` deja de decidir el método del
+monitor (ya apuntaba a WGC cuando estaba activo; ahora WGC es el único método).
+
 **Audio (use_device_timing).** Las fuentes `wasapi_output_capture` (principal y fallback) se
 crean con `use_device_timing: false` para que libobs timestampe con el reloj del OS; con el
 reloj del dispositivo, salidas HDMI/DP en reposo acumulan lag (~147 s en el log) y libobs
