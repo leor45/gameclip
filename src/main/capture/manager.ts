@@ -7,6 +7,7 @@ import type {
   EncoderInfo,
 } from '@shared/capture';
 import { KNOWN_GAME_PROCESSES } from '@shared/games';
+import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
 import { ObsCapture } from './obs';
 import type { SettingsStore } from './settings-store';
@@ -31,6 +32,8 @@ export interface CaptureEnvironment {
   defaultOutputDir: string;
   appVersion: string;
   primaryDisplay: { width: number; height: number };
+  /** Tamaño (en píxeles reales) del display de un índice, o null si no existe. */
+  displayByIndex?: (index: number) => { width: number; height: number } | null;
 }
 
 /** Payload del evento 'clip-saved'. */
@@ -80,8 +83,12 @@ export class CaptureManager extends EventEmitter {
   private applying = Promise.resolve();
   /** El estado 'recording' no dice si el buffer sigue corriendo por debajo. */
   private bufferRunning = false;
-  /** Ejecutable del juego detectado (el proceso real que vio el detector). */
+  /** Ejecutable del juego activo (el proceso real que vio el detector). */
   private detectedGameExe: string | null = null;
+  /** Todos los juegos en ejecución (el activo es uno de ellos). */
+  private runningGames: RunningGameMatch[] = [];
+  /** Juego activo: el que se graba y cuyo audio se captura. */
+  private activeGame: RunningGameMatch | null = null;
   /** Push-to-talk: ¿está pulsado el hotkey ahora mismo? */
   private micHeld = false;
 
@@ -109,8 +116,29 @@ export class CaptureManager extends EventEmitter {
     return this.obs.isInitialized ? this.obs.getAudioDevices() : [];
   }
 
-  /** Rota el juego activo entre los juegos en ejecución (implementación en la tarea main). */
-  async switchGame(): Promise<CaptureStatus> {
+  /** Juegos en ejecución conocidos (el activo incluido). */
+  getRunningGames(): RunningGameMatch[] {
+    return [...this.runningGames];
+  }
+
+  /**
+   * Cambia el juego activo. Sin `targetName` rota al siguiente de la lista (orden estable);
+   * con él, salta a ese juego si corre y no es ya el activo. Religa el audio y, en modo auto,
+   * corta y arranca una grabación nueva. Con 0/1 juegos (o un target inválido) es no-op.
+   */
+  async switchGame(targetName?: string): Promise<CaptureStatus> {
+    if (this.runningGames.length === 0) return this.getStatus();
+    let next: RunningGameMatch;
+    if (targetName) {
+      const found = this.runningGames.find((g) => g.name === targetName);
+      if (!found || found.name === this.activeGame?.name) return this.getStatus();
+      next = found;
+    } else {
+      if (this.runningGames.length < 2) return this.getStatus();
+      const idx = this.runningGames.findIndex((g) => g.name === this.activeGame?.name);
+      next = this.runningGames[(idx + 1) % this.runningGames.length];
+    }
+    await this.applyActiveGame(next);
     return this.getStatus();
   }
 
@@ -164,42 +192,121 @@ export class CaptureManager extends EventEmitter {
   }
 
   /**
-   * Actualiza el juego detectado. Con bufferMode 'game' arranca/detiene el buffer;
-   * una grabación manual en curso nunca se interrumpe. `executable` es el proceso real
-   * que vio el detector; sin él se cae al lookup inverso (lossy) por nombre.
+   * Reemplaza la lista de juegos en ejecución (fuente del detector multi-juego). Si el juego
+   * activo dejó de correr, pasa al primero disponible (o a null); si no, lo conserva. Delega
+   * en `applyActiveGame` el religado de audio, el buffer y (en modo auto) la grabación.
+   */
+  async setRunningGames(games: RunningGameMatch[]): Promise<void> {
+    this.runningGames = games;
+    const activeStillRunning =
+      this.activeGame !== null && games.some((g) => g.name === this.activeGame!.name);
+    const next = activeStillRunning
+      ? games.find((g) => g.name === this.activeGame!.name)!
+      : (games[0] ?? null);
+    await this.applyActiveGame(next);
+  }
+
+  /**
+   * Compat: fija un único juego detectado (o ninguno). El camino real es `setRunningGames`;
+   * sin ejecutable se cae al lookup inverso (lossy) por nombre.
    */
   async setGameDetected(game: string | null, executable: string | null = null): Promise<void> {
-    if (game === this.status.detectedGame) return;
-    this.detectedGameExe = game ? (executable ?? gameExecutableForName(game)) : null;
-    this.setStatus({ detectedGame: game });
+    if (!game) return this.setRunningGames([]);
+    const exe = executable ?? gameExecutableForName(game) ?? `${game.toLowerCase()}.exe`;
+    return this.setRunningGames([{ name: game, executable: exe }]);
+  }
+
+  /**
+   * Aplica el juego activo: actualiza el estado, religa el audio en caliente (modo apps) y,
+   * según el modo de grabación, arranca/detiene la sesión (auto) o reconcilia el buffer
+   * (manual). Una grabación manual en curso nunca se interrumpe.
+   */
+  private async applyActiveGame(next: RunningGameMatch | null): Promise<void> {
+    const prevName = this.activeGame?.name ?? null;
+    const nextName = next?.name ?? null;
+    const changed = nextName !== prevName;
+
+    this.activeGame = next;
+    this.detectedGameExe = next?.executable ?? null;
+    if (changed) this.setStatus({ detectedGame: nextName });
+
     if (!this.obs.isInitialized) return;
     const settings = this.getSettings();
+
     // El audio del juego por proceso se religa en caliente (update de la fuente), sin
     // reconstruir el pipeline: un rebuild destruiría el replay buffer y su contenido.
-    if (settings.audioMode === 'apps' && settings.gameAudioEnabled) {
+    if (changed && settings.audioMode === 'apps' && settings.gameAudioEnabled) {
       try {
         this.obs.updateGameAudioTarget(this.detectedGameExe);
       } catch (err) {
         this.setStatus({ error: err instanceof Error ? err.message : String(err) });
       }
     }
-    if (settings.bufferMode !== 'game') return;
-    // Durante una grabación manual no se toca nada; se reconcilia en stopRecording.
+
+    // Modo auto: la presencia/cambio de juego dirige la grabación de sesión.
+    if (settings.recordingMode === 'auto') {
+      await this.applyAutoRecording(changed, prevName, nextName);
+      return;
+    }
+
+    // Modos manual/off: reconciliar el buffer con el juego, sin tocar una grabación en curso.
     if (this.status.state !== 'idle' && this.status.state !== 'buffering') return;
     try {
-      if (game && !this.bufferRunning) {
-        await this.startBuffer();
-        this.setStatus({ state: 'buffering', error: null });
-      } else if (!game && this.bufferRunning) {
-        await this.stopBuffer();
-        this.setStatus({ state: 'idle', error: null });
+      await this.reconcileBuffer();
+      this.setStatus({ state: this.bufferRunning ? 'buffering' : 'idle', error: null });
+    } catch (err) {
+      this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /**
+   * Modo auto: arranca la grabación cuando aparece un juego (null → alguno), la corta cuando
+   * la lista queda vacía (alguno → null) y la reinicia al cambiar de juego activo (stop+start,
+   * un clip por sesión). Simplificación: en modo auto toda grabación se considera de sesión.
+   */
+  private async applyAutoRecording(
+    changed: boolean,
+    prevName: string | null,
+    nextName: string | null,
+  ): Promise<void> {
+    try {
+      if (changed && prevName && nextName && this.status.state === 'recording') {
+        await this.stopSessionRecording();
+        await this.startSessionRecording();
+      } else if (nextName && !prevName) {
+        await this.startSessionRecording();
+      } else if (!nextName && prevName) {
+        await this.stopSessionRecording();
       }
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
     }
   }
 
+  /** Arranca la grabación de sesión (modo auto), asegurando antes el buffer si corresponde. */
+  private async startSessionRecording(): Promise<void> {
+    if (this.status.state === 'recording') return;
+    // El buffer sigue disponible para el replay hotkey mientras dura la sesión.
+    if (this.shouldBuffer() && !this.bufferRunning) await this.startBuffer();
+    await this.obs.startRecording();
+    this.setStatus({ state: 'recording', error: null });
+  }
+
+  /** Corta la grabación de sesión (modo auto), guarda el clip y reconcilia el buffer. */
+  private async stopSessionRecording(): Promise<void> {
+    if (this.status.state !== 'recording') return;
+    const file = await this.obs.stopRecording();
+    await this.reconcileBuffer();
+    this.setStatus({
+      state: this.bufferRunning ? 'buffering' : 'idle',
+      error: null,
+      lastClipPath: file,
+    });
+    this.emitClipSaved(file, 'recording');
+  }
+
   async startRecording(): Promise<CaptureStatus> {
+    if (this.getSettings().recordingMode === 'off') return this.getStatus();
     if (this.status.state !== 'buffering' && this.status.state !== 'idle') {
       return this.getStatus();
     }
@@ -233,6 +340,7 @@ export class CaptureManager extends EventEmitter {
   }
 
   async saveReplay(): Promise<CaptureStatus> {
+    if (this.getSettings().recordingMode === 'off') return this.getStatus();
     if (this.status.state !== 'buffering' && this.status.state !== 'recording') {
       return this.getStatus();
     }
@@ -259,7 +367,10 @@ export class CaptureManager extends EventEmitter {
 
   /** ¿Debería estar corriendo el buffer con los ajustes y el juego actuales? */
   private shouldBuffer(): boolean {
-    return this.getSettings().bufferMode === 'always' || this.status.detectedGame !== null;
+    const s = this.getSettings();
+    // Modo off: nunca se bufferiza (las salidas quedan bloqueadas aunque libobs esté vivo).
+    if (s.recordingMode === 'off') return false;
+    return s.bufferMode === 'always' || this.status.detectedGame !== null;
   }
 
   private async startBuffer(): Promise<void> {
@@ -282,7 +393,10 @@ export class CaptureManager extends EventEmitter {
     const settings = this.store.load();
     const outputDir = this.outputDir();
     mkdirSync(outputDir, { recursive: true });
-    this.obs.buildPipeline(settings, this.env.primaryDisplay, outputDir, this.detectedGameExe);
+    // El display a grabar lo decide el índice configurado; si no se resuelve, cae al primario.
+    const screen =
+      this.env.displayByIndex?.(settings.screenMonitorIndex) ?? this.env.primaryDisplay;
+    this.obs.buildPipeline(settings, screen, outputDir, this.detectedGameExe);
     this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
     this.applyMicMute(); // el rebuild resetea el mute; re-aplicar el estado del PTT
     if (this.shouldBuffer()) {

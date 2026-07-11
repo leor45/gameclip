@@ -399,23 +399,29 @@ export class ObsCapture extends EventEmitter {
     };
     this.context = context;
 
-    // Escena: monitor de fondo y game capture encima (si hay juego fullscreen, gana).
+    // Escena: monitor de fondo y game capture encima (si hay juego fullscreen, gana). Con
+    // desktopAutoSwitchToGame=false se graba solo el monitor (no se apila el game capture).
     const scene = osn.SceneFactory.create('gameclip-scene');
     const monitor = osn.InputFactory.create(
       'monitor_capture',
       'gameclip-monitor',
       this.monitorSettings(settings),
     );
-    const game = osn.InputFactory.create(
-      'game_capture',
-      'gameclip-game',
-      this.gameSettings(settings, gameExecutable),
-    );
     const monitorItem = scene.add(monitor);
-    const gameItem = scene.add(game);
-    this.applyBounds([monitorItem, gameItem], sizes);
+    this.inputs = [monitor];
+    const items: OsnSceneItem[] = [monitorItem];
+    if (settings.desktopAutoSwitchToGame) {
+      const game = osn.InputFactory.create(
+        'game_capture',
+        'gameclip-game',
+        this.gameSettings(settings, gameExecutable),
+      );
+      const gameItem = scene.add(game);
+      this.inputs.push(game);
+      items.push(gameItem);
+    }
+    this.applyBounds(items, sizes);
     this.scene = scene;
-    this.inputs = [monitor, game];
 
     // Canal 1 = escena; los canales 2.. quedan para las fuentes de audio.
     osn.Global.setOutputSource(1, scene.source);
@@ -672,7 +678,11 @@ export class ObsCapture extends EventEmitter {
   }
 
   private monitorSettings(settings: CaptureSettings): Record<string, unknown> {
-    const s: Record<string, unknown> = { capture_cursor: settings.showMouseCursor };
+    const s: Record<string, unknown> = {
+      capture_cursor: settings.showMouseCursor,
+      // Índice del monitor a capturar (0 = primario). El lienzo base ya llega del display.
+      monitor: settings.screenMonitorIndex,
+    };
     // Método 2 = Windows Graphics Capture (captura ventanas fuera de foco).
     if (settings.advancedWindowCapture) s.method = 2;
     return s;

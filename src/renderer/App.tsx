@@ -12,6 +12,7 @@ import AjustesAvanzado from './views/ajustes/Avanzado';
 import AjustesCalidad from './views/ajustes/Calidad';
 import AjustesDesarrollo from './views/ajustes/Desarrollo';
 import AjustesGeneral from './views/ajustes/General';
+import AjustesGrabacion from './views/ajustes/Grabacion';
 import Biblioteca from './views/Biblioteca';
 import Editor from './views/Editor';
 
@@ -37,7 +38,8 @@ function Shell() {
             <Route path="/editor" element={<Editor />} />
             <Route path="/editor/:clipId" element={<Editor />} />
             <Route path="/ajustes" element={<AjustesLayout />}>
-              <Route index element={<Navigate to="general" replace />} />
+              <Route index element={<Navigate to="grabacion" replace />} />
+              <Route path="grabacion" element={<AjustesGrabacion />} />
               <Route path="general" element={<AjustesGeneral />} />
               <Route path="calidad" element={<AjustesCalidad />} />
               <Route path="audio" element={<AjustesAudio />} />

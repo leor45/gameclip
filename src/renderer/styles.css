@@ -1051,6 +1051,127 @@ body {
   color: #ff9d94;
 }
 
+/* Ajustes › Grabación: radios con descripción (título + texto dim) */
+
+.settings-radio {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.settings-radio input {
+  margin-top: 3px;
+}
+
+.settings-radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-radio-text strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-radio-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* Ajustes › Grabación: modal de elección de monitor (grabación de escritorio) */
+
+.display-picker-panel {
+  width: min(640px, 90vw);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.display-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.display-picker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s;
+}
+
+.display-picker-card:hover {
+  border-color: var(--accent);
+}
+
+.display-picker-card.active {
+  border-color: #4caf50;
+}
+
+.display-picker-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #0c0e12;
+  border-radius: 6px;
+  display: block;
+}
+
+.display-picker-name {
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.display-picker-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.display-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.display-picker-actions button {
+  background: var(--accent);
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.display-picker-actions button:first-child {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.display-picker-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Ajustes › Almacenamiento: barra de uso de disco */
 
 .storage-bar {

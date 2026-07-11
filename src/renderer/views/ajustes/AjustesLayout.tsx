@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const SECCIONES = [
+  { to: 'grabacion', label: 'Grabación' },
   { to: 'general', label: 'General' },
   { to: 'calidad', label: 'Calidad' },
   { to: 'audio', label: 'Audio' },

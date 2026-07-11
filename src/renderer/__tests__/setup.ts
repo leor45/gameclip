@@ -37,6 +37,28 @@ export function crearGameclipMock() {
       ]),
       pickOutputDir: vi.fn().mockResolvedValue(null),
       getPttAvailable: vi.fn().mockResolvedValue(true),
+      getDisplays: vi.fn().mockResolvedValue([
+        {
+          index: 0,
+          label: 'Monitor 1',
+          width: 2560,
+          height: 1440,
+          primary: true,
+          thumbnailDataUrl: 'data:image/png;base64,AAA=',
+        },
+        {
+          index: 1,
+          label: 'Monitor 2',
+          width: 1920,
+          height: 1080,
+          primary: false,
+          thumbnailDataUrl: 'data:image/png;base64,BBB=',
+        },
+      ]),
+      switchGame: vi
+        .fn()
+        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: null, detectedGame: null }),
+      takeScreenshot: vi.fn().mockResolvedValue('C:\\v\\captura.png'),
       startRecording: vi
         .fn()
         .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null, detectedGame: null }),

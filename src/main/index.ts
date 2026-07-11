@@ -1,11 +1,14 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, globalShortcut, protocol, shell } from 'electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
+import type { RunningGameMatch } from '@shared/games';
 import { IpcEvent } from '@shared/ipc';
 import ffmpegPath from 'ffmpeg-static';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
 import { GameDetector } from './capture/game-detector';
+import { AutoSwitcher } from './capture/auto-switcher';
+import { takeScreenshot } from './capture/screenshots';
 import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
@@ -27,6 +30,7 @@ let storage: StorageManager | null = null;
 let overlay: OverlayController | null = null;
 let tray: AppTray | null = null;
 let detector: GameDetector | null = null;
+let autoSwitchTimer: NodeJS.Timeout | null = null;
 // Cerrar la ventana la oculta a la bandeja; solo 'Salir' (o quit del SO) cierra de verdad.
 let quitting = false;
 
@@ -100,13 +104,19 @@ function setupCapture(): CaptureManager {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { screen } = require('electron') as typeof import('electron');
   const primary = screen.getPrimaryDisplay();
+  const displaySize = (d: Electron.Display): { width: number; height: number } => ({
+    width: d.size.width * d.scaleFactor,
+    height: d.size.height * d.scaleFactor,
+  });
   const manager = new CaptureManager(settingsStore, {
     obsDataPath: join(app.getPath('userData'), 'obs-data'),
     defaultOutputDir: join(app.getPath('videos'), 'GameClip'),
     appVersion: app.getVersion(),
-    primaryDisplay: {
-      width: primary.size.width * primary.scaleFactor,
-      height: primary.size.height * primary.scaleFactor,
+    primaryDisplay: displaySize(primary),
+    // El display a grabar (índice del ajuste); libobs recibe su tamaño real como lienzo base.
+    displayByIndex: (index) => {
+      const d = screen.getAllDisplays()[index];
+      return d ? displaySize(d) : null;
     },
   });
 
@@ -118,7 +128,7 @@ function setupCapture(): CaptureManager {
   });
   manager.on('clip-saved', () => overlay?.showToast('Clip guardado ✓'));
 
-  registerReplayHotkey(manager);
+  registerHotkeys(manager);
   return manager;
 }
 
@@ -166,14 +176,10 @@ function setupLibrary(
 }
 
 function setupGameDetection(manager: CaptureManager): GameDetector {
-  const d = new GameDetector();
-  d.on('game-started', (game: string, executable: string) => {
-    console.log('[games] detectado:', game, `(${executable})`);
-    void manager.setGameDetected(game, executable);
-  });
-  d.on('game-stopped', () => {
-    console.log('[games] juego cerrado');
-    void manager.setGameDetected(null);
+  const d = new GameDetector({ customGames: manager.getSettings().customGames });
+  d.on('games-changed', (list: RunningGameMatch[]) => {
+    console.log('[games] en ejecución:', list.map((g) => g.name).join(', ') || '(ninguno)');
+    void manager.setRunningGames(list);
   });
   d.start();
   return d;
@@ -196,15 +202,34 @@ function registerMediaProtocol(): void {
   });
 }
 
-function registerReplayHotkey(manager: CaptureManager): void {
+// Hotkeys globales de captura: replay (salvo en modo off), cambio de juego y screenshot.
+// Se re-registran enteros al cambiar los ajustes (globalShortcut no permite editar uno solo).
+function registerHotkeys(manager: CaptureManager): void {
   globalShortcut.unregisterAll();
-  const hotkey = manager.getSettings().replayHotkey;
-  try {
-    globalShortcut.register(hotkey, () => {
-      void manager.saveReplay();
+  const s = manager.getSettings();
+  const registrar = (accel: string, accion: () => void): void => {
+    if (!accel) return;
+    try {
+      globalShortcut.register(accel, accion);
+    } catch {
+      // acelerador inválido: la acción sigue disponible desde la UI
+    }
+  };
+
+  // En modo off no hay grabación: el hotkey de replay no se registra.
+  if (s.recordingMode !== 'off') {
+    registrar(s.replayHotkey, () => void manager.saveReplay());
+  }
+  if (s.gameSwitchEnabled) {
+    registrar(s.gameSwitchHotkey, () => void manager.switchGame());
+  }
+  if (s.screenshotsEnabled) {
+    registrar(s.screenshotHotkey, () => {
+      const cur = manager.getSettings();
+      void takeScreenshot(cur.screenMonitorIndex, manager.outputDir()).then((path) => {
+        if (path) overlay?.showToast('Captura guardada ✓');
+      });
     });
-  } catch {
-    // acelerador inválido: el clip se puede guardar igual desde la UI
   }
 }
 
@@ -245,9 +270,27 @@ app.whenReady().then(() => {
   // Init de libobs sin bloquear la ventana; el estado llega por evento.
   void capture.initialize().then(() => runSelfTest(capture!));
 
-  // Si cambian los ajustes (p. ej. hotkey, overlay o auto-arranque), se re-aplican.
+  // Auto-cambio de juego: cada 5 s se compara la ventana en primer plano con los juegos en
+  // ejecución; 4 muestras seguidas con otro juego distinto del activo → switchGame(target).
+  const autoSwitcher = new AutoSwitcher({
+    onSwitch: (name) => void capture?.switchGame(name),
+  });
+  autoSwitchTimer = setInterval(() => {
+    const c = capture;
+    if (!c) return;
+    const s = c.getSettings();
+    if (!(s.autoGameSwitching && s.gameSwitchEnabled)) return;
+    const juegos = c.getRunningGames();
+    if (juegos.length < 2) return; // sin nada a lo que cambiar, no molestamos a PowerShell
+    void getForegroundWindowTitle().then((title) => {
+      autoSwitcher.update(juegos, title, c.getStatus().detectedGame);
+    });
+  }, 5000);
+
+  // Si cambian los ajustes (p. ej. hotkeys, overlay, juegos manuales o auto-arranque), se re-aplican.
   capture.on('settings', (settings: CaptureSettings) => {
-    registerReplayHotkey(capture!);
+    registerHotkeys(capture!);
+    detector?.setCustomGames(settings.customGames);
     overlay?.setEnabled(settings.overlayEnabled);
     applyAutoLaunch(settings);
     pushToTalk.configure(settings.pttEnabled && settings.micEnabled, settings.pttHotkey);
@@ -269,6 +312,7 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   pushToTalk.stop();
+  if (autoSwitchTimer) clearInterval(autoSwitchTimer);
   detector?.stop();
   overlay?.destroy();
   tray?.destroy();

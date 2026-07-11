@@ -16,20 +16,23 @@ beforeEach(() => {
   Object.defineProperty(window, 'gameclip', { writable: true, value: crearGameclipMock() });
 });
 
-/** Renderiza la app con sesión activa y navega a /ajustes (que redirige a General). */
+/** Renderiza la app con sesión activa y navega a /ajustes (que redirige a Grabación). */
 async function irAAjustes() {
   const user = userEvent.setup();
   render(<App />);
   await user.click(screen.getByRole('link', { name: 'Ajustes' }));
-  await screen.findByLabelText('Duración del buffer (segundos)');
+  await screen.findByRole('link', { name: 'General' });
   return user;
 }
 
 describe('Ajustes — navegación', () => {
-  it('redirige /ajustes a General y navega entre secciones', async () => {
+  it('redirige /ajustes a Grabación y navega entre secciones', async () => {
     const user = await irAAjustes();
 
-    expect(screen.getByRole('link', { name: 'General' })).toHaveClass('active');
+    expect(screen.getByRole('link', { name: 'Grabación' })).toHaveClass('active');
+
+    await user.click(screen.getByRole('link', { name: 'General' }));
+    expect(await screen.findByLabelText('Duración del buffer (segundos)')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Calidad' }));
     expect(await screen.findByRole('button', { name: /Alta/ })).toBeInTheDocument();
@@ -49,8 +52,15 @@ describe('Ajustes — navegación', () => {
 });
 
 describe('Ajustes — General', () => {
-  it('guarda los cambios de la sección con la API', async () => {
+  async function irAGeneral() {
     const user = await irAAjustes();
+    await user.click(screen.getByRole('link', { name: 'General' }));
+    await screen.findByLabelText('Duración del buffer (segundos)');
+    return user;
+  }
+
+  it('guarda los cambios de la sección con la API', async () => {
+    const user = await irAGeneral();
 
     const buffer = screen.getByLabelText('Duración del buffer (segundos)');
     await user.clear(buffer);
@@ -67,7 +77,7 @@ describe('Ajustes — General', () => {
   });
 
   it('guarda los toggles de comportamiento (bufferMode, overlay, autoLaunch)', async () => {
-    const user = await irAAjustes();
+    const user = await irAGeneral();
 
     await user.click(screen.getByLabelText('Iniciar el buffer solo al detectar un juego'));
     await user.click(
