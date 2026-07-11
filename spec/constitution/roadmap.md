@@ -85,6 +85,27 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > vía `setLoginItemSettings` con `--hidden`, solo app empaquetada. Verificado en máquina
 > real: proceso falso `Terraria.exe` → buffer auto-on, cierre → auto-off.
 
+## Fase 7 · Settings avanzados (paridad con las apps de clips) — ✅ entregado
+
+- [x] Ajustes desglosados en submenús enrutados: General · Calidad · Audio · Almacenamiento · Avanzado.
+- [x] Audio: micrófono por dispositivo (enumeración libobs) con volumen; modo escritorio o apps
+      específicas (captura por proceso) con volumen por app y audio del juego detectado;
+      pistas de audio separadas en el MP4.
+- [x] Calidad: presets de calidad + bitrate 3–100 Mbps (CBR real) o automático (CRF/CQP).
+- [x] Almacenamiento: carpeta con diálogo nativo, límite en GB con auto-borrado de los más
+      viejos (favoritos protegidos, opción solo-grabaciones, papelera) y barra de uso de disco.
+- [x] Avanzado: cursor, HDR→SDR, WGC, captura de ventana forzada, overlays, aspect ratio
+      (juego / estirar / barras / recorte 16:9) y buffer disk/memory (persistido; sin efecto
+      real hoy, el buffer de libobs vive en RAM).
+
+> Salidas migradas de Simple* a **Advanced*RecordingFactory** (pistas múltiples vía
+> `AudioTrackFactory` + bitmask `mixer`, bitrate en el encoder). El detector emite el
+> **ejecutable real** del juego y el audio por proceso se religa en caliente con
+> `input.update()` (sin rebuild: el replay buffer conserva su contenido). Verificado en
+> máquina real con el selftest: MP4 720p60 a ~15 Mbps CBR con 2 pistas AAC separadas, y
+> modo apps con pista única y CQP automático. `wasapi_process_output_capture` presente en
+> osn 0.26.29; si faltara, degrada a captura de escritorio clásica.
+
 ## Futuro (fuera de alcance por ahora)
 
 - Guardado en la nube y compartir alojado.

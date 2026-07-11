@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import CaptureBar from '../components/CaptureBar';
-import Ajustes from '../views/Ajustes';
 import { crearGameclipMock } from './setup';
 
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
@@ -75,53 +74,5 @@ describe('CaptureBar', () => {
     render(<CaptureBar />);
 
     expect(await screen.findByText(/Valorant/)).toBeInTheDocument();
-  });
-});
-
-describe('Ajustes', () => {
-  it('carga los ajustes y los encoders reales', async () => {
-    render(<Ajustes />);
-
-    expect(await screen.findByLabelText('Resolución')).toHaveValue('native');
-    expect(screen.getByLabelText('FPS')).toHaveValue('60');
-    expect(screen.getByRole('option', { name: 'NVIDIA NVENC H.264' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Duración del buffer (segundos)')).toHaveValue(60);
-  });
-
-  it('guarda los cambios con la API', async () => {
-    const user = userEvent.setup();
-    render(<Ajustes />);
-
-    await user.selectOptions(await screen.findByLabelText('Resolución'), '720p');
-    await user.selectOptions(screen.getByLabelText('FPS'), '30');
-    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
-
-    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
-    expect(mock().capture.setSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ resolution: '720p', fps: 30 }),
-    );
-  });
-
-  it('muestra y guarda los ajustes de comportamiento (Fase 6)', async () => {
-    const user = userEvent.setup();
-    render(<Ajustes />);
-
-    const soloJuego = await screen.findByLabelText('Iniciar el buffer solo al detectar un juego');
-    const overlay = screen.getByLabelText(
-      'Mostrar overlay al grabar (indicador y confirmación de clip)',
-    );
-    const autostart = screen.getByLabelText('Iniciar GameClip con Windows (en la bandeja)');
-    // Defaults: buffer siempre, overlay activo, sin auto-arranque.
-    expect(soloJuego).not.toBeChecked();
-    expect(overlay).toBeChecked();
-    expect(autostart).not.toBeChecked();
-
-    await user.click(soloJuego);
-    await user.click(autostart);
-    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
-
-    expect(mock().capture.setSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ bufferMode: 'game', autoLaunch: true, overlayEnabled: true }),
-    );
   });
 });

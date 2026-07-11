@@ -12,6 +12,7 @@ import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
 import { LibraryManager } from './library/manager';
+import { StorageManager } from './library/storage-manager';
 import { OverlayController } from './overlay';
 import { createTray } from './tray';
 import type { AppTray } from './tray';
@@ -20,6 +21,7 @@ import { registerIpcHandlers } from './ipc';
 let mainWindow: BrowserWindow | null = null;
 let capture: CaptureManager | null = null;
 let library: LibraryManager | null = null;
+let storage: StorageManager | null = null;
 let overlay: OverlayController | null = null;
 let tray: AppTray | null = null;
 let detector: GameDetector | null = null;
@@ -112,7 +114,9 @@ function setupCapture(): CaptureManager {
 
 // Biblioteca: si la DB no abre (p. ej. faltó el prebuild ABI-Electron), la app sigue sin
 // catálogo y el renderer recibe el error al llamar a la API.
-function setupLibrary(manager: CaptureManager): LibraryManager | null {
+function setupLibrary(
+  manager: CaptureManager,
+): { lib: LibraryManager; storage: StorageManager } | null {
   try {
     const db = openLibraryDatabase(join(app.getPath('userData'), 'library.db'));
     const repo = new ClipsRepository(db);
@@ -120,14 +124,31 @@ function setupLibrary(manager: CaptureManager): LibraryManager | null {
       thumbnailsDir: join(app.getPath('userData'), 'thumbnails'),
       getForegroundTitle: getForegroundWindowTitle,
     });
+    const stor = new StorageManager(lib, { trashItem: (path) => shell.trashItem(path) });
+
+    const aplicarLimite = (protectPath?: string): void => {
+      void stor
+        .enforceLimit(manager.getSettings(), { protectPath })
+        .catch((err) => console.error('[storage] auto-borrado falló:', err));
+    };
 
     manager.on('clip-saved', (info: ClipSavedInfo) => {
-      void lib.registerSavedClip(info.filePath, info.source, info.game);
+      // El límite se aplica después de registrar, para que el clip nuevo cuente y no se borre.
+      void lib
+        .registerSavedClip(info.filePath, info.source, info.game)
+        .then(() => aplicarLimite(info.filePath))
+        .catch((err) => console.error('[storage] auto-borrado falló:', err));
     });
-    manager.on('settings', () => lib.reconcile(manager.outputDir()));
+    // Bajar el límite o activar el auto-borrado desde Ajustes limpia de inmediato.
+    manager.on('settings', () => {
+      lib.reconcile(manager.outputDir());
+      aplicarLimite();
+    });
     lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
     lib.reconcile(manager.outputDir());
-    return lib;
+    // Diferido: un backlog sobre el límite no debe bloquear el arranque de la ventana.
+    setTimeout(() => aplicarLimite(), 5000);
+    return { lib, storage: stor };
   } catch (err) {
     console.error('[library] no se pudo abrir el catálogo:', err);
     return null;
@@ -136,9 +157,9 @@ function setupLibrary(manager: CaptureManager): LibraryManager | null {
 
 function setupGameDetection(manager: CaptureManager): GameDetector {
   const d = new GameDetector();
-  d.on('game-started', (game: string) => {
-    console.log('[games] detectado:', game);
-    void manager.setGameDetected(game);
+  d.on('game-started', (game: string, executable: string) => {
+    console.log('[games] detectado:', game, `(${executable})`);
+    void manager.setGameDetected(game, executable);
   });
   d.on('game-stopped', () => {
     console.log('[games] juego cerrado');
@@ -185,7 +206,9 @@ function applyAutoLaunch(settings: CaptureSettings): void {
 
 app.whenReady().then(() => {
   capture = setupCapture();
-  library = setupLibrary(capture);
+  const libSetup = setupLibrary(capture);
+  library = libSetup?.lib ?? null;
+  storage = libSetup?.storage ?? null;
   detector = setupGameDetection(capture);
   overlay = new OverlayController(capture.getSettings().overlayEnabled);
   tray = createTray({
@@ -198,7 +221,7 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
   registerMediaProtocol();
-  registerIpcHandlers(capture, library, exporter);
+  registerIpcHandlers(capture, library, exporter, storage);
   applyAutoLaunch(capture.getSettings());
   createMainWindow({ hidden: process.argv.includes('--hidden') });
 

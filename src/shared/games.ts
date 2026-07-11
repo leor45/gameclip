@@ -70,16 +70,28 @@ export const KNOWN_GAME_PROCESSES: Record<string, string> = {
 /** Intervalo de sondeo de procesos por defecto. */
 export const GAME_POLL_INTERVAL_MS = 5000;
 
+export interface RunningGameMatch {
+  /** Nombre para mostrar y catalogar. */
+  name: string;
+  /** Ejecutable real que matcheó (p. ej. cs2.exe) — varios exes mapean al mismo juego. */
+  executable: string;
+}
+
 /**
  * Busca un juego conocido en una lista de nombres de proceso. Acepta nombres con o sin
- * `.exe` y en cualquier capitalización; devuelve el nombre para mostrar o null.
+ * `.exe` y en cualquier capitalización; devuelve el match (nombre + ejecutable) o null.
  */
-export function findRunningGame(processNames: string[]): string | null {
+export function findRunningGameMatch(processNames: string[]): RunningGameMatch | null {
   for (const raw of processNames) {
     const name = raw.trim().toLowerCase().replace(/\.exe$/, '');
     if (!name) continue;
     const game = KNOWN_GAME_PROCESSES[name];
-    if (game) return game;
+    if (game) return { name: game, executable: `${name}.exe` };
   }
   return null;
+}
+
+/** Compat: solo el nombre para mostrar. */
+export function findRunningGame(processNames: string[]): string | null {
+  return findRunningGameMatch(processNames)?.name ?? null;
 }

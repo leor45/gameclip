@@ -30,6 +30,16 @@ export interface ClipPatch {
   tags?: string[];
 }
 
+/** Uso de disco de la carpeta de clips y su unidad. */
+export interface StorageStats {
+  /** Bytes de clips de replay + escaneados en el catálogo. */
+  clipsBytes: number;
+  /** Bytes de grabaciones manuales (source 'recording'). */
+  recordingsBytes: number;
+  driveFreeBytes: number;
+  driveTotalBytes: number;
+}
+
 export interface ClipsQuery {
   /** Texto libre: matchea título, juego y tags (case-insensitive). */
   search?: string;

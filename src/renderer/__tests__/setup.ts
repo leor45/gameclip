@@ -27,6 +27,15 @@ export function crearGameclipMock() {
         { id: 'jim_nvenc', name: 'NVIDIA NVENC H.264' },
         { id: 'obs_x264', name: 'x264 (CPU)' },
       ]),
+      getAudioDevices: vi.fn().mockResolvedValue([
+        { id: 'device-1', name: 'Micrófono (Realtek Audio)' },
+        { id: 'device-2', name: 'Auriculares (USB)' },
+      ]),
+      getAudioApps: vi.fn().mockResolvedValue([
+        { executable: 'Discord.exe', windowTitle: 'Discord' },
+        { executable: 'Spotify.exe', windowTitle: 'Spotify' },
+      ]),
+      pickOutputDir: vi.fn().mockResolvedValue(null),
       startRecording: vi
         .fn()
         .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null, detectedGame: null }),
@@ -52,6 +61,12 @@ export function crearGameclipMock() {
       remove: vi.fn().mockResolvedValue(undefined),
       openFolder: vi.fn().mockResolvedValue(undefined),
       setMedia: vi.fn().mockImplementation((id) => Promise.resolve({ id })),
+      getStorageStats: vi.fn().mockResolvedValue({
+        clipsBytes: 20 * 1024 ** 3,
+        recordingsBytes: 10 * 1024 ** 3,
+        driveFreeBytes: 60 * 1024 ** 3,
+        driveTotalBytes: 100 * 1024 ** 3,
+      }),
       onChanged: vi.fn().mockReturnValue(() => undefined),
     },
     exporter: {

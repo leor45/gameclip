@@ -27,13 +27,17 @@ describe('normalizeCaptureSettings', () => {
       overlayEnabled: false,
       autoLaunch: true,
     };
-    expect(normalizeCaptureSettings(entrada)).toEqual(entrada);
+    // Los campos no enviados caen a sus defaults.
+    expect(normalizeCaptureSettings(entrada)).toEqual({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      ...entrada,
+    });
   });
 
   it('corrige campo a campo los valores inválidos', () => {
     const result = normalizeCaptureSettings({
       resolution: '4k',
-      fps: 144,
+      fps: 59,
       quality: 'ultra',
       encoderId: 7,
       replaySeconds: 'mucho',

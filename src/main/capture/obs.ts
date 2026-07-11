@@ -1,7 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import type { CaptureSettings, EncoderInfo } from '@shared/capture';
+import type {
+  AspectRatioMode,
+  AudioDeviceInfo,
+  CaptureSettings,
+  EncoderInfo,
+  OutputResolution,
+  RecordingQuality,
+} from '@shared/capture';
 
 // Valores espejo de los const enum de module.d.ts (esbuild no inlinea const enums de .d.ts).
 const VIDEO_FORMAT_NV12 = 2;
@@ -10,18 +17,44 @@ const RANGE_PARTIAL = 1;
 const SCALE_BICUBIC = 2;
 const FPS_TYPE_FRACTIONAL = 2;
 const VIDEO_CODE_SUCCESS = 0;
-const QUALITY = { high: 1, higher: 2, lossless: 3 } as const;
+const BOUNDS_SCALE_INNER = 2; // EBoundsType.ScaleInner (barras)
+const BOUNDS_SCALE_OUTER = 3; // EBoundsType.ScaleOuter (recorte)
+const ALIGN_CENTER = 0; // EAlignment.Center
+// Bitrate AAC por pista de audio, en kbps.
+const AUDIO_TRACK_BITRATE = 160;
+// libobs expone MAX_CHANNELS = 64 canales de salida global; sobra para nuestras fuentes.
+const MAX_OUTPUT_CHANNELS = 64;
 
 // Tipado mínimo de lo que usamos de obs-studio-node (la superficie real es enorme y any).
 interface OsnSource {
   release(): void;
 }
+interface OsnListProperty {
+  name: string;
+  details?: { items: { name: string; value: string | number }[] };
+  next(): OsnListProperty | null;
+}
+interface OsnProperties {
+  first(): OsnListProperty | null;
+  get(name: string): OsnListProperty | null;
+  count(): number;
+}
 interface OsnInput extends OsnSource {
   muted: boolean;
+  volume: number;
+  audioMixers: number;
+  readonly properties: OsnProperties;
+  update(settings: object): void;
+}
+interface OsnSceneItem {
+  bounds: { x: number; y: number };
+  boundsType: number;
+  alignment: number;
+  boundsAlignment: number;
 }
 interface OsnScene {
-  source: OsnSource & { release(): void };
-  add(input: OsnInput): unknown;
+  source: OsnSource;
+  add(input: OsnInput): OsnSceneItem;
   release(): void;
 }
 interface OsnVideoContext {
@@ -31,33 +64,49 @@ interface OsnVideoContext {
 interface OsnEncoder {
   release(): void;
 }
+interface OsnAudioTrack {
+  bitrate: number;
+  name: string;
+}
 interface OutputSignal {
   type: string;
   signal: string;
   code: number;
   error: string;
 }
-interface OsnRecording {
+// AdvancedRecording no lleva audioEncoder: el audio va por pistas (AudioTrackFactory)
+// seleccionadas con el bitmask `mixer`.
+interface OsnAdvancedRecording {
   path: string;
   format: string;
   fileFormat: string;
   overwrite: boolean;
   noSpace: boolean;
   video: OsnVideoContext;
-  quality: number;
-  lowCPU: boolean;
   videoEncoder: OsnEncoder;
-  audioEncoder: OsnEncoder;
+  mixer: number;
+  rescaling: boolean;
+  useStreamEncoders: boolean;
   signalHandler: (signal: OutputSignal) => void;
   start(): void;
   stop(force?: boolean): void;
   lastFile(): string;
 }
-interface OsnReplayBuffer extends Omit<OsnRecording, 'quality' | 'lowCPU'> {
+interface OsnAdvancedReplayBuffer {
+  path: string;
+  format: string;
   duration: number;
   usesStream: boolean;
-  recording: OsnRecording;
+  overwrite: boolean;
+  noSpace: boolean;
+  video: OsnVideoContext;
+  mixer: number;
+  recording: OsnAdvancedRecording;
+  signalHandler: (signal: OutputSignal) => void;
+  start(): void;
+  stop(force?: boolean): void;
   save(): void;
+  lastFile(): string;
 }
 
 interface OsnModule {
@@ -71,10 +120,22 @@ interface OsnModule {
   InputFactory: { create(id: string, name: string, settings?: object): OsnInput };
   SceneFactory: { create(name: string): OsnScene };
   Global: { setOutputSource(channel: number, source: OsnSource | null): void };
-  VideoEncoderFactory: { types(): string[]; create(id: string, name: string): OsnEncoder };
-  AudioEncoderFactory: { create(id: string, name: string): OsnEncoder };
-  SimpleRecordingFactory: { create(): OsnRecording; destroy(r: OsnRecording): void };
-  SimpleReplayBufferFactory: { create(): OsnReplayBuffer; destroy(r: OsnReplayBuffer): void };
+  VideoEncoderFactory: {
+    types(): string[];
+    create(id: string, name: string, settings?: object): OsnEncoder;
+  };
+  AudioTrackFactory: {
+    create(bitrate: number, name: string): OsnAudioTrack;
+    setAtIndex(track: OsnAudioTrack, index: number): void;
+  };
+  AdvancedRecordingFactory: {
+    create(): OsnAdvancedRecording;
+    destroy(r: OsnAdvancedRecording): void;
+  };
+  AdvancedReplayBufferFactory: {
+    create(): OsnAdvancedReplayBuffer;
+    destroy(r: OsnAdvancedReplayBuffer): void;
+  };
 }
 
 const ENCODER_NAMES: Record<string, string> = {
@@ -97,6 +158,106 @@ const ENCODER_PREFERENCE = [
   'obs_x264',
 ];
 
+export type EncoderFamily = 'x264' | 'nvenc' | 'amf' | 'qsv';
+
+/** Familia de encoder a partir del id de libobs (determina las keys de rate control). */
+export function encoderFamily(encoderId: string): EncoderFamily {
+  if (encoderId.includes('x264')) return 'x264';
+  if (encoderId.includes('qsv')) return 'qsv';
+  if (encoderId.includes('amf')) return 'amf';
+  return 'nvenc'; // jim_nvenc, obs_nvenc_*
+}
+
+/**
+ * Ajustes de rate control por encoder (helper puro, testeable sin libobs).
+ * - bitrateMbps > 0: CBR con `bitrate` en kbps (mismas keys en x264 y HW).
+ * - bitrateMbps === 0: calidad fija. x264 usa CRF (`crf`); NVENC/AMF/QSV usan CQP (`cqp`).
+ */
+export function encoderRateControlSettings(
+  encoderId: string,
+  quality: RecordingQuality,
+  bitrateMbps: number,
+): Record<string, string | number> {
+  if (bitrateMbps > 0) {
+    return { rate_control: 'CBR', bitrate: Math.round(bitrateMbps * 1000) };
+  }
+  if (encoderFamily(encoderId) === 'x264') {
+    const crf = quality === 'high' ? 23 : quality === 'higher' ? 18 : 0;
+    return { rate_control: 'CRF', crf };
+  }
+  // 'lossless' en HW: QP 0 (sin pérdida efectiva); CQP 16 sería visiblemente lossy.
+  const cqp = quality === 'high' ? 23 : quality === 'higher' ? 20 : 0;
+  return { rate_control: 'CQP', cqp };
+}
+
+/** Tamaños de lienzo (base) y salida más el modo de bounds del scene item. */
+export interface PipelineSizes {
+  baseWidth: number;
+  baseHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+  /** Bounds del item de monitor/juego: barras (inner), recorte (outer) o ninguno. */
+  boundsType: 'inner' | 'outer' | null;
+}
+
+const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
+const width169 = (height: number): number => even((height * 16) / 9);
+
+/**
+ * Calcula lienzo y salida según resolución y relación de aspecto (helper puro).
+ * - 'game': salida con el ratio del monitor (comportamiento previo).
+ * - 'stretch169': salida 16:9 con lienzo = monitor (libobs estira).
+ * - 'bars169'/'crop169': lienzo 16:9 y el item con bounds SCALE_INNER/SCALE_OUTER.
+ */
+export function computePipelineSizes(
+  resolution: OutputResolution,
+  aspectRatio: AspectRatioMode,
+  screen: { width: number; height: number },
+): PipelineSizes {
+  const capHeight =
+    resolution === 'native'
+      ? screen.height
+      : Math.min(resolution === '1080p' ? 1080 : 720, screen.height);
+
+  if (aspectRatio === 'game') {
+    const scaled = resolution !== 'native' && screen.height > capHeight;
+    return {
+      baseWidth: screen.width,
+      baseHeight: screen.height,
+      outputWidth: scaled ? even((screen.width * capHeight) / screen.height) : screen.width,
+      outputHeight: scaled ? capHeight : screen.height,
+      boundsType: null,
+    };
+  }
+
+  const outputHeight = capHeight;
+  const outputWidth = width169(capHeight);
+
+  if (aspectRatio === 'stretch169') {
+    return {
+      baseWidth: screen.width,
+      baseHeight: screen.height,
+      outputWidth,
+      outputHeight,
+      boundsType: null,
+    };
+  }
+
+  return {
+    baseWidth: width169(screen.height),
+    baseHeight: screen.height,
+    outputWidth,
+    outputHeight,
+    boundsType: aspectRatio === 'bars169' ? 'inner' : 'outer',
+  };
+}
+
+/** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
+function processCaptureSettings(executable: string | null): object {
+  // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
+  return { window: executable ? `::${executable}` : '', priority: 2 };
+}
+
 export interface ObsPaths {
   /** Carpeta de datos/config que libobs usa (userData/obs). */
   dataPath: string;
@@ -112,9 +273,14 @@ export class ObsCapture extends EventEmitter {
   private context: OsnVideoContext | null = null;
   private scene: OsnScene | null = null;
   private inputs: OsnInput[] = [];
-  private recording: OsnRecording | null = null;
-  private replayBuffer: OsnReplayBuffer | null = null;
+  private recording: OsnAdvancedRecording | null = null;
+  private replayBuffer: OsnAdvancedReplayBuffer | null = null;
   private encoders: OsnEncoder[] = [];
+  private outputChannels: number[] = [];
+  /** Fuente de audio del juego (modo apps), religable en caliente al cambiar el juego. */
+  private gameAudioSource: OsnInput | null = null;
+  /** Índices de pista AAC ya registrados en libobs (globales a la sesión, sin release). */
+  private readonly audioTracksCreated = new Set<number>();
   private initialized = false;
 
   init(paths: ObsPaths): void {
@@ -153,6 +319,29 @@ export class ObsCapture extends EventEmitter {
       .map((id) => ({ id, name: ENCODER_NAMES[id] }));
   }
 
+  /**
+   * Enumera micrófonos reales: crea una fuente wasapi_input_capture temporal, lee la
+   * propiedad `device_id` (lista) y mapea sus items. Siempre incluye 'default' primero.
+   */
+  getAudioDevices(): AudioDeviceInfo[] {
+    const osn = this.mustOsn();
+    const devices: AudioDeviceInfo[] = [{ id: 'default', name: 'Micrófono por defecto' }];
+    let source: OsnInput | null = null;
+    try {
+      source = osn.InputFactory.create('wasapi_input_capture', 'gameclip-enum-mic');
+      const prop = this.findProperty(source.properties, 'device_id');
+      for (const item of prop?.details?.items ?? []) {
+        const id = String(item.value);
+        if (id && id !== 'default') devices.push({ id, name: item.name });
+      }
+    } catch {
+      // enumeración best-effort: sin dispositivos extra, al menos queda 'default'
+    } finally {
+      source?.release();
+    }
+    return devices;
+  }
+
   pickEncoder(preferred: string): string {
     const available = this.getAvailableEncoders().map((e) => e.id);
     if (preferred && available.includes(preferred)) return preferred;
@@ -164,20 +353,21 @@ export class ObsCapture extends EventEmitter {
     settings: CaptureSettings,
     screen: { width: number; height: number },
     outputDir: string,
+    gameExecutable: string | null,
   ): void {
     const osn = this.mustOsn();
     this.teardownPipeline();
 
-    // Contexto de video: base = monitor primario; salida según el ajuste.
-    const output = this.outputSize(settings, screen);
+    // Contexto de video: lienzo y salida según resolución + relación de aspecto.
+    const sizes = computePipelineSizes(settings.resolution, settings.aspectRatio, screen);
     const context = osn.VideoFactory.create();
     context.video = {
       fpsNum: settings.fps,
       fpsDen: 1,
-      baseWidth: screen.width,
-      baseHeight: screen.height,
-      outputWidth: output.width,
-      outputHeight: output.height,
+      baseWidth: sizes.baseWidth,
+      baseHeight: sizes.baseHeight,
+      outputWidth: sizes.outputWidth,
+      outputHeight: sizes.outputHeight,
       outputFormat: VIDEO_FORMAT_NV12,
       colorspace: COLOR_SPACE_CS709,
       range: RANGE_PARTIAL,
@@ -188,49 +378,64 @@ export class ObsCapture extends EventEmitter {
 
     // Escena: monitor de fondo y game capture encima (si hay juego fullscreen, gana).
     const scene = osn.SceneFactory.create('gameclip-scene');
-    const monitor = osn.InputFactory.create('monitor_capture', 'gameclip-monitor');
-    const game = osn.InputFactory.create('game_capture', 'gameclip-game', {
-      capture_mode: 'any_fullscreen',
-    });
-    scene.add(monitor);
-    scene.add(game);
+    const monitor = osn.InputFactory.create(
+      'monitor_capture',
+      'gameclip-monitor',
+      this.monitorSettings(settings),
+    );
+    const game = osn.InputFactory.create(
+      'game_capture',
+      'gameclip-game',
+      this.gameSettings(settings, gameExecutable),
+    );
+    const monitorItem = scene.add(monitor);
+    const gameItem = scene.add(game);
+    this.applyBounds([monitorItem, gameItem], sizes);
     this.scene = scene;
     this.inputs = [monitor, game];
 
-    const desktopAudio = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio');
-    this.inputs.push(desktopAudio);
-    const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic');
-    mic.muted = !settings.micEnabled;
-    this.inputs.push(mic);
-
+    // Canal 1 = escena; los canales 2.. quedan para las fuentes de audio.
     osn.Global.setOutputSource(1, scene.source);
-    osn.Global.setOutputSource(2, desktopAudio);
-    osn.Global.setOutputSource(3, mic);
+    this.outputChannels.push(1);
+    let channel = 2;
+    const setSource = (src: OsnInput): void => {
+      if (channel >= MAX_OUTPUT_CHANNELS) return; // sin canales libres, se ignora la fuente
+      osn.Global.setOutputSource(channel, src);
+      this.outputChannels.push(channel);
+      channel++;
+    };
 
-    // Salidas: una grabación configurada compartida por la grabación manual y el buffer.
+    const mixer = this.buildAudioSources(osn, settings, gameExecutable, setSource);
+
+    // Salidas advanced: comparten encoder de video y las pistas de audio (bitmask mixer).
     const encoderId = this.pickEncoder(settings.encoderId);
-    const videoEncoder = osn.VideoEncoderFactory.create(encoderId, 'gameclip-venc');
-    const audioEncoder = osn.AudioEncoderFactory.create('ffmpeg_aac', 'gameclip-aenc');
-    this.encoders = [videoEncoder, audioEncoder];
+    const encSettings = encoderRateControlSettings(
+      encoderId,
+      settings.quality,
+      settings.bitrateMbps,
+    );
+    const videoEncoder = osn.VideoEncoderFactory.create(encoderId, 'gameclip-venc', encSettings);
+    this.encoders = [videoEncoder];
 
-    const recording = osn.SimpleRecordingFactory.create();
+    const recording = osn.AdvancedRecordingFactory.create();
     recording.path = outputDir;
     recording.format = 'mp4';
-    recording.quality = QUALITY[settings.quality];
     recording.video = context;
     recording.videoEncoder = videoEncoder;
-    recording.audioEncoder = audioEncoder;
-    recording.lowCPU = false;
+    recording.mixer = mixer;
+    recording.rescaling = false;
+    recording.useStreamEncoders = false;
     recording.overwrite = false;
     recording.noSpace = false;
     recording.signalHandler = (s) => this.emit('signal', s);
     this.recording = recording;
 
-    const replayBuffer = osn.SimpleReplayBufferFactory.create();
+    const replayBuffer = osn.AdvancedReplayBufferFactory.create();
     replayBuffer.path = outputDir;
     replayBuffer.format = 'mp4';
     replayBuffer.duration = settings.replaySeconds;
     replayBuffer.video = context;
+    replayBuffer.mixer = mixer;
     replayBuffer.usesStream = false;
     replayBuffer.overwrite = false;
     replayBuffer.noSpace = false;
@@ -280,10 +485,10 @@ export class ObsCapture extends EventEmitter {
     const osn = this.osn;
     if (!osn) return;
     try {
-      if (this.replayBuffer) osn.SimpleReplayBufferFactory.destroy(this.replayBuffer);
-      if (this.recording) osn.SimpleRecordingFactory.destroy(this.recording);
+      if (this.replayBuffer) osn.AdvancedReplayBufferFactory.destroy(this.replayBuffer);
+      if (this.recording) osn.AdvancedRecordingFactory.destroy(this.recording);
       for (const enc of this.encoders) enc.release();
-      for (const channel of [1, 2, 3]) osn.Global.setOutputSource(channel, null);
+      for (const channel of this.outputChannels) osn.Global.setOutputSource(channel, null);
       for (const input of this.inputs) input.release();
       this.scene?.release();
       this.context?.destroy();
@@ -293,7 +498,9 @@ export class ObsCapture extends EventEmitter {
     this.replayBuffer = null;
     this.recording = null;
     this.encoders = [];
+    this.outputChannels = [];
     this.inputs = [];
+    this.gameAudioSource = null;
     this.scene = null;
     this.context = null;
   }
@@ -307,19 +514,169 @@ export class ObsCapture extends EventEmitter {
     } catch {
       // el proceso obs64 se cierra igual al morir el pipe
     }
+    this.audioTracksCreated.clear(); // la próxima sesión de libobs arranca sin pistas
     this.osn = null;
     this.initialized = false;
   }
 
-  private outputSize(
+  /**
+   * Crea las fuentes de audio según los ajustes, las asigna a canales y a pistas
+   * (audioMixers) y devuelve el bitmask `mixer` de las pistas usadas.
+   * Sin separateAudioTracks: todo a la pista 1. Con él: escritorio/juego → 1,
+   * micrófono → 2, apps extra → 3.
+   */
+  private buildAudioSources(
+    osn: OsnModule,
     settings: CaptureSettings,
-    screen: { width: number; height: number },
-  ): { width: number; height: number } {
-    if (settings.resolution === 'native') return screen;
-    const targetHeight = settings.resolution === '1080p' ? 1080 : 720;
-    if (screen.height <= targetHeight) return screen;
-    const width = Math.round((screen.width * targetHeight) / screen.height / 2) * 2;
-    return { width, height: targetHeight };
+    gameExecutable: string | null,
+    setSource: (src: OsnInput) => void,
+  ): number {
+    const trackMask = (index: number): number => 1 << (index - 1);
+    const usedTracks = new Set<number>();
+    const desktopTrack = 1;
+    const micTrack = settings.separateAudioTracks ? 2 : 1;
+    const appsTrack = settings.separateAudioTracks ? 3 : 1;
+
+    // Micrófono: siempre existe (silenciado si está desactivado) para poder religarlo sin rebuild.
+    const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic', {
+      device_id: settings.micDeviceId || 'default',
+    });
+    mic.muted = !settings.micEnabled;
+    mic.volume = settings.micVolume / 100;
+    mic.audioMixers = trackMask(micTrack);
+    usedTracks.add(micTrack);
+    this.inputs.push(mic);
+    setSource(mic);
+
+    if (settings.audioMode === 'desktop') {
+      const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio');
+      desktop.volume = settings.desktopAudioVolume / 100;
+      desktop.audioMixers = trackMask(desktopTrack);
+      usedTracks.add(desktopTrack);
+      this.inputs.push(desktop);
+      setSource(desktop);
+    } else {
+      let requested = 0;
+      let added = 0;
+      const addProcess = (executable: string | null, vol: number, track: number): OsnInput | null => {
+        requested++;
+        const src = this.createProcessCapture(osn, executable, vol);
+        if (!src) return null;
+        src.audioMixers = trackMask(track);
+        usedTracks.add(track);
+        this.inputs.push(src);
+        setSource(src);
+        added++;
+        return src;
+      };
+      // Audio del juego: la fuente existe aunque no haya juego aún (window vacío no matchea
+      // nada) para poder religarla en caliente sin reconstruir el pipeline.
+      if (settings.gameAudioEnabled) {
+        this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, desktopTrack);
+      }
+      for (const app of settings.audioApps) {
+        addProcess(app.executable, app.volume, appsTrack);
+      }
+      // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
+      // no trae el source): con una parcial, sumar el escritorio duplicaría el audio.
+      if (requested > 0 && added === 0) {
+        const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio-fallback');
+        desktop.audioMixers = trackMask(desktopTrack);
+        usedTracks.add(desktopTrack);
+        this.inputs.push(desktop);
+        setSource(desktop);
+      }
+    }
+
+    // Registrar una pista AAC por índice usado (una sola vez por sesión: las pistas son
+    // globales en libobs y no tienen release; re-crearlas en cada rebuild las fugaría).
+    let mixer = 0;
+    for (const index of [...usedTracks].sort((a, b) => a - b)) {
+      if (!this.audioTracksCreated.has(index)) {
+        const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${index}`);
+        osn.AudioTrackFactory.setAtIndex(track, index);
+        this.audioTracksCreated.add(index);
+      }
+      mixer |= trackMask(index);
+    }
+    return mixer;
+  }
+
+  /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
+  updateGameAudioTarget(executable: string | null): void {
+    this.gameAudioSource?.update(processCaptureSettings(executable));
+  }
+
+  /** Captura de audio por proceso; null si el source no existe en esta build de osn. */
+  private createProcessCapture(
+    osn: OsnModule,
+    executable: string | null,
+    volume: number,
+  ): OsnInput | null {
+    try {
+      const src = osn.InputFactory.create(
+        'wasapi_process_output_capture',
+        `gameclip-app-${executable ?? 'juego'}`,
+        processCaptureSettings(executable),
+      );
+      src.volume = volume / 100;
+      return src;
+    } catch {
+      return null;
+    }
+  }
+
+  private monitorSettings(settings: CaptureSettings): Record<string, unknown> {
+    const s: Record<string, unknown> = { capture_cursor: settings.showMouseCursor };
+    // Método 2 = Windows Graphics Capture (captura ventanas fuera de foco).
+    if (settings.advancedWindowCapture) s.method = 2;
+    return s;
+  }
+
+  private gameSettings(
+    settings: CaptureSettings,
+    gameExecutable: string | null,
+  ): Record<string, unknown> {
+    const s: Record<string, unknown> = {
+      capture_mode: settings.forceWindowCapture ? 'window' : 'any_fullscreen',
+      capture_cursor: settings.showMouseCursor,
+    };
+    if (settings.forceWindowCapture && gameExecutable) {
+      s.window = `::${gameExecutable}`;
+      s.priority = 2; // 2 = coincidencia por ejecutable
+    }
+    if (settings.experimentalCapture) s.capture_overlays = true;
+    // Convierte HDR → SDR indicando el espacio de color de origen del juego.
+    if (settings.hdrCompatibility) s.rgb10a2_space = '2100pq';
+    return s;
+  }
+
+  private applyBounds(items: OsnSceneItem[], sizes: PipelineSizes): void {
+    if (sizes.boundsType === null) return;
+    const bt = sizes.boundsType === 'inner' ? BOUNDS_SCALE_INNER : BOUNDS_SCALE_OUTER;
+    for (const item of items) {
+      item.bounds = { x: sizes.baseWidth, y: sizes.baseHeight };
+      item.boundsType = bt;
+      item.alignment = ALIGN_CENTER;
+      item.boundsAlignment = ALIGN_CENTER;
+    }
+  }
+
+  /** Busca una propiedad por nombre recorriendo la lista enlazada (get() como atajo). */
+  private findProperty(props: OsnProperties, name: string): OsnListProperty | null {
+    try {
+      const direct = props.get(name);
+      if (direct) return direct;
+    } catch {
+      // algunas builds no exponen get(); caer a la iteración
+    }
+    let prop = props.first();
+    let guard = props.count() + 1;
+    while (prop && guard-- > 0) {
+      if (prop.name === name) return prop;
+      prop = prop.next();
+    }
+    return null;
   }
 
   private waitForSignal(
@@ -356,12 +713,12 @@ export class ObsCapture extends EventEmitter {
     return this.osn;
   }
 
-  private mustRecording(): OsnRecording {
+  private mustRecording(): OsnAdvancedRecording {
     if (!this.recording) throw new Error('No hay pipeline de grabación construido.');
     return this.recording;
   }
 
-  private mustReplayBuffer(): OsnReplayBuffer {
+  private mustReplayBuffer(): OsnAdvancedReplayBuffer {
     if (!this.replayBuffer) throw new Error('No hay buffer de repetición construido.');
     return this.replayBuffer;
   }
