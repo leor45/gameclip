@@ -61,13 +61,15 @@ consecutivas con AdvancedRecording + pista 1, osn **b18** — la build de la app
 
 En la build b3 (probada por descarte de regresión de build) el setter también está roto,
 con síntomas distintos (1/2/0.999999 → silencio; 0.8 → boost hasta clipping): el bug es de
-osn/IPC, no de una build puntual. Esto explica **toda** la matriz anterior sin excepciones:
-el mic de la app funcionaba porque el owner tenía `micVolume: 80` → `0.8`… en b18 también
-silencia, así que la lectura de 14:19 (−22.6 dB) fue el tono colándose por el **micrófono
-físico** hacia la pista 1 (mezcla completa), no el loopback. La captura por proceso
-(`wasapi_process_output_capture`) también setea `volume` → también muda. Y las grabaciones
-de las Fases 3–6 tenían audio de verdad (loopback de escritorio + Discord, confirmado por
-el owner) porque el pipeline Simple de la Fase 3 **no tocaba `volume`**.
+osn/IPC, no de una build puntual. Esto explica la matriz anterior: el escritorio y la
+captura por proceso reciben `volume = 1` (silencio); el mic del owner recibía `0.8`
+(`micVolume: 80`) y en el `wasapi_input_capture` esa ruta dejaba pasar señal —de ahí el
+−22.6 dB de las 14:19, que además pudo incluir el tono colándose por el micrófono físico
+a la pista 1 (mezcla completa); en el loopback de b18, `0.8` también silencia (probado).
+Y las grabaciones de las Fases 3–6 tenían audio de verdad (loopback de escritorio +
+Discord, confirmado por el owner) porque el pipeline Simple de la Fase 3 **no tocaba
+`volume`**: la réplica exacta de ese pipeline (`repro4`) captura hoy −13.9 dB en esta
+misma máquina.
 
 Las hipótesis intermedias quedaron **refutadas por el repro controlado**: no es interferencia
 del stack NVIDIA (osn captura perfecto en esta máquina sin el setter, con la NVIDIA App
