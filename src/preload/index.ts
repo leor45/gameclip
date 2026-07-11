@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IpcChannel, IpcEvent } from '@shared/ipc';
-import type { AppVersionInfo, CaptureApi, GameclipApi } from '@shared/ipc';
+import type { AppVersionInfo, CaptureApi, GameclipApi, LibraryApi } from '@shared/ipc';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
+import type { ClipPatch, ClipsQuery } from '@shared/library';
 
 const capture: CaptureApi = {
   getStatus: () => ipcRenderer.invoke(IpcChannel.CaptureGetStatus),
@@ -19,9 +20,26 @@ const capture: CaptureApi = {
   },
 };
 
+const library: LibraryApi = {
+  list: (query?: ClipsQuery) => ipcRenderer.invoke(IpcChannel.LibraryList, query ?? {}),
+  games: () => ipcRenderer.invoke(IpcChannel.LibraryGames),
+  update: (id: number, patch: ClipPatch) =>
+    ipcRenderer.invoke(IpcChannel.LibraryUpdate, { id, patch }),
+  remove: (id: number) => ipcRenderer.invoke(IpcChannel.LibraryDelete, { id }),
+  openFolder: (id: number) => ipcRenderer.invoke(IpcChannel.LibraryOpenFolder, { id }),
+  setMedia: (id: number, media: { durationSeconds?: number; thumbnailDataUrl?: string }) =>
+    ipcRenderer.invoke(IpcChannel.LibrarySetMedia, { id, ...media }),
+  onChanged: (listener: () => void) => {
+    const wrapped = () => listener();
+    ipcRenderer.on(IpcEvent.LibraryChanged, wrapped);
+    return () => ipcRenderer.removeListener(IpcEvent.LibraryChanged, wrapped);
+  },
+};
+
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
   capture,
+  library,
 };
 
 contextBridge.exposeInMainWorld('gameclip', api);

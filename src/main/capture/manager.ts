@@ -83,6 +83,7 @@ export class CaptureManager extends EventEmitter {
     try {
       const file = await this.obs.stopRecording();
       this.setStatus({ state: 'buffering', error: null, lastClipPath: file });
+      this.emit('clip-saved', { filePath: file, source: 'recording' });
     } catch (err) {
       this.setStatus({ state: 'buffering', error: err instanceof Error ? err.message : String(err) });
     }
@@ -96,6 +97,7 @@ export class CaptureManager extends EventEmitter {
     try {
       const file = await this.obs.saveReplay();
       this.setStatus({ error: null, lastClipPath: file });
+      this.emit('clip-saved', { filePath: file, source: 'replay' });
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
     }
