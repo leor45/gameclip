@@ -46,6 +46,17 @@ describe('GameDetector', () => {
     detector.stop();
   });
 
+  it('game-started incluye el ejecutable real que matcheó (no un alias del juego)', async () => {
+    const { detector } = crear([['cs2.exe']]);
+    const matches: Array<{ game: string; exe: string }> = [];
+    detector.on('game-started', (game: string, exe: string) => matches.push({ game, exe }));
+    detector.start();
+    await avanzar(0);
+    // 'Counter-Strike 2' tiene dos exes conocidos (csgo/cs2): debe emitir el que corre.
+    expect(matches).toEqual([{ game: 'Counter-Strike 2', exe: 'cs2.exe' }]);
+    detector.stop();
+  });
+
   it('espera 2 sondeos sin ver el juego antes de emitir game-stopped (anti-parpadeo)', async () => {
     const { detector, eventos } = crear([['cs2.exe'], [], ['cs2.exe'], [], []]);
     detector.start();

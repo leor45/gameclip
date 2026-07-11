@@ -126,23 +126,28 @@ function setupLibrary(
     });
     const stor = new StorageManager(lib, { trashItem: (path) => shell.trashItem(path) });
 
+    const aplicarLimite = (protectPath?: string): void => {
+      void stor
+        .enforceLimit(manager.getSettings(), { protectPath })
+        .catch((err) => console.error('[storage] auto-borrado falló:', err));
+    };
+
     manager.on('clip-saved', (info: ClipSavedInfo) => {
       // El límite se aplica después de registrar, para que el clip nuevo cuente y no se borre.
       void lib
         .registerSavedClip(info.filePath, info.source, info.game)
-        .then(() =>
-          stor.enforceLimit(manager.getSettings(), manager.outputDir(), {
-            protectPath: info.filePath,
-          }),
-        )
+        .then(() => aplicarLimite(info.filePath))
         .catch((err) => console.error('[storage] auto-borrado falló:', err));
     });
-    manager.on('settings', () => lib.reconcile(manager.outputDir()));
+    // Bajar el límite o activar el auto-borrado desde Ajustes limpia de inmediato.
+    manager.on('settings', () => {
+      lib.reconcile(manager.outputDir());
+      aplicarLimite();
+    });
     lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
     lib.reconcile(manager.outputDir());
-    void stor
-      .enforceLimit(manager.getSettings(), manager.outputDir())
-      .catch((err) => console.error('[storage] auto-borrado falló:', err));
+    // Diferido: un backlog sobre el límite no debe bloquear el arranque de la ventana.
+    setTimeout(() => aplicarLimite(), 5000);
     return { lib, storage: stor };
   } catch (err) {
     console.error('[library] no se pudo abrir el catálogo:', err);
@@ -152,9 +157,9 @@ function setupLibrary(
 
 function setupGameDetection(manager: CaptureManager): GameDetector {
   const d = new GameDetector();
-  d.on('game-started', (game: string) => {
-    console.log('[games] detectado:', game);
-    void manager.setGameDetected(game);
+  d.on('game-started', (game: string, executable: string) => {
+    console.log('[games] detectado:', game, `(${executable})`);
+    void manager.setGameDetected(game, executable);
   });
   d.on('game-stopped', () => {
     console.log('[games] juego cerrado');

@@ -44,6 +44,7 @@ interface OsnInput extends OsnSource {
   volume: number;
   audioMixers: number;
   readonly properties: OsnProperties;
+  update(settings: object): void;
 }
 interface OsnSceneItem {
   bounds: { x: number; y: number };
@@ -184,7 +185,8 @@ export function encoderRateControlSettings(
     const crf = quality === 'high' ? 23 : quality === 'higher' ? 18 : 0;
     return { rate_control: 'CRF', crf };
   }
-  const cqp = quality === 'high' ? 23 : quality === 'higher' ? 20 : 16;
+  // 'lossless' en HW: QP 0 (sin pérdida efectiva); CQP 16 sería visiblemente lossy.
+  const cqp = quality === 'high' ? 23 : quality === 'higher' ? 20 : 0;
   return { rate_control: 'CQP', cqp };
 }
 
@@ -250,6 +252,12 @@ export function computePipelineSizes(
   };
 }
 
+/** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
+function processCaptureSettings(executable: string | null): object {
+  // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
+  return { window: executable ? `::${executable}` : '', priority: 2 };
+}
+
 export interface ObsPaths {
   /** Carpeta de datos/config que libobs usa (userData/obs). */
   dataPath: string;
@@ -269,6 +277,10 @@ export class ObsCapture extends EventEmitter {
   private replayBuffer: OsnAdvancedReplayBuffer | null = null;
   private encoders: OsnEncoder[] = [];
   private outputChannels: number[] = [];
+  /** Fuente de audio del juego (modo apps), religable en caliente al cambiar el juego. */
+  private gameAudioSource: OsnInput | null = null;
+  /** Índices de pista AAC ya registrados en libobs (globales a la sesión, sin release). */
+  private readonly audioTracksCreated = new Set<number>();
   private initialized = false;
 
   init(paths: ObsPaths): void {
@@ -488,6 +500,7 @@ export class ObsCapture extends EventEmitter {
     this.encoders = [];
     this.outputChannels = [];
     this.inputs = [];
+    this.gameAudioSource = null;
     this.scene = null;
     this.context = null;
   }
@@ -501,6 +514,7 @@ export class ObsCapture extends EventEmitter {
     } catch {
       // el proceso obs64 se cierra igual al morir el pipe
     }
+    this.audioTracksCreated.clear(); // la próxima sesión de libobs arranca sin pistas
     this.osn = null;
     this.initialized = false;
   }
@@ -542,27 +556,30 @@ export class ObsCapture extends EventEmitter {
       this.inputs.push(desktop);
       setSource(desktop);
     } else {
-      let processFailed = false;
-      const addProcess = (executable: string, vol: number, track: number): void => {
+      let requested = 0;
+      let added = 0;
+      const addProcess = (executable: string | null, vol: number, track: number): OsnInput | null => {
+        requested++;
         const src = this.createProcessCapture(osn, executable, vol);
-        if (!src) {
-          processFailed = true;
-          return;
-        }
+        if (!src) return null;
         src.audioMixers = trackMask(track);
         usedTracks.add(track);
         this.inputs.push(src);
         setSource(src);
+        added++;
+        return src;
       };
-      // Audio del juego detectado en su propia pista de "juego" (comparte pista 1 con escritorio).
-      if (settings.gameAudioEnabled && gameExecutable) {
-        addProcess(gameExecutable, settings.gameAudioVolume, desktopTrack);
+      // Audio del juego: la fuente existe aunque no haya juego aún (window vacío no matchea
+      // nada) para poder religarla en caliente sin reconstruir el pipeline.
+      if (settings.gameAudioEnabled) {
+        this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, desktopTrack);
       }
       for (const app of settings.audioApps) {
         addProcess(app.executable, app.volume, appsTrack);
       }
-      // Si la captura por proceso no está disponible en esta build, degradar a escritorio clásico.
-      if (processFailed) {
+      // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
+      // no trae el source): con una parcial, sumar el escritorio duplicaría el audio.
+      if (requested > 0 && added === 0) {
         const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio-fallback');
         desktop.audioMixers = trackMask(desktopTrack);
         usedTracks.add(desktopTrack);
@@ -571,27 +588,36 @@ export class ObsCapture extends EventEmitter {
       }
     }
 
-    // Crear una pista AAC por índice usado y componer el bitmask de la salida.
+    // Registrar una pista AAC por índice usado (una sola vez por sesión: las pistas son
+    // globales en libobs y no tienen release; re-crearlas en cada rebuild las fugaría).
     let mixer = 0;
     for (const index of [...usedTracks].sort((a, b) => a - b)) {
-      const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${index}`);
-      osn.AudioTrackFactory.setAtIndex(track, index);
+      if (!this.audioTracksCreated.has(index)) {
+        const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${index}`);
+        osn.AudioTrackFactory.setAtIndex(track, index);
+        this.audioTracksCreated.add(index);
+      }
       mixer |= trackMask(index);
     }
     return mixer;
   }
 
-  /** Captura de audio por proceso (window "::exe", priority 2=exe); null si no está disponible. */
+  /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
+  updateGameAudioTarget(executable: string | null): void {
+    this.gameAudioSource?.update(processCaptureSettings(executable));
+  }
+
+  /** Captura de audio por proceso; null si el source no existe en esta build de osn. */
   private createProcessCapture(
     osn: OsnModule,
-    executable: string,
+    executable: string | null,
     volume: number,
   ): OsnInput | null {
     try {
       const src = osn.InputFactory.create(
         'wasapi_process_output_capture',
-        `gameclip-app-${executable}`,
-        { window: `::${executable}`, priority: 2 },
+        `gameclip-app-${executable ?? 'juego'}`,
+        processCaptureSettings(executable),
       );
       src.volume = volume / 100;
       return src;

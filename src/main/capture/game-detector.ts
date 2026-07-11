@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { GAME_POLL_INTERVAL_MS, findRunningGame } from '@shared/games';
+import { GAME_POLL_INTERVAL_MS, findRunningGameMatch } from '@shared/games';
 
 export interface GameDetectorOptions {
   /** Listador de nombres de proceso; inyectable para tests. */
@@ -12,7 +12,8 @@ export interface GameDetectorOptions {
 
 /**
  * Sondea los procesos en ejecución y detecta juegos de la lista curada.
- * Emite 'game-started' (nombre) y 'game-stopped'; `currentGame` refleja el último estado.
+ * Emite 'game-started' (nombre, ejecutable) y 'game-stopped'; `currentGame` refleja el
+ * último estado. El ejecutable es el proceso real que matcheó (para captura por proceso).
  */
 export class GameDetector extends EventEmitter {
   private readonly list: () => Promise<string[]>;
@@ -45,12 +46,12 @@ export class GameDetector extends EventEmitter {
     if (this.polling) return; // un sondeo lento no debe apilarse con el siguiente
     this.polling = true;
     try {
-      const game = findRunningGame(await this.list());
-      if (game) {
+      const match = findRunningGameMatch(await this.list());
+      if (match) {
         this.misses = 0;
-        if (game !== this.currentGame) {
-          this.currentGame = game;
-          this.emit('game-started', game);
+        if (match.name !== this.currentGame) {
+          this.currentGame = match.name;
+          this.emit('game-started', match.name, match.executable);
         }
       } else if (this.currentGame && ++this.misses >= this.missesBeforeStop) {
         this.currentGame = null;

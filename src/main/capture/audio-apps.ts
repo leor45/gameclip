@@ -8,17 +8,27 @@ const PS_COMMAND =
   'Get-Process | Where-Object { $_.MainWindowTitle } | ' +
   'Select-Object ProcessName, MainWindowTitle | ConvertTo-Json -Compress';
 
+// Caché corto: cada montaje de la sección Audio pide la lista; sin caché, cada
+// navegación de Ajustes spawnearía un powershell.exe nuevo.
+const CACHE_TTL_MS = 5000;
+let cache: { at: number; apps: AudioAppInfo[] } | null = null;
+
 /**
  * Candidatos a captura de audio por app: procesos con ventana principal.
  * Aproximación pragmática — enumerar sesiones WASAPI reales exigiría un addon nativo.
  */
 export function listAudioApps(): Promise<AudioAppInfo[]> {
+  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return Promise.resolve(cache.apps);
   return new Promise((resolve) => {
     execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-Command', PS_COMMAND],
       { timeout: 10000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout) => resolve(err ? [] : parseAudioApps(stdout)),
+      (err, stdout) => {
+        const apps = err ? [] : parseAudioApps(stdout);
+        if (!err) cache = { at: Date.now(), apps };
+        resolve(apps);
+      },
     );
   });
 }

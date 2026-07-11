@@ -86,7 +86,7 @@ describe('StorageManager — enforceLimit', () => {
     await clip('a.mp4', 1000, { createdAt: '2026-01-01T00:00:00.000Z' });
     const sm = new StorageManager(manager);
 
-    const borrados = await sm.enforceLimit(settings({ storageLimitGb: 0, autoDeleteOldest: true }), outputDir);
+    const borrados = await sm.enforceLimit(settings({ storageLimitGb: 0, autoDeleteOldest: true }));
 
     expect(borrados).toEqual([]);
     expect(manager.list()).toHaveLength(1);
@@ -98,7 +98,6 @@ describe('StorageManager — enforceLimit', () => {
 
     const borrados = await sm.enforceLimit(
       settings({ storageLimitGb: 1, autoDeleteOldest: false }),
-      outputDir,
     );
 
     expect(borrados).toEqual([]);
@@ -118,7 +117,6 @@ describe('StorageManager — enforceLimit', () => {
     // tras borrar "medio" queda en 1 unidad = límite, se detiene.
     const borrados = await sm.enforceLimit(
       settings({ storageLimitGb: unidad / 1024 ** 3, autoDeleteOldest: true }),
-      outputDir,
     );
 
     expect(borrados).toEqual([viejo.filePath, medio.filePath]);
@@ -146,7 +144,6 @@ describe('StorageManager — enforceLimit', () => {
         autoDeleteOldest: true,
         onlyDeleteRecordings: true,
       }),
-      outputDir,
     );
 
     expect(borrados).toEqual([grabacion.filePath]);
@@ -169,7 +166,6 @@ describe('StorageManager — enforceLimit', () => {
 
     const borrados = await sm.enforceLimit(
       settings({ storageLimitGb: 1 / 1024 ** 3, autoDeleteOldest: true }),
-      outputDir,
       { protectPath: protegido.filePath },
     );
 
@@ -188,7 +184,6 @@ describe('StorageManager — enforceLimit', () => {
 
     const borrados = await sm.enforceLimit(
       settings({ storageLimitGb: unidad / 1024 ** 3, autoDeleteOldest: true, useRecycleBin: true }),
-      outputDir,
     );
 
     expect(trashItem).toHaveBeenCalledWith(viejo.filePath);
@@ -205,7 +200,6 @@ describe('StorageManager — enforceLimit', () => {
 
     const borrados = await sm.enforceLimit(
       settings({ storageLimitGb: unidad / 1024 ** 3, autoDeleteOldest: true, useRecycleBin: true }),
-      outputDir,
     );
 
     expect(trashItem).toHaveBeenCalledWith(viejo.filePath);

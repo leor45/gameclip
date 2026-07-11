@@ -62,6 +62,22 @@ describe('Ajustes — General', () => {
       expect.objectContaining({ replaySeconds: 90, replayHotkey: 'F9' }),
     );
   });
+
+  it('guarda los toggles de comportamiento (bufferMode, overlay, autoLaunch)', async () => {
+    const user = await irAAjustes();
+
+    await user.click(screen.getByLabelText('Iniciar el buffer solo al detectar un juego'));
+    await user.click(
+      screen.getByLabelText('Mostrar overlay al grabar (indicador y confirmación de clip)'),
+    );
+    await user.click(screen.getByLabelText('Iniciar GameClip con Windows (en la bandeja)'));
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ bufferMode: 'game', overlayEnabled: false, autoLaunch: true }),
+    );
+  });
 });
 
 describe('Ajustes — Calidad', () => {

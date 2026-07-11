@@ -48,10 +48,8 @@ export class StorageManager {
    */
   async enforceLimit(
     settings: CaptureSettings,
-    outputDir: string,
     opts: { protectPath?: string } = {},
   ): Promise<string[]> {
-    void outputDir;
     if (settings.storageLimitGb <= 0 || !settings.autoDeleteOldest) return [];
 
     const limitBytes = settings.storageLimitGb * 1024 ** 3;

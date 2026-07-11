@@ -43,6 +43,11 @@ export default function AjustesAlmacenamiento() {
     stats && total > 0
       ? Math.max(0, total - stats.driveFreeBytes - stats.clipsBytes - stats.recordingsBytes)
       : 0;
+  // El catálogo puede contar clips de otra unidad: normalizar para que los segmentos
+  // nunca sumen más del 100 % de la barra.
+  const denominador = stats
+    ? Math.max(total, stats.clipsBytes + stats.recordingsBytes + otrosBytes + stats.driveFreeBytes)
+    : 0;
 
   return (
     <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()}>
@@ -112,19 +117,19 @@ export default function AjustesAlmacenamiento() {
           <div className="storage-bar" role="img" aria-label="Uso de disco">
             <span
               className="storage-seg storage-seg-clips"
-              style={{ width: `${(stats.clipsBytes / total) * 100}%` }}
+              style={{ width: `${(stats.clipsBytes / denominador) * 100}%` }}
             />
             <span
               className="storage-seg storage-seg-recordings"
-              style={{ width: `${(stats.recordingsBytes / total) * 100}%` }}
+              style={{ width: `${(stats.recordingsBytes / denominador) * 100}%` }}
             />
             <span
               className="storage-seg storage-seg-other"
-              style={{ width: `${(otrosBytes / total) * 100}%` }}
+              style={{ width: `${(otrosBytes / denominador) * 100}%` }}
             />
             <span
               className="storage-seg storage-seg-free"
-              style={{ width: `${(stats.driveFreeBytes / total) * 100}%` }}
+              style={{ width: `${(stats.driveFreeBytes / denominador) * 100}%` }}
             />
           </div>
           <ul className="storage-legend">

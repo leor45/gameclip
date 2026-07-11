@@ -16,6 +16,9 @@ class FakeObs implements CaptureBackend {
   buildCount = 0;
   /** Último ejecutable de juego recibido por buildPipeline. */
   ultimoGameExe: string | null = null;
+  /** Último ejecutable religado en caliente vía updateGameAudioTarget. */
+  ultimoGameAudioTarget: string | null = null;
+  updateGameAudioCount = 0;
 
   init(): void {
     this.isInitialized = true;
@@ -37,6 +40,11 @@ class FakeObs implements CaptureBackend {
     this.buildCount++;
     this.ultimoGameExe = gameExecutable;
     this.bufferActivo = false;
+  }
+  updateGameAudioTarget(executable: string | null): void {
+    this.llamadas.push('updateGameAudioTarget');
+    this.ultimoGameAudioTarget = executable;
+    this.updateGameAudioCount++;
   }
   startReplayBuffer(): Promise<void> {
     this.llamadas.push('startReplayBuffer');
@@ -170,44 +178,68 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     ]);
   });
 
-  it('buildPipeline recibe el ejecutable del juego detectado (lookup inverso)', async () => {
-    const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+  it('un rebuild que falla no envenena la cadena: el siguiente guardado se aplica igual', async () => {
+    const manager = crear({ bufferMode: 'always' });
     await manager.initialize();
-    expect(obs.ultimoGameExe).toBeNull(); // sin juego al inicializar
 
-    await manager.setGameDetected('Valorant');
-    expect(obs.ultimoGameExe).toBe('valorant.exe');
+    const original = obs.buildPipeline.bind(obs);
+    obs.buildPipeline = () => {
+      throw new Error('fallo transitorio de libobs');
+    };
+    await manager.setSettings({ fps: 30 });
+    expect(manager.getStatus().error).toContain('fallo transitorio');
+
+    obs.buildPipeline = original;
+    await manager.setSettings({ fps: 60 });
+    expect(manager.getStatus()).toMatchObject({ state: 'buffering', error: null });
   });
 
-  it("modo 'apps' con audio de juego: cambiar el juego reconstruye el pipeline (religa la fuente)", async () => {
+  it("modo 'apps' con audio de juego: el cambio de juego religa la fuente SIN reconstruir (el buffer sobrevive)", async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
     await manager.initialize();
     const buildsTrasInit = obs.buildCount;
 
-    await manager.setGameDetected('Valorant');
-    expect(obs.buildCount).toBe(buildsTrasInit + 1);
-    expect(obs.ultimoGameExe).toBe('valorant.exe');
-    // El rebuild deja el buffer corriendo (bufferMode 'always').
+    // El detector emite el ejecutable real; se religa en caliente sin perder el buffer.
+    await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+    expect(obs.buildCount).toBe(buildsTrasInit); // sin rebuild: el buffer conserva su contenido
+    expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
     expect(manager.getStatus().state).toBe('buffering');
     expect(obs.bufferActivo).toBe(true);
+
+    await manager.setGameDetected(null);
+    expect(obs.ultimoGameAudioTarget).toBeNull();
   });
 
-  it("modo 'desktop': cambiar el juego NO reconstruye el pipeline", async () => {
+  it('sin ejecutable del detector cae al lookup inverso por nombre', async () => {
+    const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+    await manager.initialize();
+
+    await manager.setGameDetected('Valorant');
+    expect(obs.ultimoGameAudioTarget).toBe('valorant.exe');
+
+    // Un rebuild posterior (guardar ajustes) recibe el ejecutable vigente.
+    await manager.setSettings({ fps: 30 });
+    expect(obs.ultimoGameExe).toBe('valorant.exe');
+  });
+
+  it("modo 'desktop': cambiar el juego NO religa audio ni reconstruye", async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'desktop' });
     await manager.initialize();
     const buildsTrasInit = obs.buildCount;
 
     await manager.setGameDetected('Valorant');
     expect(obs.buildCount).toBe(buildsTrasInit);
+    expect(obs.updateGameAudioCount).toBe(0);
   });
 
-  it("modo 'apps' pero sin audio de juego: cambiar el juego NO reconstruye el pipeline", async () => {
+  it("modo 'apps' pero sin audio de juego: cambiar el juego no toca el pipeline", async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: false });
     await manager.initialize();
     const buildsTrasInit = obs.buildCount;
 
     await manager.setGameDetected('Valorant');
     expect(obs.buildCount).toBe(buildsTrasInit);
+    expect(obs.updateGameAudioCount).toBe(0);
   });
 
   it('getAudioDevices devuelve [] mientras libobs no está inicializado', () => {
@@ -215,9 +247,10 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     expect(manager.getAudioDevices()).toEqual([]);
   });
 
-  it('gameExecutableForName mapea el nombre legible a un ejecutable conocido, o null', () => {
+  it('gameExecutableForName (fallback) mapea el nombre a un ejecutable conocido, o null', () => {
+    // Es un fallback lossy (varios exes por juego): el camino principal es el ejecutable
+    // que emite el detector.
     expect(gameExecutableForName('Valorant')).toBe('valorant.exe');
-    expect(gameExecutableForName('Counter-Strike 2')).toBe('csgo.exe');
     expect(gameExecutableForName('Juego Inexistente')).toBeNull();
     expect(gameExecutableForName(null)).toBeNull();
   });

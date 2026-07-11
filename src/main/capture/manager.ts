@@ -53,6 +53,8 @@ export interface CaptureBackend {
     outputDir: string,
     gameExecutable: string | null,
   ): void;
+  /** Religa el audio del juego (modo apps) a otro ejecutable sin reconstruir el pipeline. */
+  updateGameAudioTarget(executable: string | null): void;
   startReplayBuffer(): Promise<void>;
   stopReplayBuffer(): Promise<void>;
   saveReplay(): Promise<string>;
@@ -76,6 +78,8 @@ export class CaptureManager extends EventEmitter {
   private applying = Promise.resolve();
   /** El estado 'recording' no dice si el buffer sigue corriendo por debajo. */
   private bufferRunning = false;
+  /** Ejecutable del juego detectado (el proceso real que vio el detector). */
+  private detectedGameExe: string | null = null;
 
   constructor(
     private readonly store: SettingsStore,
@@ -118,33 +122,44 @@ export class CaptureManager extends EventEmitter {
     const next = this.store.save(partial);
     this.emit('settings', next);
     if (this.obs.isInitialized && this.status.state !== 'recording') {
-      // Serializa reconstrucciones si llegan varias seguidas.
-      this.applying = this.applying.then(() => this.rebuildPipeline());
-      await this.applying;
+      await this.queueRebuild();
     }
     return next;
   }
 
   /**
-   * Actualiza el juego detectado. Con bufferMode 'game' arranca/detiene el buffer;
-   * una grabación manual en curso nunca se interrumpe.
+   * Serializa reconstrucciones si llegan varias seguidas. El fallo de un rebuild queda en
+   * el estado (error) pero NUNCA deja la cadena rechazada: una cadena envenenada saltearía
+   * todos los rebuilds futuros y congelaría la captura hasta reiniciar.
    */
-  async setGameDetected(game: string | null): Promise<void> {
+  private queueRebuild(): Promise<void> {
+    this.applying = this.applying
+      .then(() => this.rebuildPipeline())
+      .catch((err) => {
+        this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+      });
+    return this.applying;
+  }
+
+  /**
+   * Actualiza el juego detectado. Con bufferMode 'game' arranca/detiene el buffer;
+   * una grabación manual en curso nunca se interrumpe. `executable` es el proceso real
+   * que vio el detector; sin él se cae al lookup inverso (lossy) por nombre.
+   */
+  async setGameDetected(game: string | null, executable: string | null = null): Promise<void> {
     if (game === this.status.detectedGame) return;
+    this.detectedGameExe = game ? (executable ?? gameExecutableForName(game)) : null;
     this.setStatus({ detectedGame: game });
     if (!this.obs.isInitialized) return;
     const settings = this.getSettings();
-    // Con audio del juego por proceso hay que religar la fuente reconstruyendo el pipeline
-    // (salvo durante una grabación manual, que no se interrumpe). El rebuild deja el buffer
-    // en el estado correcto según bufferMode.
-    if (
-      settings.audioMode === 'apps' &&
-      settings.gameAudioEnabled &&
-      this.status.state !== 'recording'
-    ) {
-      this.applying = this.applying.then(() => this.rebuildPipeline());
-      await this.applying;
-      return;
+    // El audio del juego por proceso se religa en caliente (update de la fuente), sin
+    // reconstruir el pipeline: un rebuild destruiría el replay buffer y su contenido.
+    if (settings.audioMode === 'apps' && settings.gameAudioEnabled) {
+      try {
+        this.obs.updateGameAudioTarget(this.detectedGameExe);
+      } catch (err) {
+        this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+      }
     }
     if (settings.bufferMode !== 'game') return;
     // Durante una grabación manual no se toca nada; se reconcilia en stopRecording.
@@ -245,8 +260,7 @@ export class CaptureManager extends EventEmitter {
     const settings = this.store.load();
     const outputDir = this.outputDir();
     mkdirSync(outputDir, { recursive: true });
-    const gameExecutable = gameExecutableForName(this.status.detectedGame);
-    this.obs.buildPipeline(settings, this.env.primaryDisplay, outputDir, gameExecutable);
+    this.obs.buildPipeline(settings, this.env.primaryDisplay, outputDir, this.detectedGameExe);
     this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
     if (this.shouldBuffer()) {
       await this.startBuffer();

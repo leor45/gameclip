@@ -42,7 +42,7 @@ describe('encoderRateControlSettings', () => {
     });
   });
 
-  it('encoders HW en automático usan CQP (23/20/16)', () => {
+  it('encoders HW en automático usan CQP (23/20 y QP 0 para sin pérdida)', () => {
     expect(encoderRateControlSettings('jim_nvenc', 'high', 0)).toEqual({
       rate_control: 'CQP',
       cqp: 23,
@@ -51,9 +51,10 @@ describe('encoderRateControlSettings', () => {
       rate_control: 'CQP',
       cqp: 20,
     });
+    // 'Sin pérdida' debe serlo también en HW: QP 0, no un CQP intermedio lossy.
     expect(encoderRateControlSettings('obs_qsv11_v2', 'lossless', 0)).toEqual({
       rate_control: 'CQP',
-      cqp: 16,
+      cqp: 0,
     });
   });
 });
