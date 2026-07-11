@@ -78,17 +78,40 @@ export interface RunningGameMatch {
 }
 
 /**
+ * Devuelve TODOS los juegos conocidos en ejecución (lista curada + ejecutables manuales),
+ * sin duplicados por nombre y en el orden de aparición en la lista de procesos. Acepta
+ * nombres con o sin `.exe` y en cualquier capitalización. El nombre visible de un juego
+ * manual es su ejecutable sin extensión.
+ */
+export function findRunningGamesMatch(
+  processNames: string[],
+  customGames: string[] = [],
+): RunningGameMatch[] {
+  const custom = new Map<string, string>();
+  for (const exe of customGames) {
+    const key = exe.trim().toLowerCase().replace(/\.exe$/, '');
+    if (key) custom.set(key, exe.trim().replace(/\.exe$/i, ''));
+  }
+
+  const out: RunningGameMatch[] = [];
+  const seen = new Set<string>();
+  for (const raw of processNames) {
+    const name = raw.trim().toLowerCase().replace(/\.exe$/, '');
+    if (!name) continue;
+    const game = KNOWN_GAME_PROCESSES[name] ?? custom.get(name);
+    if (!game || seen.has(game)) continue;
+    seen.add(game);
+    out.push({ name: game, executable: `${name}.exe` });
+  }
+  return out;
+}
+
+/**
  * Busca un juego conocido en una lista de nombres de proceso. Acepta nombres con o sin
  * `.exe` y en cualquier capitalización; devuelve el match (nombre + ejecutable) o null.
  */
 export function findRunningGameMatch(processNames: string[]): RunningGameMatch | null {
-  for (const raw of processNames) {
-    const name = raw.trim().toLowerCase().replace(/\.exe$/, '');
-    if (!name) continue;
-    const game = KNOWN_GAME_PROCESSES[name];
-    if (game) return { name: game, executable: `${name}.exe` };
-  }
-  return null;
+  return findRunningGamesMatch(processNames)[0] ?? null;
 }
 
 /** Compat: solo el nombre para mostrar. */

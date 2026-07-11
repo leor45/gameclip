@@ -6,6 +6,7 @@ import type {
   AudioDeviceInfo,
   CaptureSettings,
   CaptureStatus,
+  DisplayInfo,
   EncoderInfo,
 } from './capture';
 import type { ExportProgress, ExportRequest, ExportResult } from './export';
@@ -21,6 +22,9 @@ export const IpcChannel = {
   CaptureGetAudioApps: 'capture:get-audio-apps',
   CapturePickOutputDir: 'capture:pick-output-dir',
   CaptureGetPttAvailable: 'capture:get-ptt-available',
+  CaptureGetDisplays: 'capture:get-displays',
+  CaptureSwitchGame: 'capture:switch-game',
+  CaptureTakeScreenshot: 'capture:take-screenshot',
   CaptureStartRecording: 'capture:start-recording',
   CaptureStopRecording: 'capture:stop-recording',
   CaptureSaveReplay: 'capture:save-replay',
@@ -76,6 +80,11 @@ export interface IpcContract {
   [IpcChannel.CapturePickOutputDir]: { request: void; response: string | null };
   /** false si el hook global de push-to-talk no pudo cargar. */
   [IpcChannel.CaptureGetPttAvailable]: { request: void; response: boolean };
+  [IpcChannel.CaptureGetDisplays]: { request: void; response: DisplayInfo[] };
+  /** Rota el juego activo entre los juegos en ejecución. */
+  [IpcChannel.CaptureSwitchGame]: { request: void; response: CaptureStatus };
+  /** Guarda un PNG del monitor de grabación; devuelve la ruta o null si falló. */
+  [IpcChannel.CaptureTakeScreenshot]: { request: void; response: string | null };
   [IpcChannel.CaptureStartRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureStopRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
@@ -107,6 +116,10 @@ export interface CaptureApi {
   pickOutputDir(): Promise<string | null>;
   /** ¿El hook global de push-to-talk está disponible en esta máquina? */
   getPttAvailable(): Promise<boolean>;
+  /** Displays disponibles con preview, para la grabación de escritorio. */
+  getDisplays(): Promise<DisplayInfo[]>;
+  switchGame(): Promise<CaptureStatus>;
+  takeScreenshot(): Promise<string | null>;
   startRecording(): Promise<CaptureStatus>;
   stopRecording(): Promise<CaptureStatus>;
   saveReplay(): Promise<CaptureStatus>;

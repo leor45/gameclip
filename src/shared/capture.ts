@@ -44,6 +44,21 @@ export const PTT_HOTKEY_OPTIONS: readonly string[] = [
   'Mouse4', 'Mouse5',
 ];
 
+/** 'manual': hotkeys · 'auto': graba la sesión entera del juego · 'off': sin grabación. */
+export type RecordingMode = 'manual' | 'auto' | 'off';
+
+/** Display disponible para grabación de escritorio (preview para el modal). */
+export interface DisplayInfo {
+  /** Índice del monitor (orden de screen.getAllDisplays; 0 suele ser el primario). */
+  index: number;
+  label: string;
+  width: number;
+  height: number;
+  primary: boolean;
+  /** Preview JPEG/PNG como data URL, para el modal de elección. */
+  thumbnailDataUrl: string;
+}
+
 /** Micrófono del sistema enumerado vía libobs. */
 export interface AudioDeviceInfo {
   /** Endpoint WASAPI que entiende libobs; 'default' = dispositivo por defecto. */
@@ -92,6 +107,20 @@ export interface CaptureSettings {
   separateAudioTracks: boolean;
   /** Acelerador de Electron para guardar el clip retroactivo. */
   replayHotkey: string;
+  recordingMode: RecordingMode;
+  /** Hotkey global para rotar el juego activo entre los juegos en ejecución. */
+  gameSwitchEnabled: boolean;
+  gameSwitchHotkey: string;
+  /** Cambiar solo al juego cuya ventana quede en primer plano ~20 s. */
+  autoGameSwitching: boolean;
+  screenshotsEnabled: boolean;
+  screenshotHotkey: string;
+  /** Ejecutables añadidos a mano como juegos (la detección los trata como conocidos). */
+  customGames: string[];
+  /** Monitor a grabar (índice de display; 0 = primario). */
+  screenMonitorIndex: number;
+  /** Grabando escritorio: dejar que el game capture tome el control al lanzarse un juego. */
+  desktopAutoSwitchToGame: boolean;
   /** Carpeta de salida; '' = default (Videos/GameClip). */
   outputDir: string;
   /** Límite de almacenamiento de clips en GB; 0 = sin límite. */
@@ -133,6 +162,8 @@ export const BITRATE_MBPS_MIN = 3;
 export const BITRATE_MBPS_MAX = 100;
 export const STORAGE_LIMIT_GB_MAX = 2000;
 export const AUDIO_APPS_MAX = 8;
+export const CUSTOM_GAMES_MAX = 50;
+export const SCREEN_MONITOR_INDEX_MAX = 7;
 export const CAPTURE_FPS_VALUES: readonly CaptureFps[] = [24, 30, 60, 120, 144];
 
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
@@ -155,6 +186,15 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   audioApps: [],
   separateAudioTracks: false,
   replayHotkey: 'F8',
+  recordingMode: 'manual',
+  gameSwitchEnabled: true,
+  gameSwitchHotkey: 'F10',
+  autoGameSwitching: true,
+  screenshotsEnabled: true,
+  screenshotHotkey: 'F6',
+  customGames: [],
+  screenMonitorIndex: 0,
+  desktopAutoSwitchToGame: true,
   outputDir: '',
   storageLimitGb: 0,
   autoDeleteOldest: false,
@@ -185,6 +225,24 @@ function oneOf<T extends string>(value: unknown, options: readonly T[], fallback
 function volume(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+/** Ejecutables manuales: strings recortados, sin vacíos ni duplicados (case-insensitive). */
+function normalizeCustomGames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const exe = item.trim();
+    if (!exe) continue;
+    const key = exe.toLowerCase().replace(/\.exe$/, '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(exe);
+    if (out.length >= CUSTOM_GAMES_MAX) break;
+  }
+  return out;
 }
 
 function normalizeAudioApps(value: unknown): AudioAppCapture[] {
@@ -237,6 +295,21 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     typeof raw.replayHotkey === 'string' && raw.replayHotkey.trim()
       ? raw.replayHotkey.trim()
       : d.replayHotkey;
+  const gameSwitchHotkey =
+    typeof raw.gameSwitchHotkey === 'string' && raw.gameSwitchHotkey.trim()
+      ? raw.gameSwitchHotkey.trim()
+      : d.gameSwitchHotkey;
+  const screenshotHotkey =
+    typeof raw.screenshotHotkey === 'string' && raw.screenshotHotkey.trim()
+      ? raw.screenshotHotkey.trim()
+      : d.screenshotHotkey;
+  const screenMonitorIndex =
+    typeof raw.screenMonitorIndex === 'number' &&
+    Number.isInteger(raw.screenMonitorIndex) &&
+    raw.screenMonitorIndex >= 0 &&
+    raw.screenMonitorIndex <= SCREEN_MONITOR_INDEX_MAX
+      ? raw.screenMonitorIndex
+      : d.screenMonitorIndex;
 
   return {
     resolution: oneOf(raw.resolution, ['native', '1080p', '720p'], d.resolution),
@@ -260,6 +333,15 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     audioApps: normalizeAudioApps(raw.audioApps),
     separateAudioTracks: bool(raw.separateAudioTracks, d.separateAudioTracks),
     replayHotkey,
+    recordingMode: oneOf(raw.recordingMode, ['manual', 'auto', 'off'], d.recordingMode),
+    gameSwitchEnabled: bool(raw.gameSwitchEnabled, d.gameSwitchEnabled),
+    gameSwitchHotkey,
+    autoGameSwitching: bool(raw.autoGameSwitching, d.autoGameSwitching),
+    screenshotsEnabled: bool(raw.screenshotsEnabled, d.screenshotsEnabled),
+    screenshotHotkey,
+    customGames: normalizeCustomGames(raw.customGames),
+    screenMonitorIndex,
+    desktopAutoSwitchToGame: bool(raw.desktopAutoSwitchToGame, d.desktopAutoSwitchToGame),
     outputDir: typeof raw.outputDir === 'string' ? raw.outputDir : d.outputDir,
     storageLimitGb,
     autoDeleteOldest: bool(raw.autoDeleteOldest, d.autoDeleteOldest),

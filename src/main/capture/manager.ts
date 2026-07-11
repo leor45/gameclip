@@ -109,6 +109,11 @@ export class CaptureManager extends EventEmitter {
     return this.obs.isInitialized ? this.obs.getAudioDevices() : [];
   }
 
+  /** Rota el juego activo entre los juegos en ejecución (implementación en la tarea main). */
+  async switchGame(): Promise<CaptureStatus> {
+    return this.getStatus();
+  }
+
   /** Push-to-talk: el hook global reporta si el hotkey está pulsado. */
   setMicHeld(held: boolean): void {
     this.micHeld = held;
