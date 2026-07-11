@@ -1,9 +1,15 @@
 // Contrato IPC entre main y renderer. Todo canal nuevo se declara aquí:
 // nombre en IpcChannel y tipos de request/response en IpcContract.
 
-import type { CaptureSettings, CaptureStatus, EncoderInfo } from './capture';
+import type {
+  AudioAppInfo,
+  AudioDeviceInfo,
+  CaptureSettings,
+  CaptureStatus,
+  EncoderInfo,
+} from './capture';
 import type { ExportProgress, ExportRequest, ExportResult } from './export';
-import type { Clip, ClipPatch, ClipsQuery } from './library';
+import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
 
 export const IpcChannel = {
   AppVersion: 'app:version',
@@ -11,6 +17,9 @@ export const IpcChannel = {
   CaptureGetSettings: 'capture:get-settings',
   CaptureSetSettings: 'capture:set-settings',
   CaptureGetEncoders: 'capture:get-encoders',
+  CaptureGetAudioDevices: 'capture:get-audio-devices',
+  CaptureGetAudioApps: 'capture:get-audio-apps',
+  CapturePickOutputDir: 'capture:pick-output-dir',
   CaptureStartRecording: 'capture:start-recording',
   CaptureStopRecording: 'capture:stop-recording',
   CaptureSaveReplay: 'capture:save-replay',
@@ -21,6 +30,7 @@ export const IpcChannel = {
   LibraryDelete: 'library:delete',
   LibraryOpenFolder: 'library:open-folder',
   LibrarySetMedia: 'library:set-media',
+  LibraryGetStorageStats: 'library:get-storage-stats',
   ExportRun: 'export:run',
   ExportCancel: 'export:cancel',
   ExportCopyLast: 'export:copy-last',
@@ -59,6 +69,10 @@ export interface IpcContract {
     response: CaptureSettings;
   };
   [IpcChannel.CaptureGetEncoders]: { request: void; response: EncoderInfo[] };
+  [IpcChannel.CaptureGetAudioDevices]: { request: void; response: AudioDeviceInfo[] };
+  [IpcChannel.CaptureGetAudioApps]: { request: void; response: AudioAppInfo[] };
+  /** Diálogo nativo de carpeta; null si el usuario cancela. */
+  [IpcChannel.CapturePickOutputDir]: { request: void; response: string | null };
   [IpcChannel.CaptureStartRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureStopRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
@@ -72,6 +86,7 @@ export interface IpcContract {
     request: { id: number; durationSeconds?: number; thumbnailDataUrl?: string };
     response: Clip;
   };
+  [IpcChannel.LibraryGetStorageStats]: { request: void; response: StorageStats };
   [IpcChannel.ExportRun]: { request: ExportRequest; response: ExportResult };
   [IpcChannel.ExportCancel]: { request: void; response: void };
   [IpcChannel.ExportCopyLast]: { request: void; response: boolean };
@@ -83,6 +98,10 @@ export interface CaptureApi {
   getSettings(): Promise<CaptureSettings>;
   setSettings(partial: Partial<CaptureSettings>): Promise<CaptureSettings>;
   getEncoders(): Promise<EncoderInfo[]>;
+  getAudioDevices(): Promise<AudioDeviceInfo[]>;
+  getAudioApps(): Promise<AudioAppInfo[]>;
+  /** Diálogo nativo para elegir la carpeta de clips; null si se cancela. */
+  pickOutputDir(): Promise<string | null>;
   startRecording(): Promise<CaptureStatus>;
   stopRecording(): Promise<CaptureStatus>;
   saveReplay(): Promise<CaptureStatus>;
@@ -101,6 +120,7 @@ export interface LibraryApi {
     id: number,
     media: { durationSeconds?: number; thumbnailDataUrl?: string },
   ): Promise<Clip>;
+  getStorageStats(): Promise<StorageStats>;
   /** Suscribe a cambios del catálogo; devuelve la función para desuscribirse. */
   onChanged(listener: () => void): () => void;
 }

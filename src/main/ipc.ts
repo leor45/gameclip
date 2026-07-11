@@ -7,14 +7,17 @@ import type { IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings } from '@shared/capture';
 import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
+import { listAudioApps } from './capture/audio-apps';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
+import type { StorageManager } from './library/storage-manager';
 
 export function registerIpcHandlers(
   capture: CaptureManager,
   library: LibraryManager | null,
   exporter: ExportManager | null,
+  storage: StorageManager | null = null,
 ): void {
   ipcMain.handle(
     IpcChannel.AppVersion,
@@ -32,6 +35,20 @@ export function registerIpcHandlers(
     const current = capture.getSettings();
     const next = normalizeCaptureSettings({ ...current, ...(partial as object) });
     return capture.setSettings(next);
+  });
+  ipcMain.handle(IpcChannel.CaptureGetAudioDevices, () => capture.getAudioDevices());
+  ipcMain.handle(IpcChannel.CaptureGetAudioApps, () => listAudioApps());
+  ipcMain.handle(IpcChannel.CapturePickOutputDir, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const opciones = {
+      title: 'Elegir carpeta de clips',
+      defaultPath: capture.outputDir(),
+      properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'>,
+    };
+    const eleccion = win
+      ? await dialog.showOpenDialog(win, opciones)
+      : await dialog.showOpenDialog(opciones);
+    return eleccion.canceled || !eleccion.filePaths[0] ? null : eleccion.filePaths[0];
   });
   ipcMain.handle(IpcChannel.CaptureStartRecording, () => capture.startRecording());
   ipcMain.handle(IpcChannel.CaptureStopRecording, () => capture.stopRecording());
@@ -67,6 +84,11 @@ export function registerIpcHandlers(
           typeof req?.thumbnailDataUrl === 'string' ? req.thumbnailDataUrl : undefined,
       }),
   );
+
+  if (storage) {
+    const stor = storage;
+    ipcMain.handle(IpcChannel.LibraryGetStorageStats, () => stor.getStats(capture.outputDir()));
+  }
 
   if (!exporter) return;
   let lastExportPath: string | null = null;

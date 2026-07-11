@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CaptureSettings, EncoderInfo } from '@shared/capture';
+import type { AudioDeviceInfo, CaptureSettings, EncoderInfo } from '@shared/capture';
 import { CaptureManager } from '../capture/manager';
 import type { CaptureBackend, ClipSavedInfo } from '../capture/manager';
 import { SettingsStore } from '../capture/settings-store';
@@ -19,6 +19,9 @@ class FakeObs implements CaptureBackend {
     this.llamadas.push('init');
   }
   getAvailableEncoders(): EncoderInfo[] {
+    return [];
+  }
+  getAudioDevices(): AudioDeviceInfo[] {
     return [];
   }
   buildPipeline(): void {

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import type { CaptureSettings, EncoderInfo } from '@shared/capture';
+import type { AudioDeviceInfo, CaptureSettings, EncoderInfo } from '@shared/capture';
 
 // Valores espejo de los const enum de module.d.ts (esbuild no inlinea const enums de .d.ts).
 const VIDEO_FORMAT_NV12 = 2;
@@ -151,6 +151,11 @@ export class ObsCapture extends EventEmitter {
     return osn.VideoEncoderFactory.types()
       .filter((id) => id in ENCODER_NAMES)
       .map((id) => ({ id, name: ENCODER_NAMES[id] }));
+  }
+
+  getAudioDevices(): AudioDeviceInfo[] {
+    // Enumeración real vía propiedades de wasapi_input_capture (tarea del pipeline).
+    return [];
   }
 
   pickEncoder(preferred: string): string {

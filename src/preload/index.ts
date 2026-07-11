@@ -19,6 +19,9 @@ const capture: CaptureApi = {
   setSettings: (partial: Partial<CaptureSettings>) =>
     ipcRenderer.invoke(IpcChannel.CaptureSetSettings, partial),
   getEncoders: () => ipcRenderer.invoke(IpcChannel.CaptureGetEncoders),
+  getAudioDevices: () => ipcRenderer.invoke(IpcChannel.CaptureGetAudioDevices),
+  getAudioApps: () => ipcRenderer.invoke(IpcChannel.CaptureGetAudioApps),
+  pickOutputDir: () => ipcRenderer.invoke(IpcChannel.CapturePickOutputDir),
   startRecording: () => ipcRenderer.invoke(IpcChannel.CaptureStartRecording),
   stopRecording: () => ipcRenderer.invoke(IpcChannel.CaptureStopRecording),
   saveReplay: () => ipcRenderer.invoke(IpcChannel.CaptureSaveReplay),
@@ -39,6 +42,7 @@ const library: LibraryApi = {
   openFolder: (id: number) => ipcRenderer.invoke(IpcChannel.LibraryOpenFolder, { id }),
   setMedia: (id: number, media: { durationSeconds?: number; thumbnailDataUrl?: string }) =>
     ipcRenderer.invoke(IpcChannel.LibrarySetMedia, { id, ...media }),
+  getStorageStats: () => ipcRenderer.invoke(IpcChannel.LibraryGetStorageStats),
   onChanged: (listener: () => void) => {
     const wrapped = () => listener();
     ipcRenderer.on(IpcEvent.LibraryChanged, wrapped);

@@ -1,6 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { mkdirSync } from 'node:fs';
-import type { CaptureSettings, CaptureStatus, EncoderInfo } from '@shared/capture';
+import type {
+  AudioDeviceInfo,
+  CaptureSettings,
+  CaptureStatus,
+  EncoderInfo,
+} from '@shared/capture';
 import type { ClipSource } from '@shared/library';
 import { ObsCapture } from './obs';
 import type { SettingsStore } from './settings-store';
@@ -27,6 +32,7 @@ export interface CaptureBackend {
   readonly isInitialized: boolean;
   init(paths: { dataPath: string; appVersion: string }): void;
   getAvailableEncoders(): EncoderInfo[];
+  getAudioDevices(): AudioDeviceInfo[];
   buildPipeline(
     settings: CaptureSettings,
     screen: { width: number; height: number },
@@ -74,6 +80,10 @@ export class CaptureManager extends EventEmitter {
 
   getEncoders(): EncoderInfo[] {
     return this.obs.isInitialized ? this.obs.getAvailableEncoders() : [];
+  }
+
+  getAudioDevices(): AudioDeviceInfo[] {
+    return this.obs.isInitialized ? this.obs.getAudioDevices() : [];
   }
 
   /** Init completa: si libobs falla, el estado queda 'unavailable' y la app sigue. */
