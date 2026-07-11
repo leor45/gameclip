@@ -258,6 +258,20 @@ export function computePipelineSizes(
   };
 }
 
+/**
+ * Máscaras de pista (bitmask audioMixers) por rol. La pista 1 SIEMPRE lleva la mezcla
+ * completa: los reproductores (el interno incluido) solo reproducen la primera pista del
+ * MP4; con tracks separados, mic y apps van ADEMÁS aislados en las pistas 2 y 3.
+ */
+export function audioTrackPlan(separateTracks: boolean): {
+  desktopMask: number;
+  micMask: number;
+  appsMask: number;
+} {
+  if (!separateTracks) return { desktopMask: 0b001, micMask: 0b001, appsMask: 0b001 };
+  return { desktopMask: 0b001, micMask: 0b011, appsMask: 0b101 };
+}
+
 /** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
 function processCaptureSettings(executable: string | null): object {
   // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
@@ -546,11 +560,8 @@ export class ObsCapture extends EventEmitter {
     gameExecutable: string | null,
     setSource: (src: OsnInput) => void,
   ): number {
-    const trackMask = (index: number): number => 1 << (index - 1);
-    const usedTracks = new Set<number>();
-    const desktopTrack = 1;
-    const micTrack = settings.separateAudioTracks ? 2 : 1;
-    const appsTrack = settings.separateAudioTracks ? 3 : 1;
+    const plan = audioTrackPlan(settings.separateAudioTracks);
+    let usedMask = 0;
 
     // Micrófono: siempre existe (silenciado si está desactivado) para poder religarlo sin rebuild.
     const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic', {
@@ -559,8 +570,8 @@ export class ObsCapture extends EventEmitter {
     // Con push-to-talk el mic arranca cerrado hasta que el manager reporte la tecla pulsada.
     mic.muted = !settings.micEnabled || settings.pttEnabled;
     mic.volume = settings.micVolume / 100;
-    mic.audioMixers = trackMask(micTrack);
-    usedTracks.add(micTrack);
+    mic.audioMixers = plan.micMask;
+    usedMask |= plan.micMask;
     this.inputs.push(mic);
     this.micSource = mic;
     setSource(mic);
@@ -580,19 +591,19 @@ export class ObsCapture extends EventEmitter {
     if (settings.audioMode === 'desktop') {
       const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio');
       desktop.volume = settings.desktopAudioVolume / 100;
-      desktop.audioMixers = trackMask(desktopTrack);
-      usedTracks.add(desktopTrack);
+      desktop.audioMixers = plan.desktopMask;
+      usedMask |= plan.desktopMask;
       this.inputs.push(desktop);
       setSource(desktop);
     } else {
       let requested = 0;
       let added = 0;
-      const addProcess = (executable: string | null, vol: number, track: number): OsnInput | null => {
+      const addProcess = (executable: string | null, vol: number, mask: number): OsnInput | null => {
         requested++;
         const src = this.createProcessCapture(osn, executable, vol);
         if (!src) return null;
-        src.audioMixers = trackMask(track);
-        usedTracks.add(track);
+        src.audioMixers = mask;
+        usedMask |= mask;
         this.inputs.push(src);
         setSource(src);
         added++;
@@ -601,35 +612,34 @@ export class ObsCapture extends EventEmitter {
       // Audio del juego: la fuente existe aunque no haya juego aún (window vacío no matchea
       // nada) para poder religarla en caliente sin reconstruir el pipeline.
       if (settings.gameAudioEnabled) {
-        this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, desktopTrack);
+        this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, plan.desktopMask);
       }
       for (const app of settings.audioApps) {
         if (!app.enabled) continue; // desmarcada: sigue en la lista pero no se captura
-        addProcess(app.executable, app.volume, appsTrack);
+        addProcess(app.executable, app.volume, plan.appsMask);
       }
       // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
       // no trae el source): con una parcial, sumar el escritorio duplicaría el audio.
       if (requested > 0 && added === 0) {
         const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio-fallback');
-        desktop.audioMixers = trackMask(desktopTrack);
-        usedTracks.add(desktopTrack);
+        desktop.audioMixers = plan.desktopMask;
+        usedMask |= plan.desktopMask;
         this.inputs.push(desktop);
         setSource(desktop);
       }
     }
 
-    // Registrar una pista AAC por índice usado (una sola vez por sesión: las pistas son
+    // Registrar una pista AAC por bit usado (una sola vez por sesión: las pistas son
     // globales en libobs y no tienen release; re-crearlas en cada rebuild las fugaría).
-    let mixer = 0;
-    for (const index of [...usedTracks].sort((a, b) => a - b)) {
+    for (let index = 1; (1 << (index - 1)) <= usedMask; index++) {
+      if (!(usedMask & (1 << (index - 1)))) continue;
       if (!this.audioTracksCreated.has(index)) {
         const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${index}`);
         osn.AudioTrackFactory.setAtIndex(track, index);
         this.audioTracksCreated.add(index);
       }
-      mixer |= trackMask(index);
     }
-    return mixer;
+    return usedMask;
   }
 
   /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */

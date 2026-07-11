@@ -57,6 +57,11 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > protocolo `gameclip-media://` resuelto por id (el renderer no ve rutas). Thumbnails y
 > duración: video → canvas en el renderer, sin ffmpeg. Juego = ventana activa al guardar
 > (best-effort); la detección seria llega en la Fase 6.
+> Fix post-entrega (2026-07-11, `fix/reproductor-interno`): el CSP de index.html
+> (`default-src 'self'`, de la Fase 1) bloqueaba el protocolo de medios — reproductor y
+> miniaturas nunca cargaban en la app real; permitido `gameclip-media:` en media-src/img-src
+> con test de regresión, y de paso la pista 1 del MP4 ahora siempre lleva la mezcla completa
+> (los reproductores solo leen la primera pista).
 
 ## Fase 5 · Editor de clips — ✅ entregado (base)
 
