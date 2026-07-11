@@ -6,6 +6,7 @@ import { IpcEvent } from '@shared/ipc';
 import ffmpegPath from 'ffmpeg-static';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
+import type { DisplayInfo } from './capture/obs';
 import { GameDetector } from './capture/game-detector';
 import { AutoSwitcher } from './capture/auto-switcher';
 import { takeScreenshot } from './capture/screenshots';
@@ -104,19 +105,23 @@ function setupCapture(): CaptureManager {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { screen } = require('electron') as typeof import('electron');
   const primary = screen.getPrimaryDisplay();
-  const displaySize = (d: Electron.Display): { width: number; height: number } => ({
+  // Tamaño en píxeles físicos + origen nativo: libobs identifica el monitor por device id
+  // y sus coordenadas son físicas (nativeOrigin), no DIP.
+  const displayInfo = (d: Electron.Display): DisplayInfo => ({
     width: d.size.width * d.scaleFactor,
     height: d.size.height * d.scaleFactor,
+    x: d.nativeOrigin.x,
+    y: d.nativeOrigin.y,
   });
   const manager = new CaptureManager(settingsStore, {
     obsDataPath: join(app.getPath('userData'), 'obs-data'),
     defaultOutputDir: join(app.getPath('videos'), 'GameClip'),
     appVersion: app.getVersion(),
-    primaryDisplay: displaySize(primary),
+    primaryDisplay: displayInfo(primary),
     // El display a grabar (índice del ajuste); libobs recibe su tamaño real como lienzo base.
     displayByIndex: (index) => {
       const d = screen.getAllDisplays()[index];
-      return d ? displaySize(d) : null;
+      return d ? displayInfo(d) : null;
     },
   });
 

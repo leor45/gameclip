@@ -1,10 +1,76 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DESKTOP_AUDIO_SETTINGS,
   audioTrackPlan,
   computePipelineSizes,
   encoderFamily,
   encoderRateControlSettings,
+  resolveMonitorId,
 } from '../capture/obs';
+
+// Items reales de la propiedad `monitor_id` en la máquina del bug (probe 2026-07-11).
+const REAL_ITEMS = [
+  { name: 'Auto', value: 'Auto' },
+  {
+    name: 'ASUS VG24VQE: 1080x1920 @ -1080,-208',
+    value: '\\\\?\\DISPLAY#AUS2406#5&1584ecd8&7&UID4357#{e6f07b5f}',
+  },
+  {
+    name: 'MO27Q28G: 2560x1440 @ 0,0 (Monitor principal)',
+    value: '\\\\?\\DISPLAY#GBT273C#5&1584ecd8&7&UID4353#{e6f07b5f}',
+  },
+];
+
+describe('resolveMonitorId', () => {
+  it('regresión: elige el display por tamaño+posición (el bug grababa el monitor equivocado)', () => {
+    // El owner eligió el display de Electron índice 1 (MO27Q28G); con la key legacy
+    // `monitor` libobs capturaba el ASUS vertical. El id resuelto debe ser el del MO27Q28G.
+    expect(resolveMonitorId(REAL_ITEMS, { width: 2560, height: 1440, x: 0, y: 0 })).toBe(
+      '\\\\?\\DISPLAY#GBT273C#5&1584ecd8&7&UID4353#{e6f07b5f}',
+    );
+    expect(resolveMonitorId(REAL_ITEMS, { width: 1080, height: 1920, x: -1080, y: -208 })).toBe(
+      '\\\\?\\DISPLAY#AUS2406#5&1584ecd8&7&UID4357#{e6f07b5f}',
+    );
+  });
+
+  it('sin match exacto, la posición sola decide (tamaño reportado con DPI raro)', () => {
+    expect(resolveMonitorId(REAL_ITEMS, { width: 1728, height: 3072, x: -1080, y: -208 })).toBe(
+      '\\\\?\\DISPLAY#AUS2406#5&1584ecd8&7&UID4357#{e6f07b5f}',
+    );
+  });
+
+  it('sin match de posición, el tamaño decide solo si es inequívoco', () => {
+    expect(resolveMonitorId(REAL_ITEMS, { width: 2560, height: 1440, x: 999, y: 999 })).toBe(
+      '\\\\?\\DISPLAY#GBT273C#5&1584ecd8&7&UID4353#{e6f07b5f}',
+    );
+    // Dos monitores idénticos en posiciones que no cuadran: ambiguo → Auto.
+    const gemelos = [
+      { name: 'X: 1920x1080 @ 0,0', value: 'id-a' },
+      { name: 'X: 1920x1080 @ 1920,0', value: 'id-b' },
+    ];
+    expect(resolveMonitorId(gemelos, { width: 1920, height: 1080, x: 5000, y: 0 })).toBe('Auto');
+  });
+
+  it('sin items o con nombres no parseables cae a Auto (nunca peor que hoy)', () => {
+    expect(resolveMonitorId([], { width: 2560, height: 1440, x: 0, y: 0 })).toBe('Auto');
+    expect(
+      resolveMonitorId([{ name: 'Auto', value: 'Auto' }, { name: 'monitor raro', value: 'id-x' }], {
+        width: 2560,
+        height: 1440,
+        x: 0,
+        y: 0,
+      }),
+    ).toBe('Auto');
+  });
+});
+
+describe('DESKTOP_AUDIO_SETTINGS', () => {
+  it('regresión: el loopback de escritorio usa el reloj del OS (use_device_timing false)', () => {
+    // Con el reloj del dispositivo, las salidas HDMI/DP en reposo acumulan lag y libobs
+    // descarta TODO el audio ("audio is lagging ... at max audio buffering").
+    expect(DESKTOP_AUDIO_SETTINGS).toMatchObject({ use_device_timing: false });
+  });
+});
 
 describe('audioTrackPlan', () => {
   it('sin tracks separados: todo a la pista 1', () => {

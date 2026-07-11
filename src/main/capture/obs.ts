@@ -272,6 +272,70 @@ export function audioTrackPlan(separateTracks: boolean): {
   return { desktopMask: 0b001, micMask: 0b011, appsMask: 0b101 };
 }
 
+/** Display objetivo de la captura: tamaño y origen en píxeles físicos del escritorio virtual. */
+export interface DisplayInfo {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
+/** Item de la propiedad-lista `monitor_id` del source monitor_capture. */
+export interface MonitorIdItem {
+  name: string;
+  value: string | number;
+}
+
+// El nombre de cada item viene como "NOMBRE: WxH @ x,y" (más "(Monitor principal)" a veces).
+const MONITOR_ITEM_RE = /(\d+)x(\d+)\s*@\s*(-?\d+),\s*(-?\d+)/;
+
+/**
+ * Elige el device id (`monitor_id`) del display objetivo entre los items del source
+ * monitor_capture. La key legacy `monitor` (índice) NO sirve: libobs enumera los monitores
+ * en otro orden que Electron y esta build solo respeta `monitor_id`. Matching por prioridad:
+ * tamaño+posición exactos → posición sola → tamaño inequívoco → 'Auto' (default de libobs).
+ */
+export function resolveMonitorId(items: MonitorIdItem[], display: DisplayInfo): string {
+  const parsed = items.flatMap((item) => {
+    const m = MONITOR_ITEM_RE.exec(item.name);
+    if (!m || String(item.value) === 'Auto') return [];
+    return [
+      {
+        value: String(item.value),
+        width: Number(m[1]),
+        height: Number(m[2]),
+        x: Number(m[3]),
+        y: Number(m[4]),
+      },
+    ];
+  });
+
+  const exact = parsed.find(
+    (p) =>
+      p.width === display.width &&
+      p.height === display.height &&
+      p.x === display.x &&
+      p.y === display.y,
+  );
+  if (exact) return exact.value;
+
+  const byPosition = parsed.find((p) => p.x === display.x && p.y === display.y);
+  if (byPosition) return byPosition.value;
+
+  const bySize = parsed.filter((p) => p.width === display.width && p.height === display.height);
+  if (bySize.length === 1) return bySize[0].value;
+
+  return 'Auto';
+}
+
+/**
+ * Settings del loopback de escritorio (wasapi_output_capture). `use_device_timing: false`
+ * es obligatorio: con el reloj del dispositivo, las salidas HDMI/DP en reposo entregan
+ * timestamps atrasados y libobs descarta todo el audio ("audio is lagging ... at max
+ * audio buffering"); con false, libobs timestampa con el reloj del OS.
+ */
+export const DESKTOP_AUDIO_SETTINGS = { use_device_timing: false } as const;
+
 /** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
 function processCaptureSettings(executable: string | null): object {
   // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
@@ -376,7 +440,7 @@ export class ObsCapture extends EventEmitter {
   /** (Re)construye contexto, escena, fuentes y salidas según los ajustes. */
   buildPipeline(
     settings: CaptureSettings,
-    screen: { width: number; height: number },
+    screen: DisplayInfo,
     outputDir: string,
     gameExecutable: string | null,
   ): void {
@@ -409,6 +473,10 @@ export class ObsCapture extends EventEmitter {
       'gameclip-monitor',
       this.monitorSettings(settings),
     );
+    // El monitor se elige por device id: la propiedad-lista `monitor_id` solo existe en el
+    // source ya creado, así que se resuelve contra el display objetivo y se aplica en update.
+    const monitorId = resolveMonitorId(this.monitorIdItems(monitor), screen);
+    if (monitorId !== 'Auto') monitor.update({ monitor_id: monitorId });
     const monitorItem = scene.add(monitor);
     this.inputs = [monitor];
     const items: OsnSceneItem[] = [monitorItem];
@@ -599,7 +667,11 @@ export class ObsCapture extends EventEmitter {
     }
 
     if (settings.audioMode === 'desktop') {
-      const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio');
+      const desktop = osn.InputFactory.create(
+        'wasapi_output_capture',
+        'gameclip-audio',
+        DESKTOP_AUDIO_SETTINGS,
+      );
       desktop.volume = settings.desktopAudioVolume / 100;
       desktop.audioMixers = plan.desktopMask;
       usedMask |= plan.desktopMask;
@@ -631,7 +703,11 @@ export class ObsCapture extends EventEmitter {
       // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
       // no trae el source): con una parcial, sumar el escritorio duplicaría el audio.
       if (requested > 0 && added === 0) {
-        const desktop = osn.InputFactory.create('wasapi_output_capture', 'gameclip-audio-fallback');
+        const desktop = osn.InputFactory.create(
+          'wasapi_output_capture',
+          'gameclip-audio-fallback',
+          DESKTOP_AUDIO_SETTINGS,
+        );
         desktop.audioMixers = plan.desktopMask;
         usedMask |= plan.desktopMask;
         this.inputs.push(desktop);
@@ -690,14 +766,19 @@ export class ObsCapture extends EventEmitter {
   }
 
   private monitorSettings(settings: CaptureSettings): Record<string, unknown> {
+    // OJO: la key legacy `monitor` (índice) no se pasa: esta build la ignora con
+    // `monitor_id` presente y su orden de enumeración no coincide con el de Electron.
     const s: Record<string, unknown> = {
       capture_cursor: settings.showMouseCursor,
-      // Índice del monitor a capturar (0 = primario). El lienzo base ya llega del display.
-      monitor: settings.screenMonitorIndex,
     };
     // Método 2 = Windows Graphics Capture (captura ventanas fuera de foco).
     if (settings.advancedWindowCapture) s.method = 2;
     return s;
+  }
+
+  /** Items de la propiedad-lista `monitor_id` del source de monitor (vacío si no existe). */
+  private monitorIdItems(source: OsnInput): MonitorIdItem[] {
+    return this.findProperty(source.properties, 'monitor_id')?.details?.items ?? [];
   }
 
   private gameSettings(
