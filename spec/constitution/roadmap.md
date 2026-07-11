@@ -29,6 +29,8 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > Refresh tokens opacos, hasheados (sha256) y rotados en cada uso; revocables con logout.
 > Mejora futura anotada: mover los tokens de localStorage a safeStorage si llegan a dar
 > acceso a la nube.
+> Fix post-entrega (2026-07-11, `fix/cors-api`): la API no enviaba cabeceras CORS y el
+> renderer en dev quedaba bloqueado; habilitado `cors()` con test de regresión.
 
 ## Fase 3 · Captura nativa (libobs) — ✅ entregado
 
