@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AudioDeviceInfo, CaptureSettings, EncoderInfo } from '@shared/capture';
-import { CaptureManager } from '../capture/manager';
+import { CaptureManager, gameExecutableForName } from '../capture/manager';
 import type { CaptureBackend, ClipSavedInfo } from '../capture/manager';
 import { SettingsStore } from '../capture/settings-store';
 
@@ -13,6 +13,9 @@ class FakeObs implements CaptureBackend {
   bufferActivo = false;
   grabando = false;
   llamadas: string[] = [];
+  buildCount = 0;
+  /** Último ejecutable de juego recibido por buildPipeline. */
+  ultimoGameExe: string | null = null;
 
   init(): void {
     this.isInitialized = true;
@@ -24,8 +27,15 @@ class FakeObs implements CaptureBackend {
   getAudioDevices(): AudioDeviceInfo[] {
     return [];
   }
-  buildPipeline(): void {
+  buildPipeline(
+    _settings: CaptureSettings,
+    _screen: { width: number; height: number },
+    _outputDir: string,
+    gameExecutable: string | null,
+  ): void {
     this.llamadas.push('buildPipeline');
+    this.buildCount++;
+    this.ultimoGameExe = gameExecutable;
     this.bufferActivo = false;
   }
   startReplayBuffer(): Promise<void> {
@@ -158,5 +168,57 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       { filePath: 'C:\\v\\replay.mp4', source: 'replay', game: 'Valorant' },
       { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: null },
     ]);
+  });
+
+  it('buildPipeline recibe el ejecutable del juego detectado (lookup inverso)', async () => {
+    const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+    await manager.initialize();
+    expect(obs.ultimoGameExe).toBeNull(); // sin juego al inicializar
+
+    await manager.setGameDetected('Valorant');
+    expect(obs.ultimoGameExe).toBe('valorant.exe');
+  });
+
+  it("modo 'apps' con audio de juego: cambiar el juego reconstruye el pipeline (religa la fuente)", async () => {
+    const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+    await manager.initialize();
+    const buildsTrasInit = obs.buildCount;
+
+    await manager.setGameDetected('Valorant');
+    expect(obs.buildCount).toBe(buildsTrasInit + 1);
+    expect(obs.ultimoGameExe).toBe('valorant.exe');
+    // El rebuild deja el buffer corriendo (bufferMode 'always').
+    expect(manager.getStatus().state).toBe('buffering');
+    expect(obs.bufferActivo).toBe(true);
+  });
+
+  it("modo 'desktop': cambiar el juego NO reconstruye el pipeline", async () => {
+    const manager = crear({ bufferMode: 'always', audioMode: 'desktop' });
+    await manager.initialize();
+    const buildsTrasInit = obs.buildCount;
+
+    await manager.setGameDetected('Valorant');
+    expect(obs.buildCount).toBe(buildsTrasInit);
+  });
+
+  it("modo 'apps' pero sin audio de juego: cambiar el juego NO reconstruye el pipeline", async () => {
+    const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: false });
+    await manager.initialize();
+    const buildsTrasInit = obs.buildCount;
+
+    await manager.setGameDetected('Valorant');
+    expect(obs.buildCount).toBe(buildsTrasInit);
+  });
+
+  it('getAudioDevices devuelve [] mientras libobs no está inicializado', () => {
+    const manager = crear();
+    expect(manager.getAudioDevices()).toEqual([]);
+  });
+
+  it('gameExecutableForName mapea el nombre legible a un ejecutable conocido, o null', () => {
+    expect(gameExecutableForName('Valorant')).toBe('valorant.exe');
+    expect(gameExecutableForName('Counter-Strike 2')).toBe('csgo.exe');
+    expect(gameExecutableForName('Juego Inexistente')).toBeNull();
+    expect(gameExecutableForName(null)).toBeNull();
   });
 });

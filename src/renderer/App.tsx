@@ -5,7 +5,12 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import AuthGate from './auth/AuthGate';
 import CaptureBar from './components/CaptureBar';
 import Sidebar from './components/Sidebar';
-import Ajustes from './views/Ajustes';
+import AjustesLayout from './views/ajustes/AjustesLayout';
+import AjustesAlmacenamiento from './views/ajustes/Almacenamiento';
+import AjustesAudio from './views/ajustes/Audio';
+import AjustesAvanzado from './views/ajustes/Avanzado';
+import AjustesCalidad from './views/ajustes/Calidad';
+import AjustesGeneral from './views/ajustes/General';
 import Biblioteca from './views/Biblioteca';
 import Editor from './views/Editor';
 
@@ -30,7 +35,14 @@ function Shell() {
             <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/editor" element={<Editor />} />
             <Route path="/editor/:clipId" element={<Editor />} />
-            <Route path="/ajustes" element={<Ajustes />} />
+            <Route path="/ajustes" element={<AjustesLayout />}>
+              <Route index element={<Navigate to="general" replace />} />
+              <Route path="general" element={<AjustesGeneral />} />
+              <Route path="calidad" element={<AjustesCalidad />} />
+              <Route path="audio" element={<AjustesAudio />} />
+              <Route path="almacenamiento" element={<AjustesAlmacenamiento />} />
+              <Route path="avanzado" element={<AjustesAvanzado />} />
+            </Route>
           </Routes>
         </main>
       </div>

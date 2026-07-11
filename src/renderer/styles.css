@@ -863,3 +863,213 @@ body {
     opacity: 0.35;
   }
 }
+
+/* Ajustes: layout con sub-navegación lateral + contenido */
+
+.ajustes-layout {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.ajustes-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.ajustes-nav-link {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 14px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.ajustes-nav-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.ajustes-nav-link.active {
+  background: rgba(245, 197, 24, 0.12);
+  color: var(--accent);
+}
+
+.ajustes-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .ajustes-layout {
+    flex-direction: column;
+  }
+
+  .ajustes-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+}
+
+/* Ajustes › Calidad: tarjetas de preset */
+
+.quality-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.quality-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.quality-preset:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.quality-preset strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.quality-preset span {
+  font-size: 12px;
+}
+
+.quality-preset.active {
+  border-color: var(--accent);
+  background: rgba(245, 197, 24, 0.1);
+}
+
+.quality-preset.active strong {
+  color: var(--accent);
+}
+
+.quality-preset:disabled {
+  cursor: default;
+}
+
+/* Ajustes › Audio y Almacenamiento: sliders con % y filas de app */
+
+.settings-form input[type='range'] {
+  accent-color: var(--accent);
+  width: 100%;
+}
+
+.audio-app-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.audio-app-row label {
+  flex: 1;
+}
+
+.audio-app-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+}
+
+.audio-app-name {
+  min-width: 120px;
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-app-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.audio-app-add label {
+  flex: 1;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.settings-warning {
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #ff9d94;
+}
+
+/* Ajustes › Almacenamiento: barra de uso de disco */
+
+.storage-bar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.storage-seg-clips {
+  background: var(--accent);
+}
+
+.storage-seg-recordings {
+  background: #4caf50;
+}
+
+.storage-seg-other {
+  background: #5b7fdb;
+}
+
+.storage-seg-free {
+  background: var(--border);
+}
+
+.storage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.storage-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.storage-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}

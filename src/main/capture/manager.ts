@@ -6,9 +6,23 @@ import type {
   CaptureStatus,
   EncoderInfo,
 } from '@shared/capture';
+import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { ClipSource } from '@shared/library';
 import { ObsCapture } from './obs';
 import type { SettingsStore } from './settings-store';
+
+/**
+ * Ejecutable del juego a partir de su nombre legible (lookup inverso en KNOWN_GAME_PROCESSES).
+ * El detector solo emite el nombre; la captura de audio por proceso necesita el .exe.
+ * Devuelve la primera coincidencia (aproximación: varios procesos pueden mapear al mismo juego).
+ */
+export function gameExecutableForName(game: string | null): string | null {
+  if (!game) return null;
+  for (const [proc, name] of Object.entries(KNOWN_GAME_PROCESSES)) {
+    if (name === game) return `${proc}.exe`;
+  }
+  return null;
+}
 
 export interface CaptureEnvironment {
   /** Carpeta de datos para libobs (config interna). */
@@ -37,6 +51,7 @@ export interface CaptureBackend {
     settings: CaptureSettings,
     screen: { width: number; height: number },
     outputDir: string,
+    gameExecutable: string | null,
   ): void;
   startReplayBuffer(): Promise<void>;
   stopReplayBuffer(): Promise<void>;
@@ -117,7 +132,21 @@ export class CaptureManager extends EventEmitter {
   async setGameDetected(game: string | null): Promise<void> {
     if (game === this.status.detectedGame) return;
     this.setStatus({ detectedGame: game });
-    if (!this.obs.isInitialized || this.getSettings().bufferMode !== 'game') return;
+    if (!this.obs.isInitialized) return;
+    const settings = this.getSettings();
+    // Con audio del juego por proceso hay que religar la fuente reconstruyendo el pipeline
+    // (salvo durante una grabación manual, que no se interrumpe). El rebuild deja el buffer
+    // en el estado correcto según bufferMode.
+    if (
+      settings.audioMode === 'apps' &&
+      settings.gameAudioEnabled &&
+      this.status.state !== 'recording'
+    ) {
+      this.applying = this.applying.then(() => this.rebuildPipeline());
+      await this.applying;
+      return;
+    }
+    if (settings.bufferMode !== 'game') return;
     // Durante una grabación manual no se toca nada; se reconcilia en stopRecording.
     if (this.status.state !== 'idle' && this.status.state !== 'buffering') return;
     try {
@@ -216,7 +245,8 @@ export class CaptureManager extends EventEmitter {
     const settings = this.store.load();
     const outputDir = this.outputDir();
     mkdirSync(outputDir, { recursive: true });
-    this.obs.buildPipeline(settings, this.env.primaryDisplay, outputDir);
+    const gameExecutable = gameExecutableForName(this.status.detectedGame);
+    this.obs.buildPipeline(settings, this.env.primaryDisplay, outputDir, gameExecutable);
     this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
     if (this.shouldBuffer()) {
       await this.startBuffer();
