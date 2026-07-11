@@ -130,6 +130,17 @@ export default function ClipCard({ clip, onPlay }: Props) {
         </button>
         <button
           type="button"
+          aria-label="Editar"
+          disabled={ocupado}
+          onClick={() => {
+            // Navegación por hash: la tarjeta no se acopla al router (HashRouter la resuelve).
+            window.location.hash = `#/editor/${clip.id}`;
+          }}
+        >
+          ✂
+        </button>
+        <button
+          type="button"
           aria-label="Abrir carpeta"
           disabled={ocupado}
           onClick={() => void window.gameclip.library.openFolder(clip.id)}

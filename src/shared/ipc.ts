@@ -2,6 +2,7 @@
 // nombre en IpcChannel y tipos de request/response en IpcContract.
 
 import type { CaptureSettings, CaptureStatus, EncoderInfo } from './capture';
+import type { ExportProgress, ExportRequest, ExportResult } from './export';
 import type { Clip, ClipPatch, ClipsQuery } from './library';
 
 export const IpcChannel = {
@@ -14,17 +15,23 @@ export const IpcChannel = {
   CaptureStopRecording: 'capture:stop-recording',
   CaptureSaveReplay: 'capture:save-replay',
   LibraryList: 'library:list',
+  LibraryGet: 'library:get',
   LibraryGames: 'library:games',
   LibraryUpdate: 'library:update',
   LibraryDelete: 'library:delete',
   LibraryOpenFolder: 'library:open-folder',
   LibrarySetMedia: 'library:set-media',
+  ExportRun: 'export:run',
+  ExportCancel: 'export:cancel',
+  ExportCopyLast: 'export:copy-last',
+  ExportShowLast: 'export:show-last',
 } as const;
 
 // Eventos push main → renderer (webContents.send).
 export const IpcEvent = {
   CaptureStatusChanged: 'capture:status-changed',
   LibraryChanged: 'library:changed',
+  ExportProgress: 'export:progress',
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -48,6 +55,7 @@ export interface IpcContract {
   [IpcChannel.CaptureStopRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
   [IpcChannel.LibraryList]: { request: ClipsQuery; response: Clip[] };
+  [IpcChannel.LibraryGet]: { request: { id: number }; response: Clip | null };
   [IpcChannel.LibraryGames]: { request: void; response: string[] };
   [IpcChannel.LibraryUpdate]: { request: { id: number; patch: ClipPatch }; response: Clip };
   [IpcChannel.LibraryDelete]: { request: { id: number }; response: void };
@@ -56,6 +64,10 @@ export interface IpcContract {
     request: { id: number; durationSeconds?: number; thumbnailDataUrl?: string };
     response: Clip;
   };
+  [IpcChannel.ExportRun]: { request: ExportRequest; response: ExportResult };
+  [IpcChannel.ExportCancel]: { request: void; response: void };
+  [IpcChannel.ExportCopyLast]: { request: void; response: boolean };
+  [IpcChannel.ExportShowLast]: { request: void; response: void };
 }
 
 export interface CaptureApi {
@@ -72,6 +84,7 @@ export interface CaptureApi {
 
 export interface LibraryApi {
   list(query?: ClipsQuery): Promise<Clip[]>;
+  get(id: number): Promise<Clip | null>;
   games(): Promise<string[]>;
   update(id: number, patch: ClipPatch): Promise<Clip>;
   remove(id: number): Promise<void>;
@@ -84,9 +97,22 @@ export interface LibraryApi {
   onChanged(listener: () => void): () => void;
 }
 
+export interface ExporterApi {
+  /** Pide destino (diálogo de guardado en el main) y exporta; resuelve al terminar. */
+  run(request: ExportRequest): Promise<ExportResult>;
+  cancel(): Promise<void>;
+  /** Copia el último archivo exportado al portapapeles como archivo. */
+  copyLast(): Promise<boolean>;
+  /** Muestra el último archivo exportado en el Explorador. */
+  showLast(): Promise<void>;
+  /** Suscribe al progreso de exportación; devuelve la función para desuscribirse. */
+  onProgress(listener: (progress: ExportProgress) => void): () => void;
+}
+
 // API que el preload expone en window.gameclip.
 export interface GameclipApi {
   getAppVersion(): Promise<AppVersionInfo>;
   capture: CaptureApi;
   library: LibraryApi;
+  exporter: ExporterApi;
 }

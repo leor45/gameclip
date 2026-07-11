@@ -40,12 +40,22 @@ export function crearGameclipMock() {
     },
     library: {
       list: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
       games: vi.fn().mockResolvedValue([]),
       update: vi.fn().mockImplementation((id, patch) => Promise.resolve({ id, ...patch })),
       remove: vi.fn().mockResolvedValue(undefined),
       openFolder: vi.fn().mockResolvedValue(undefined),
       setMedia: vi.fn().mockImplementation((id) => Promise.resolve({ id })),
       onChanged: vi.fn().mockReturnValue(() => undefined),
+    },
+    exporter: {
+      run: vi
+        .fn()
+        .mockResolvedValue({ status: 'done', outputPath: 'C:\\v\\recorte.mp4' }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      copyLast: vi.fn().mockResolvedValue(true),
+      showLast: vi.fn().mockResolvedValue(undefined),
+      onProgress: vi.fn().mockReturnValue(() => undefined),
     },
   };
 }

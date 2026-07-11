@@ -1,14 +1,20 @@
-import { app, ipcMain, shell } from 'electron';
+import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
 import { IpcChannel } from '@shared/ipc';
 import type { IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings } from '@shared/capture';
+import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
 import type { CaptureManager } from './capture/manager';
+import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
 
 export function registerIpcHandlers(
   capture: CaptureManager,
   library: LibraryManager | null,
+  exporter: ExportManager | null,
 ): void {
   ipcMain.handle(
     IpcChannel.AppVersion,
@@ -37,6 +43,9 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.LibraryList, (_event, query: unknown) =>
     lib.list(sanitizeQuery(query)),
   );
+  ipcMain.handle(IpcChannel.LibraryGet, (_event, req: { id: number }) =>
+    lib.getClip(mustId(req?.id)),
+  );
   ipcMain.handle(IpcChannel.LibraryGames, () => library.games());
   ipcMain.handle(IpcChannel.LibraryUpdate, (_event, req: { id: number; patch: unknown }) =>
     library.updateClip(mustId(req?.id), req?.patch),
@@ -58,6 +67,73 @@ export function registerIpcHandlers(
           typeof req?.thumbnailDataUrl === 'string' ? req.thumbnailDataUrl : undefined,
       }),
   );
+
+  if (!exporter) return;
+  let lastExportPath: string | null = null;
+
+  ipcMain.handle(
+    IpcChannel.ExportRun,
+    async (event, rawRequest: unknown): Promise<ExportResult> => {
+      const request = normalizeExportRequest(rawRequest);
+      const clip = lib.getClip(request.clipId);
+      if (!clip) return { status: 'error', message: 'El clip ya no existe.' };
+      if (exporter.isBusy) {
+        return { status: 'error', message: 'Ya hay una exportación en curso.' };
+      }
+
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const defaultName = `${sanitizeFileName(clip.title)} (recorte).${request.format}`;
+      const opciones = {
+        title: 'Guardar recorte',
+        defaultPath: join(app.getPath('videos'), defaultName),
+        filters:
+          request.format === 'mp4'
+            ? [{ name: 'Video MP4', extensions: ['mp4'] }]
+            : [{ name: 'GIF animado', extensions: ['gif'] }],
+      };
+      const eleccion = win
+        ? await dialog.showSaveDialog(win, opciones)
+        : await dialog.showSaveDialog(opciones);
+      if (eleccion.canceled || !eleccion.filePath) return { status: 'canceled' };
+
+      const resultado = await exporter.run({
+        inputPath: clip.filePath,
+        outputPath: eleccion.filePath,
+        startSeconds: request.startSeconds,
+        endSeconds: request.endSeconds,
+        format: request.format,
+        quality: request.quality,
+      });
+      if (resultado.status === 'done' && resultado.outputPath) {
+        lastExportPath = resultado.outputPath;
+      }
+      return resultado;
+    },
+  );
+  ipcMain.handle(IpcChannel.ExportCancel, () => exporter.cancel());
+  ipcMain.handle(IpcChannel.ExportShowLast, () => {
+    if (lastExportPath && existsSync(lastExportPath)) shell.showItemInFolder(lastExportPath);
+  });
+  ipcMain.handle(IpcChannel.ExportCopyLast, () => copyFileToClipboard(lastExportPath));
+}
+
+// Electron no expone CF_HDROP (archivos) en su API de portapapeles: se delega en
+// PowerShell, que sí arma la lista de archivos pegable en Explorer/Discord.
+function copyFileToClipboard(path: string | null): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!path || !existsSync(path)) return resolve(false);
+    const escaped = path.replace(/'/g, "''");
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', `Set-Clipboard -LiteralPath '${escaped}'`],
+      { timeout: 5000, windowsHide: true },
+      (err) => resolve(!err),
+    );
+  });
+}
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[<>:"/\\|?*]+/g, '_').trim() || 'clip';
 }
 
 // El id viene del renderer: se valida antes de tocar la DB.

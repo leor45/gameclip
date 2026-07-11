@@ -2,8 +2,10 @@ import { join } from 'node:path';
 import { BrowserWindow, app, globalShortcut, protocol, shell } from 'electron';
 import { IpcEvent } from '@shared/ipc';
 import type { ClipSource } from '@shared/library';
+import ffmpegPath from 'ffmpeg-static';
 import { CaptureManager } from './capture/manager';
 import { SettingsStore } from './capture/settings-store';
+import { ExportManager } from './export/manager';
 import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
@@ -134,8 +136,12 @@ function registerReplayHotkey(manager: CaptureManager): void {
 app.whenReady().then(() => {
   capture = setupCapture();
   library = setupLibrary(capture);
+  const exporter = new ExportManager(ffmpegPath ?? 'ffmpeg');
+  exporter.on('progress', (progress) =>
+    mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
+  );
   registerMediaProtocol();
-  registerIpcHandlers(capture, library);
+  registerIpcHandlers(capture, library, exporter);
   createMainWindow();
 
   // Init de libobs sin bloquear la ventana; el estado llega por evento.
