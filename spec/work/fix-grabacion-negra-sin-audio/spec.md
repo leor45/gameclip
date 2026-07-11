@@ -38,10 +38,39 @@ reposo), así que los timestamps llegan ~2,5 min atrás y libobs **descarta todo
 Con `use_device_timing: false` libobs timestampa con el reloj del OS y el audio entra a la
 mezcla. Introducido en la Fase 3 junto con la fuente.
 
+**Causa raíz 3 — audio aún mudo tras el fix 2: interferencia externa con libobs
+(diagnóstico 2026-07-11 tarde, tras el reporte del owner).** Con los fixes 1/1b/2 el video
+quedó perfecto pero el audio siguió en silencio digital. Matriz de evidencia en esta máquina
+(Windows 11 25H2, build 26200.8037):
+
+| Prueba | Resultado |
+|---|---|
+| GameClip: loopback de escritorio (MO27Q28G, C3-1 USB, WG1 BT) con tono sonando y medidor del endpoint en señal | **silencio −91 dB** (paquetes llegan: `adding N ms of audio buffering`) |
+| GameClip: captura por proceso (`wasapi_process_output_capture` → powershell.exe con tono) | **silencio −91 dB** |
+| GameClip: micrófono (`wasapi_input_capture`) | **funciona** (14:19: tono por altavoces a −22.6 dB) |
+| **OBS Studio 31.1.1** (mismo equipo, mismo device default, tono sonando) | **silencio −91 dB** |
+| WASAPI **crudo** (C#, mismo device): polling · event-driven · flags exactos de libobs (`LOOPBACK\|EVENTCALLBACK\|AUTOCONVERTPCM\|SRC_DEFAULT_QUALITY`, 44.1 k y 48 k) · incluso con el proceso renombrado `obs64.exe` | **captura señal SIEMPRE** (picos 0.09–0.17) |
+
+Conclusión: el loopback de Windows está sano; lo que graba ceros es **la familia libobs**
+(OBS Studio y osn por igual). Cronología del gatillo: OBS capturaba bien el 2026-07-05;
+el **2026-07-07 se instaló la NVIDIA App 11.0.8 + ShadowPlay + NVIDIA Virtual Audio 4.65**
+(driver de tap de audio del sistema); ningún KB de Windows desde marzo. Todo apunta a que
+ese stack interfiere con la captura de libobs (los `obs64.exe` reales crean contexto D3D11,
+donde inyectan los hooks de NVIDIA; mi `obs64.exe` falso sin D3D no fue afectado). Verificarlo
+requiere acciones con permisos de usuario/admin (deshabilitar Instant Replay/overlay en la
+NVIDIA App o el dispositivo "NVIDIA Virtual Audio Device (Wave Extensible)" y reiniciar) —
+fuera del alcance de esta sesión sin elevación. Los fixes 1/1b/2 quedan correctos y
+necesarios; el 2 se verificó E2E una vez (14:19) antes de que la interferencia se
+manifestara de forma consistente.
+
 **Hallazgo adicional (documentado, fuera de alcance):** en modo de audio `apps` sin juego
 corriendo, la única fuente es la captura por proceso "dormida" (window vacío) → una
 grabación de escritorio en ese modo queda estructuralmente muda (así salió el clip
 13-45-56). Comportamiento por diseño de la Fase 8; si molesta, lleva su propio spec.
+
+**Mejora futura anotada (spec propio si se confirma la causa 3):** selector de dispositivo
+para el audio de escritorio (hoy captura el default del sistema; con varios dispositivos —
+auriculares WG1, monitores — conviene elegir el que se escucha, como hacen OBS y las apps de clips).
 
 ## Alcance
 

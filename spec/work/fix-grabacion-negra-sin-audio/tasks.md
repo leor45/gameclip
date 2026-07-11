@@ -37,9 +37,14 @@ Camino feliz **y** casos borde. Si es un Fix: el test de regresión va primero (
         (3 pasadas consecutivas; antes del fix: negro el 100 % del clip).
       - Audio: tono de 440 Hz por altavoces capturado en la pista 1 a −22.6 dB de media
         (max 0 dB) y cero avisos de `audio is lagging` (antes: −91 dB y descarte total).
-        Nota: pasadas posteriores dieron silencio con paquetes llegando en cero —
-        volumen maestro del endpoint bajado durante la prueba; el loopback graba
-        post-volumen (mismo comportamiento que OBS).
+      - Audio (adenda — causa raíz 3 del spec): el silencio reapareció de forma
+        consistente; el diagnóstico completo está en el spec. Interferencia externa
+        (stack NVIDIA App/ShadowPlay/Virtual Audio instalado el 2026-07-07) que silencia
+        el loopback de TODA la familia libobs — OBS Studio 31.1.1 incluido — mientras el
+        WASAPI crudo captura bien en los mismos dispositivos. Pendiente de acción del
+        owner: deshabilitar Instant Replay/overlay de la NVIDIA App (o el dispositivo
+        "NVIDIA Virtual Audio Device (Wave Extensible)" en el Administrador de
+        dispositivos), reiniciar y reprobar la grabación con audio.
 
 ## Cierre
 
