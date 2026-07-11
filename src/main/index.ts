@@ -1,12 +1,23 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, globalShortcut, shell } from 'electron';
+import { BrowserWindow, app, globalShortcut, protocol, shell } from 'electron';
 import { IpcEvent } from '@shared/ipc';
+import type { ClipSource } from '@shared/library';
 import { CaptureManager } from './capture/manager';
 import { SettingsStore } from './capture/settings-store';
+import { ClipsRepository } from './library/clips-repository';
+import { openLibraryDatabase } from './library/database';
+import { getForegroundWindowTitle } from './library/foreground';
+import { LibraryManager } from './library/manager';
 import { registerIpcHandlers } from './ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let capture: CaptureManager | null = null;
+let library: LibraryManager | null = null;
+
+// El scheme de medios necesita privilegios (stream para <video>) antes de 'ready'.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'gameclip-media', privileges: { secure: true, stream: true } },
+]);
 
 function createMainWindow(): void {
   const win = new BrowserWindow({
@@ -67,6 +78,47 @@ function setupCapture(): CaptureManager {
   return manager;
 }
 
+// Biblioteca: si la DB no abre (p. ej. faltó el prebuild ABI-Electron), la app sigue sin
+// catálogo y el renderer recibe el error al llamar a la API.
+function setupLibrary(manager: CaptureManager): LibraryManager | null {
+  try {
+    const db = openLibraryDatabase(join(app.getPath('userData'), 'library.db'));
+    const repo = new ClipsRepository(db);
+    const lib = new LibraryManager(repo, {
+      thumbnailsDir: join(app.getPath('userData'), 'thumbnails'),
+      getForegroundTitle: getForegroundWindowTitle,
+    });
+
+    manager.on('clip-saved', (info: { filePath: string; source: ClipSource }) => {
+      void lib.registerSavedClip(info.filePath, info.source);
+    });
+    manager.on('settings', () => lib.reconcile(manager.outputDir()));
+    lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
+    lib.reconcile(manager.outputDir());
+    return lib;
+  } catch (err) {
+    console.error('[library] no se pudo abrir el catálogo:', err);
+    return null;
+  }
+}
+
+// gameclip-media://clip/<id> y gameclip-media://thumb/<id>: el renderer nunca maneja rutas.
+function registerMediaProtocol(): void {
+  protocol.registerFileProtocol('gameclip-media', (request, callback) => {
+    try {
+      const url = new URL(request.url);
+      const id = Number(url.pathname.replace(/^\//, ''));
+      const clip = Number.isInteger(id) && id > 0 ? (library?.getClip(id) ?? null) : null;
+      const path =
+        url.host === 'clip' ? clip?.filePath : url.host === 'thumb' ? clip?.thumbnailPath : null;
+      if (path) callback({ path });
+      else callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
+    } catch {
+      callback({ error: -6 });
+    }
+  });
+}
+
 function registerReplayHotkey(manager: CaptureManager): void {
   globalShortcut.unregisterAll();
   const hotkey = manager.getSettings().replayHotkey;
@@ -81,7 +133,9 @@ function registerReplayHotkey(manager: CaptureManager): void {
 
 app.whenReady().then(() => {
   capture = setupCapture();
-  registerIpcHandlers(capture);
+  library = setupLibrary(capture);
+  registerMediaProtocol();
+  registerIpcHandlers(capture, library);
   createMainWindow();
 
   // Init de libobs sin bloquear la ventana; el estado llega por evento.

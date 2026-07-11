@@ -38,6 +38,15 @@ export function crearGameclipMock() {
         .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: 'C:\\v\\replay.mp4' }),
       onStatusChanged: vi.fn().mockReturnValue(() => undefined),
     },
+    library: {
+      list: vi.fn().mockResolvedValue([]),
+      games: vi.fn().mockResolvedValue([]),
+      update: vi.fn().mockImplementation((id, patch) => Promise.resolve({ id, ...patch })),
+      remove: vi.fn().mockResolvedValue(undefined),
+      openFolder: vi.fn().mockResolvedValue(undefined),
+      setMedia: vi.fn().mockImplementation((id) => Promise.resolve({ id })),
+      onChanged: vi.fn().mockReturnValue(() => undefined),
+    },
   };
 }
 

@@ -13,12 +13,14 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "build": "electron-vite build"
+    "build": "electron-vite build",
+    "postinstall": "node scripts/rebuild-sqlite-electron.mjs"
   },
   "dependencies": {
     "@streamlabs/obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.26.29b18-release-win64.tar.gz",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.10.0",
+    "better-sqlite3-electron": "npm:better-sqlite3@^11.10.0",
     "cors": "^2.8.6",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",

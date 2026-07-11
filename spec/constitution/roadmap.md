@@ -46,11 +46,17 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > UI: `GAMECLIP_SELFTEST=recording npm run dev`. Verificado en máquina real: clip retroactivo
 > F8 de 45 s H.264 1440p60 + AAC y grabación manual.
 
-## Fase 4 · Biblioteca de clips — ⏳ pendiente
+## Fase 4 · Biblioteca de clips — ✅ entregado
 
-- [ ] Guardado local de clips con metadatos (juego detectado, fecha, duración, etiquetas) en SQLite.
-- [ ] Vista de biblioteca: grilla con thumbnails, reproducción, búsqueda y filtros.
-- [ ] Gestión: renombrar, etiquetar, favoritos, eliminar, abrir carpeta.
+- [x] Guardado local de clips con metadatos (juego detectado, fecha, duración, etiquetas) en SQLite.
+- [x] Vista de biblioteca: grilla con thumbnails, reproducción, búsqueda y filtros.
+- [x] Gestión: renombrar, etiquetar, favoritos, eliminar, abrir carpeta.
+
+> Catálogo en el main (`userData/library.db`) con alias `better-sqlite3-electron` (prebuild
+> ABI 121 vía postinstall; el server conserva su binario de Node). Medios servidos por el
+> protocolo `gameclip-media://` resuelto por id (el renderer no ve rutas). Thumbnails y
+> duración: video → canvas en el renderer, sin ffmpeg. Juego = ventana activa al guardar
+> (best-effort); la detección seria llega en la Fase 6.
 
 ## Fase 5 · Editor de clips — ⏳ pendiente
 
