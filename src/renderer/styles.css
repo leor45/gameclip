@@ -347,10 +347,14 @@ body {
   cursor: pointer;
 }
 
+/* Absoluta para salir del flujo: si la imagen participa del sizing, un thumbnail 9:16
+   estira la card y anula el aspect-ratio del contenedor. Contain: preview completo. */
 .clip-thumb img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 
