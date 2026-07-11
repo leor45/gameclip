@@ -62,6 +62,9 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > miniaturas nunca cargaban en la app real; permitido `gameclip-media:` en media-src/img-src
 > con test de regresión, y de paso la pista 1 del MP4 ahora siempre lleva la mezcla completa
 > (los reproductores solo leen la primera pista).
+> Fix post-entrega (2026-07-11, `fix/biblioteca-cards-uniformes`): los clips 9:16 estiraban
+> su card (la imagen participaba del sizing y anulaba el aspect-ratio); imagen absoluta +
+> `object-fit: contain` — marco fijo 16:9 y preview completo. Verificado vía CDP.
 
 ## Fase 5 · Editor de clips — ✅ entregado (base)
 
