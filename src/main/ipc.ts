@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
+import { BrowserWindow, app, desktopCapturer, dialog, ipcMain, screen, shell } from 'electron';
 import { IpcChannel } from '@shared/ipc';
 import type { IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings } from '@shared/capture';
 import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
 import { listAudioApps } from './capture/audio-apps';
+import { takeScreenshot } from './capture/screenshots';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
@@ -39,6 +40,30 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IpcChannel.CaptureGetAudioDevices, () => capture.getAudioDevices());
   ipcMain.handle(IpcChannel.CaptureGetPttAvailable, () => pttAvailable());
+  ipcMain.handle(IpcChannel.CaptureGetDisplays, async () => {
+    const displays = screen.getAllDisplays();
+    const primaryId = screen.getPrimaryDisplay().id;
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 320, height: 180 },
+    });
+    return displays.map((d, index) => {
+      // display_id de desktopCapturer ↔ id de screen; si no matchea, cae al orden.
+      const source = sources.find((s) => Number(s.display_id) === d.id) ?? sources[index];
+      return {
+        index,
+        label: d.label || `Display ${index + 1}`,
+        width: d.size.width,
+        height: d.size.height,
+        primary: d.id === primaryId,
+        thumbnailDataUrl: source?.thumbnail.toDataURL() ?? '',
+      };
+    });
+  });
+  ipcMain.handle(IpcChannel.CaptureSwitchGame, () => capture.switchGame());
+  ipcMain.handle(IpcChannel.CaptureTakeScreenshot, () =>
+    takeScreenshot(capture.getSettings().screenMonitorIndex, capture.outputDir()),
+  );
   ipcMain.handle(IpcChannel.CaptureGetAudioApps, () => listAudioApps());
   ipcMain.handle(IpcChannel.CapturePickOutputDir, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);

@@ -1,19 +1,24 @@
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { GAME_POLL_INTERVAL_MS, findRunningGameMatch } from '@shared/games';
+import { GAME_POLL_INTERVAL_MS, findRunningGamesMatch } from '@shared/games';
+import type { RunningGameMatch } from '@shared/games';
 
 export interface GameDetectorOptions {
   /** Listador de nombres de proceso; inyectable para tests. */
   listProcessNames?: () => Promise<string[]>;
   intervalMs?: number;
-  /** Sondeos consecutivos sin ver el juego antes de darlo por cerrado (anti-parpadeo). */
+  /** Sondeos consecutivos sin ver NINGÚN juego antes de dar la lista por vacía (anti-parpadeo). */
   missesBeforeStop?: number;
+  /** Ejecutables añadidos a mano (tratados como juegos conocidos). */
+  customGames?: string[];
 }
 
 /**
- * Sondea los procesos en ejecución y detecta juegos de la lista curada.
- * Emite 'game-started' (nombre, ejecutable) y 'game-stopped'; `currentGame` refleja el
- * último estado. El ejecutable es el proceso real que matcheó (para captura por proceso).
+ * Sondea los procesos en ejecución y detecta TODOS los juegos conocidos (lista curada +
+ * ejecutables manuales) que corren a la vez. Emite 'games-changed' con la lista completa
+ * cuando el CONJUNTO cambia (comparado por nombres). Un solo juego que desaparece un sondeo
+ * mientras otros siguen actualiza la lista de inmediato; solo el vaciado total espera
+ * `missesBeforeStop` sondeos seguidos sin ver ninguno (anti-parpadeo).
  */
 export class GameDetector extends EventEmitter {
   private readonly list: () => Promise<string[]>;
@@ -22,13 +27,21 @@ export class GameDetector extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
   private misses = 0;
   private polling = false;
-  currentGame: string | null = null;
+  private customGames: string[];
+  /** Juegos vistos en el último estado confirmado (el que se emitió). */
+  running: RunningGameMatch[] = [];
 
   constructor(options: GameDetectorOptions = {}) {
     super();
     this.list = options.listProcessNames ?? listProcessNamesWindows;
     this.intervalMs = options.intervalMs ?? GAME_POLL_INTERVAL_MS;
     this.missesBeforeStop = options.missesBeforeStop ?? 2;
+    this.customGames = options.customGames ?? [];
+  }
+
+  /** Actualiza los ejecutables manuales (los ajustes cambiaron); se aplican en el próximo sondeo. */
+  setCustomGames(exes: string[]): void {
+    this.customGames = exes;
   }
 
   start(): void {
@@ -46,23 +59,33 @@ export class GameDetector extends EventEmitter {
     if (this.polling) return; // un sondeo lento no debe apilarse con el siguiente
     this.polling = true;
     try {
-      const match = findRunningGameMatch(await this.list());
-      if (match) {
+      const matches = findRunningGamesMatch(await this.list(), this.customGames);
+      if (matches.length > 0) {
+        // Con al menos un juego, la lista es de fiar: se aplica de inmediato (aunque alguno
+        // haya desaparecido respecto al sondeo anterior).
         this.misses = 0;
-        if (match.name !== this.currentGame) {
-          this.currentGame = match.name;
-          this.emit('game-started', match.name, match.executable);
+        if (this.setChanged(matches)) {
+          this.running = matches;
+          this.emit('games-changed', this.running);
         }
-      } else if (this.currentGame && ++this.misses >= this.missesBeforeStop) {
-        this.currentGame = null;
+      } else if (this.running.length > 0 && ++this.misses >= this.missesBeforeStop) {
+        // Solo el vaciado total espera varios sondeos: evita el parpadeo de tasklist.
+        this.running = [];
         this.misses = 0;
-        this.emit('game-stopped');
+        this.emit('games-changed', this.running);
       }
     } catch {
       // sondeo best-effort: un fallo puntual de tasklist no cambia el estado
     } finally {
       this.polling = false;
     }
+  }
+
+  /** ¿El conjunto de juegos (por nombre) difiere del último confirmado? */
+  private setChanged(next: RunningGameMatch[]): boolean {
+    if (next.length !== this.running.length) return true;
+    const prev = new Set(this.running.map((g) => g.name));
+    return next.some((g) => !prev.has(g.name));
   }
 }
 

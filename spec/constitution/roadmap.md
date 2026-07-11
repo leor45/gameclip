@@ -126,6 +126,24 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > deshabilitadas, y arranque con la aceleración desactivada. PTT emite `held` desde el hook
 > de bajo nivel y el manager recalcula el mute tras cada rebuild.
 
+## Fase 9 · Configuración de grabación y escritorio — ✅ entregado (pendiente de merge)
+
+- [x] Modos de grabación: manual (hotkeys) · auto (graba la sesión completa del juego,
+      corta al cerrarse o al cambiar de juego) · apagado (sin buffer ni grabaciones).
+- [x] Cambio de juego: hotkey global (F10) que rota entre los juegos en ejecución, con
+      cambio automático por foco (~20 s, matching por título best-effort); el detector pasó
+      a rastrear TODOS los juegos conocidos en ejecución.
+- [x] Capturas de pantalla con hotkey (PNG del monitor de grabación en Capturas/ + toast).
+- [x] Alta manual de juegos (.exe) que la lista curada no reconoce, con baja desde la UI.
+- [x] Grabación de escritorio: modal con preview por display, monitor configurable (lienzo
+      y captura del display elegido) y toggle del game capture apilado.
+
+> Verificado E2E en máquina real: juego manual falso detectado → modo auto grabó y cortó
+> solo (clip 23 s); screenshot del display configurado; grabación del monitor secundario a
+> su resolución. Revisión propia: 6 fixes aplicados (etiquetado de sesión, serialización de
+> switchGame, reanudación tras corte manual, re-target de video con forceWindowCapture,
+> feedback del modal, colisiones de hotkeys).
+
 ## Futuro (fuera de alcance por ahora)
 
 - Guardado en la nube y compartir alojado.

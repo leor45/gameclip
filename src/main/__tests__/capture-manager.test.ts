@@ -46,6 +46,11 @@ class FakeObs implements CaptureBackend {
     this.ultimoGameAudioTarget = executable;
     this.updateGameAudioCount++;
   }
+  ultimoGameCaptureTarget: string | null = null;
+  updateGameCaptureTarget(executable: string | null): void {
+    this.llamadas.push('updateGameCaptureTarget');
+    this.ultimoGameCaptureTarget = executable;
+  }
   micMuted: boolean | null = null;
   setMicMuted(muted: boolean): void {
     this.micMuted = muted;
@@ -286,11 +291,199 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     expect(manager.getAudioDevices()).toEqual([]);
   });
 
+  it('modo auto: al cambiar de juego, el clip que termina se etiqueta con el juego ANTERIOR', async () => {
+    const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+    await manager.initialize();
+    const guardados: ClipSavedInfo[] = [];
+    manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+    await manager.setRunningGames([{ name: 'Terraria', executable: 'terraria.exe' }]);
+    expect(manager.getStatus().state).toBe('recording');
+
+    await manager.setRunningGames([
+      { name: 'Terraria', executable: 'terraria.exe' },
+      { name: 'Valorant', executable: 'valorant.exe' },
+    ]);
+    await manager.switchGame('Valorant');
+
+    expect(guardados).toHaveLength(1);
+    expect(guardados[0].game).toBe('Terraria'); // la sesión cortada era de Terraria
+    expect(manager.getStatus()).toMatchObject({ state: 'recording', detectedGame: 'Valorant' });
+  });
+
+  it('modo auto: tras un corte manual, cambiar de juego reanuda la grabación de sesión', async () => {
+    const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+    await manager.initialize();
+    await manager.setRunningGames([
+      { name: 'Terraria', executable: 'terraria.exe' },
+      { name: 'Valorant', executable: 'valorant.exe' },
+    ]);
+    expect(manager.getStatus().state).toBe('recording');
+
+    await manager.stopRecording(); // el usuario corta a mano; el juego sigue abierto
+    expect(manager.getStatus().state).toBe('buffering');
+
+    await manager.switchGame('Valorant');
+    expect(manager.getStatus().state).toBe('recording'); // la sesión del nuevo juego arranca
+  });
+
+  it('con forceWindowCapture el cambio de juego re-apunta también el video', async () => {
+    const manager = crear({ bufferMode: 'always', forceWindowCapture: true });
+    await manager.initialize();
+    await manager.setRunningGames([
+      { name: 'Terraria', executable: 'terraria.exe' },
+      { name: 'Valorant', executable: 'valorant.exe' },
+    ]);
+
+    await manager.switchGame('Valorant');
+    expect(obs.ultimoGameCaptureTarget).toBe('valorant.exe');
+  });
+
   it('gameExecutableForName (fallback) mapea el nombre a un ejecutable conocido, o null', () => {
     // Es un fallback lossy (varios exes por juego): el camino principal es el ejecutable
     // que emite el detector.
     expect(gameExecutableForName('Valorant')).toBe('valorant.exe');
     expect(gameExecutableForName('Juego Inexistente')).toBeNull();
     expect(gameExecutableForName(null)).toBeNull();
+  });
+
+  const cs2 = { name: 'Counter-Strike 2', executable: 'cs2.exe' };
+  const rl = { name: 'Rocket League', executable: 'rocketleague.exe' };
+
+  describe("modo 'off'", () => {
+    it('no arranca el buffer en la init aunque bufferMode sea always', async () => {
+      const manager = crear({ recordingMode: 'off', bufferMode: 'always' });
+      await manager.initialize();
+      expect(manager.getStatus().state).toBe('idle');
+      expect(obs.bufferActivo).toBe(false);
+    });
+
+    it('tampoco bufferiza al aparecer un juego', async () => {
+      const manager = crear({ recordingMode: 'off', bufferMode: 'game' });
+      await manager.initialize();
+      await manager.setRunningGames([cs2]);
+      expect(manager.getStatus()).toMatchObject({ state: 'idle', detectedGame: 'Counter-Strike 2' });
+      expect(obs.bufferActivo).toBe(false);
+    });
+
+    it('startRecording y saveReplay son no-op (devuelven el status sin tocar libobs)', async () => {
+      const manager = crear({ recordingMode: 'off', bufferMode: 'always' });
+      await manager.initialize();
+
+      await manager.startRecording();
+      expect(manager.getStatus().state).toBe('idle');
+      expect(obs.grabando).toBe(false);
+
+      await manager.saveReplay();
+      expect(obs.llamadas).not.toContain('saveReplay');
+      expect(obs.llamadas).not.toContain('startRecording');
+    });
+  });
+
+  describe("modo 'auto'", () => {
+    it('arranca la grabación cuando aparece un juego y la corta cuando la lista se vacía', async () => {
+      const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+      await manager.initialize();
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.setRunningGames([cs2]);
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.grabando).toBe(true);
+
+      await manager.setRunningGames([]);
+      expect(manager.getStatus()).toMatchObject({ state: 'buffering', detectedGame: null });
+      expect(obs.grabando).toBe(false);
+      // La sesión cerrada deja un clip de grabación etiquetado con el juego que la generó.
+      expect(guardados).toEqual([
+        { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: 'Counter-Strike 2' },
+      ]);
+    });
+
+    it('al cambiar de juego activo corta y arranca una grabación nueva (un clip por sesión)', async () => {
+      const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+      await manager.initialize();
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.setRunningGames([cs2, rl]); // activo = Counter-Strike 2, grabando
+      expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+      expect(obs.grabando).toBe(true);
+
+      await manager.switchGame(); // rota a Rocket League
+      expect(manager.getStatus()).toMatchObject({ state: 'recording', detectedGame: 'Rocket League' });
+      expect(obs.grabando).toBe(true);
+      // El corte de la sesión anterior guardó un clip del juego ANTERIOR (no del nuevo).
+      expect(guardados).toEqual([
+        { filePath: 'C:\\v\\clip.mp4', source: 'recording', game: 'Counter-Strike 2' },
+      ]);
+    });
+
+    it('modo game: al vaciarse la lista corta la grabación y detiene el buffer', async () => {
+      const manager = crear({ recordingMode: 'auto', bufferMode: 'game' });
+      await manager.initialize();
+      expect(manager.getStatus().state).toBe('idle');
+
+      await manager.setRunningGames([cs2]);
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.bufferActivo).toBe(true); // el buffer acompaña a la sesión
+
+      await manager.setRunningGames([]);
+      expect(manager.getStatus().state).toBe('idle'); // sin juego, buffer detenido
+      expect(obs.bufferActivo).toBe(false);
+    });
+  });
+
+  describe('switchGame', () => {
+    it('rota el juego activo y religa el audio (modo apps) sin reconstruir', async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+      await manager.initialize();
+      const buildsTrasInit = obs.buildCount;
+
+      await manager.setRunningGames([cs2, rl]);
+      expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+      expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
+
+      await manager.switchGame();
+      expect(manager.getStatus().detectedGame).toBe('Rocket League');
+      expect(obs.ultimoGameAudioTarget).toBe('rocketleague.exe');
+
+      await manager.switchGame(); // vuelve al primero (orden estable)
+      expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+      expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
+
+      expect(obs.buildCount).toBe(buildsTrasInit); // ningún rebuild: el buffer sobrevive
+    });
+
+    it('con 0 o 1 juegos es no-op', async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+      await manager.initialize();
+
+      const antes = await manager.switchGame(); // sin juegos
+      expect(antes.detectedGame).toBeNull();
+
+      await manager.setRunningGames([cs2]);
+      const count = obs.updateGameAudioCount;
+      await manager.switchGame(); // un solo juego
+      expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+      expect(obs.updateGameAudioCount).toBe(count); // no religó nada
+    });
+
+    it('el juego activo se conserva si sigue corriendo cuando la lista cambia', async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+      await manager.initialize();
+
+      await manager.setRunningGames([cs2, rl]);
+      await manager.switchGame(); // activo = Rocket League
+      expect(manager.getStatus().detectedGame).toBe('Rocket League');
+
+      // Aparece un tercero, pero el activo sigue corriendo: no debe cambiar.
+      await manager.setRunningGames([cs2, rl, { name: 'Valorant', executable: 'valorant.exe' }]);
+      expect(manager.getStatus().detectedGame).toBe('Rocket League');
+
+      // El activo deja de correr: pasa al primero disponible.
+      await manager.setRunningGames([cs2]);
+      expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+    });
   });
 });

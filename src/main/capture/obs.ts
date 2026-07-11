@@ -299,6 +299,8 @@ export class ObsCapture extends EventEmitter {
   private outputChannels: number[] = [];
   /** Fuente de audio del juego (modo apps), religable en caliente al cambiar el juego. */
   private gameAudioSource: OsnInput | null = null;
+  /** Fuente de video game_capture, re-apuntable al cambiar el juego (modo window). */
+  private gameCaptureSource: OsnInput | null = null;
   /** Fuente del micrófono, para push-to-talk (mute sin rebuild). */
   private micSource: OsnInput | null = null;
   private micFilters: OsnFilter[] = [];
@@ -399,23 +401,30 @@ export class ObsCapture extends EventEmitter {
     };
     this.context = context;
 
-    // Escena: monitor de fondo y game capture encima (si hay juego fullscreen, gana).
+    // Escena: monitor de fondo y game capture encima (si hay juego fullscreen, gana). Con
+    // desktopAutoSwitchToGame=false se graba solo el monitor (no se apila el game capture).
     const scene = osn.SceneFactory.create('gameclip-scene');
     const monitor = osn.InputFactory.create(
       'monitor_capture',
       'gameclip-monitor',
       this.monitorSettings(settings),
     );
-    const game = osn.InputFactory.create(
-      'game_capture',
-      'gameclip-game',
-      this.gameSettings(settings, gameExecutable),
-    );
     const monitorItem = scene.add(monitor);
-    const gameItem = scene.add(game);
-    this.applyBounds([monitorItem, gameItem], sizes);
+    this.inputs = [monitor];
+    const items: OsnSceneItem[] = [monitorItem];
+    if (settings.desktopAutoSwitchToGame) {
+      const game = osn.InputFactory.create(
+        'game_capture',
+        'gameclip-game',
+        this.gameSettings(settings, gameExecutable),
+      );
+      const gameItem = scene.add(game);
+      this.inputs.push(game);
+      this.gameCaptureSource = game;
+      items.push(gameItem);
+    }
+    this.applyBounds(items, sizes);
     this.scene = scene;
-    this.inputs = [monitor, game];
 
     // Canal 1 = escena; los canales 2.. quedan para las fuentes de audio.
     osn.Global.setOutputSource(1, scene.source);
@@ -528,6 +537,7 @@ export class ObsCapture extends EventEmitter {
     this.outputChannels = [];
     this.inputs = [];
     this.gameAudioSource = null;
+    this.gameCaptureSource = null;
     this.micSource = null;
     this.micFilters = [];
     this.scene = null;
@@ -647,6 +657,14 @@ export class ObsCapture extends EventEmitter {
     this.gameAudioSource?.update(processCaptureSettings(executable));
   }
 
+  /** Re-apunta el game capture de video (modo window) a otro ejecutable. */
+  updateGameCaptureTarget(executable: string | null): void {
+    this.gameCaptureSource?.update({
+      window: executable ? `::${executable}` : '',
+      priority: 2, // 2 = coincidencia por ejecutable
+    });
+  }
+
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
   setMicMuted(muted: boolean): void {
     if (this.micSource) this.micSource.muted = muted;
@@ -672,7 +690,11 @@ export class ObsCapture extends EventEmitter {
   }
 
   private monitorSettings(settings: CaptureSettings): Record<string, unknown> {
-    const s: Record<string, unknown> = { capture_cursor: settings.showMouseCursor };
+    const s: Record<string, unknown> = {
+      capture_cursor: settings.showMouseCursor,
+      // Índice del monitor a capturar (0 = primario). El lienzo base ya llega del display.
+      monitor: settings.screenMonitorIndex,
+    };
     // Método 2 = Windows Graphics Capture (captura ventanas fuera de foco).
     if (settings.advancedWindowCapture) s.method = 2;
     return s;

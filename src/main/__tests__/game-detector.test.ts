@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RunningGameMatch } from '@shared/games';
 import { GameDetector } from '../capture/game-detector';
 
 // El sondeo es async: tras avanzar el timer hay que drenar las microtareas pendientes.
@@ -6,7 +7,12 @@ async function avanzar(ms: number) {
   await vi.advanceTimersByTimeAsync(ms);
 }
 
-describe('GameDetector', () => {
+/** Nombres de los juegos de cada emisión de 'games-changed', en orden. */
+function nombres(emisiones: RunningGameMatch[][]): string[][] {
+  return emisiones.map((lista) => lista.map((g) => g.name));
+}
+
+describe('GameDetector (multi-juego)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -14,7 +20,7 @@ describe('GameDetector', () => {
     vi.useRealTimers();
   });
 
-  function crear(procesosPorSondeo: string[][]) {
+  function crear(procesosPorSondeo: string[][], customGames: string[] = []) {
     let i = 0;
     const detector = new GameDetector({
       listProcessNames: () => {
@@ -24,65 +30,92 @@ describe('GameDetector', () => {
       },
       intervalMs: 1000,
       missesBeforeStop: 2,
+      customGames,
     });
-    const eventos: string[] = [];
-    detector.on('game-started', (g: string) => eventos.push(`started:${g}`));
-    detector.on('game-stopped', () => eventos.push('stopped'));
-    return { detector, eventos };
+    const emisiones: RunningGameMatch[][] = [];
+    detector.on('games-changed', (lista: RunningGameMatch[]) => emisiones.push(lista));
+    return { detector, emisiones };
   }
 
-  it('emite game-started al detectar un juego y no lo repite mientras siga', async () => {
-    const { detector, eventos } = crear([[], ['cs2.exe'], ['cs2.exe'], ['cs2.exe']]);
+  it('emite games-changed al aparecer un juego y no repite mientras el conjunto no cambie', async () => {
+    const { detector, emisiones } = crear([[], ['cs2.exe'], ['cs2.exe'], ['cs2.exe']]);
     detector.start();
     await avanzar(0); // primer sondeo inmediato (sin juego)
-    expect(eventos).toEqual([]);
+    expect(emisiones).toEqual([]);
 
     await avanzar(1000);
-    expect(eventos).toEqual(['started:Counter-Strike 2']);
-    expect(detector.currentGame).toBe('Counter-Strike 2');
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2']]);
 
-    await avanzar(2000); // sigue corriendo: sin eventos nuevos
-    expect(eventos).toEqual(['started:Counter-Strike 2']);
+    await avanzar(2000); // sigue igual: sin emisiones nuevas
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2']]);
     detector.stop();
   });
 
-  it('game-started incluye el ejecutable real que matcheó (no un alias del juego)', async () => {
-    const { detector } = crear([['cs2.exe']]);
-    const matches: Array<{ game: string; exe: string }> = [];
-    detector.on('game-started', (game: string, exe: string) => matches.push({ game, exe }));
+  it('la lista incluye el ejecutable real que matcheó (no un alias del juego)', async () => {
+    const { detector, emisiones } = crear([['cs2.exe']]);
     detector.start();
     await avanzar(0);
-    // 'Counter-Strike 2' tiene dos exes conocidos (csgo/cs2): debe emitir el que corre.
-    expect(matches).toEqual([{ game: 'Counter-Strike 2', exe: 'cs2.exe' }]);
+    expect(emisiones[0]).toEqual([{ name: 'Counter-Strike 2', executable: 'cs2.exe' }]);
     detector.stop();
   });
 
-  it('espera 2 sondeos sin ver el juego antes de emitir game-stopped (anti-parpadeo)', async () => {
-    const { detector, eventos } = crear([['cs2.exe'], [], ['cs2.exe'], [], []]);
+  it('rastrea varios juegos a la vez y emite el conjunto completo', async () => {
+    const { detector, emisiones } = crear([['cs2.exe', 'RocketLeague.exe']]);
     detector.start();
     await avanzar(0);
-    expect(eventos).toEqual(['started:Counter-Strike 2']);
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2', 'Rocket League']]);
+    detector.stop();
+  });
 
-    // Un sondeo sin el proceso (parpadeo) no lo da por cerrado…
+  it('si un juego desaparece pero otro sigue, actualiza la lista de inmediato (sin debounce)', async () => {
+    const { detector, emisiones } = crear([['cs2.exe', 'RocketLeague.exe'], ['cs2.exe']]);
+    detector.start();
+    await avanzar(0);
     await avanzar(1000);
-    expect(eventos).toEqual(['started:Counter-Strike 2']);
-    // …y al reaparecer se resetea el contador.
-    await avanzar(1000);
-    expect(eventos).toEqual(['started:Counter-Strike 2']);
+    expect(nombres(emisiones)).toEqual([
+      ['Counter-Strike 2', 'Rocket League'],
+      ['Counter-Strike 2'],
+    ]);
+    detector.stop();
+  });
 
-    // Dos sondeos consecutivos sin verlo: ahora sí.
+  it('espera 2 sondeos sin ver NINGÚN juego antes de vaciar la lista (anti-parpadeo)', async () => {
+    const { detector, emisiones } = crear([['cs2.exe'], [], ['cs2.exe'], [], []]);
+    detector.start();
+    await avanzar(0);
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2']]);
+
+    // Un sondeo sin ningún proceso (parpadeo) no vacía la lista…
+    await avanzar(1000);
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2']]);
+    // …y al reaparecer se resetea el contador (mismo conjunto: sin emisión nueva).
+    await avanzar(1000);
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2']]);
+
+    // Dos sondeos consecutivos sin ver nada: ahora sí se vacía.
     await avanzar(2000);
-    expect(eventos).toEqual(['started:Counter-Strike 2', 'stopped']);
-    expect(detector.currentGame).toBeNull();
+    expect(nombres(emisiones)).toEqual([['Counter-Strike 2'], []]);
+    expect(detector.running).toEqual([]);
     detector.stop();
   });
 
-  it('detecta el cambio de un juego a otro como nuevo game-started', async () => {
-    const { detector, eventos } = crear([['cs2.exe'], ['RocketLeague.exe']]);
+  it('detecta ejecutables añadidos a mano (customGames) como juegos', async () => {
+    const { detector, emisiones } = crear([['MiJuego.exe', 'explorer.exe']], ['MiJuego.exe']);
     detector.start();
     await avanzar(0);
+    expect(emisiones[0]).toEqual([{ name: 'MiJuego', executable: 'mijuego.exe' }]);
+    detector.stop();
+  });
+
+  it('setCustomGames aplica los nuevos manuales en el siguiente sondeo', async () => {
+    const { detector, emisiones } = crear([['MiJuego.exe'], ['MiJuego.exe']]);
+    detector.start();
+    await avanzar(0);
+    expect(emisiones).toEqual([]); // sin registrarlo, no es un juego
+
+    detector.setCustomGames(['MiJuego.exe']);
     await avanzar(1000);
-    expect(eventos).toEqual(['started:Counter-Strike 2', 'started:Rocket League']);
+    expect(nombres(emisiones)).toEqual([['MiJuego']]);
     detector.stop();
   });
 
@@ -91,16 +124,18 @@ describe('GameDetector', () => {
     const detector = new GameDetector({
       listProcessNames: () => {
         llamadas++;
-        return llamadas === 2 ? Promise.reject(new Error('tasklist falló')) : Promise.resolve(['cs2']);
+        return llamadas === 2
+          ? Promise.reject(new Error('tasklist falló'))
+          : Promise.resolve(['cs2']);
       },
       intervalMs: 1000,
     });
     detector.start();
     await avanzar(0);
-    expect(detector.currentGame).toBe('Counter-Strike 2');
+    expect(nombres([detector.running])).toEqual([['Counter-Strike 2']]);
 
     await avanzar(1000); // sondeo que falla: se ignora
-    expect(detector.currentGame).toBe('Counter-Strike 2');
+    expect(nombres([detector.running])).toEqual([['Counter-Strike 2']]);
 
     detector.stop();
     const antes = llamadas;
