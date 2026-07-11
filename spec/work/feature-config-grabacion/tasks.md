@@ -43,6 +43,6 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` (tras `fix/reproductor-interno`) — cuando el owner lo pida
+- [x] Aprobación del owner
+- [x] Merge a `main` (tras `fix/reproductor-interno`) — cuando el owner lo pida
 - [x] `spec/constitution/roadmap.md` actualizado
