@@ -34,6 +34,8 @@ extraResources:
     to: licenses/ffmpeg.LICENSE
 
 win:
+  # build/icon.ico lo genera `npm run icon` desde build/icon.svg (7 capas, 16→256 px).
+  icon: build/icon.ico
   target:
     - portable
 

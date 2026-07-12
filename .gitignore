@@ -19,7 +19,7 @@ server/data/
 .env.*
 !.env.example
 
-# Logs y temporales
+# Logs y temporales (incluye build/icon.log, la traza de `npm run icon`)
 *.log
 .DS_Store
 Thumbs.db
