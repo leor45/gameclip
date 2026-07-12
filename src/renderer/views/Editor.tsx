@@ -152,14 +152,28 @@ export default function Editor() {
   async function guardarEdit() {
     setEstadoEdit('guardando');
     setMensajeEdit(null);
+    // El edit reemplaza el archivo, y Windows no deja renombrar sobre un archivo abierto: mientras
+    // el <video> tenga el clip cargado, la propia app lo mantiene tomado (protocolo de medios con
+    // stream) y el guardado falla con EPERM. Se suelta antes de pedirlo y se recarga al terminar.
+    soltarVideo();
     const resultado = await window.gameclip.editor.saveAudioEdit(clip!.id, muteadas);
     if (resultado.status === 'done') {
       setEstadoEdit('guardado');
-      setVersion((v) => v + 1);
     } else {
       setEstadoEdit('error');
       setMensajeEdit(resultado.message ?? 'No se pudo guardar el edit.');
     }
+    // Siempre: el <video> se quedó sin src, y con éxito además el archivo cambió (cache-busting).
+    setVersion((v) => v + 1);
+  }
+
+  /** Cierra el handle que Chromium tiene sobre el archivo del clip. */
+  function soltarVideo() {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
   }
 
   async function copiar() {

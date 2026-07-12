@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,15 @@ class FakeFfmpeg extends EventEmitter implements FfmpegProcess {
   kill(): boolean {
     return true;
   }
+}
+
+/** El error que tira Windows al renombrar sobre un archivo que otro proceso tiene abierto. */
+function eperm(from: string, to: string): NodeJS.ErrnoException {
+  const err: NodeJS.ErrnoException = new Error(
+    `EPERM: operation not permitted, rename '${from}' -> '${to}'`,
+  );
+  err.code = 'EPERM';
+  return err;
 }
 
 function args(activeTracks: number[]): string[] {
@@ -92,6 +101,60 @@ describe('runAudioEdit', () => {
     await runAudioEdit(spawnFn, 'C:\\ffmpeg.exe', clip, tracks, [1, 3]);
 
     expect(readFileSync(clip, 'utf8')).toBe('reescrito');
+    expect(readdirSync(dir).filter((f) => f.startsWith('.gameclip-edit-'))).toEqual([]);
+  });
+
+  // Regresión: Windows no deja renombrar sobre un archivo abierto, y el clip lo tiene abierto el
+  // <video> del editor (protocolo de medios con stream). El rename fallaba con EPERM y el edit se
+  // perdía; ahora se reintenta mientras el handle se suelta.
+  it('regresión: un rename bloqueado (EPERM) se reintenta y el edit se aplica', async () => {
+    const clip = join(dir, 'clip-bloqueado.mp4');
+    writeFileSync(clip, 'original');
+    const fake = new FakeFfmpeg();
+    const spawnFn = vi.fn().mockImplementation((_cmd: string, argv: string[]) => {
+      writeFileSync(argv[argv.length - 1], 'reescrito');
+      setImmediate(() => fake.emit('close', 0));
+      return fake;
+    });
+    // El primer intento encuentra el archivo tomado; para el segundo, el handle ya se soltó.
+    let intentos = 0;
+    const rename = vi.fn().mockImplementation((from: string, to: string) => {
+      intentos++;
+      if (intentos === 1) throw eperm(from, to);
+      renameSync(from, to);
+    });
+
+    await runAudioEdit(spawnFn, 'C:\\ffmpeg.exe', clip, tracks, [1], {
+      rename,
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(intentos).toBe(2);
+    expect(readFileSync(clip, 'utf8')).toBe('reescrito');
+    expect(readdirSync(dir).filter((f) => f.startsWith('.gameclip-edit-'))).toEqual([]);
+  });
+
+  it('si el archivo sigue bloqueado, avisa en español y el clip queda intacto', async () => {
+    const clip = join(dir, 'clip-tomado.mp4');
+    writeFileSync(clip, 'original');
+    const fake = new FakeFfmpeg();
+    const spawnFn = vi.fn().mockImplementation((_cmd: string, argv: string[]) => {
+      writeFileSync(argv[argv.length - 1], 'reescrito');
+      setImmediate(() => fake.emit('close', 0));
+      return fake;
+    });
+    const rename = vi.fn().mockImplementation((from: string, to: string) => {
+      throw eperm(from, to);
+    });
+
+    await expect(
+      runAudioEdit(spawnFn, 'C:\\ffmpeg.exe', clip, tracks, [1], {
+        rename,
+        sleep: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow(/en uso/i);
+
+    expect(readFileSync(clip, 'utf8')).toBe('original');
     expect(readdirSync(dir).filter((f) => f.startsWith('.gameclip-edit-'))).toEqual([]);
   });
 

@@ -114,6 +114,18 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > mezcla_después) − mic = −55 dB (lo que se fue es exactamente el mic), pista `mic` intacta,
 > video bit a bit idéntico (mismo MD5), mezcla restaurada al re-marcar, y export con solo `mic`
 > marcado = 1 pista que es el mic (residuo −67 dB).
+> Fix post-entrega (2026-07-11, `fix/guardar-edit-eperm`): "Guardar edit" moría con `EPERM … rename`.
+> Causa raíz: **Windows no deja renombrar sobre un archivo abierto**, y el clip lo tenía abierto la
+> propia app — el `<video>` del editor lo estaba leyendo por `gameclip-media://` (`stream: true`, que
+> sirve el archivo con un handle vivo mientras el reproductor lo tenga cargado). Reproducido aislado
+> con `fs`: sobre un destino cerrado el rename va; con un handle abierto, EPERM; al cerrarlo, va otra
+> vez. Era intermitente porque un clip chico ya buffereado puede tener el handle suelto. (Y no era que
+> "los de escritorio funcionen": esos no tienen pistas por rol y ni siquiera admiten edit.) Arreglo en
+> dos capas: el editor **suelta** el video (pause + quitar `src` + `load()`) antes de pedir el
+> guardado y lo recarga al terminar —con éxito o con error, si no quedaría en negro—, y el main
+> **reintenta** el rename ante EPERM/EACCES/EBUSY con backoff (cerrar el handle es asíncrono, y el
+> antivirus o el indexador también pueden tomar el archivo). Si el bloqueo persiste, el mensaje dice
+> en español que está en uso, en vez de un EPERM crudo.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
