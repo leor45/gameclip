@@ -277,14 +277,16 @@ describe('Ajustes — Almacenamiento', () => {
   it('renderiza la barra de uso de disco con las estadísticas', async () => {
     await irAAlmacenamiento();
 
-    expect(await screen.findByText('Clips: 20.0 GB')).toBeInTheDocument();
-    expect(screen.getByText('Grabaciones: 10.0 GB')).toBeInTheDocument();
-    expect(screen.getByText('Otros: 10.0 GB')).toBeInTheDocument();
-    expect(screen.getByText('Libre: 60.0 GB')).toBeInTheDocument();
+    // formatStorage (compartido con el indicador del sidebar) no arrastra el decimal .0
+    expect(await screen.findByText('Clips: 20 GB')).toBeInTheDocument();
+    expect(screen.getByText('Grabaciones: 10 GB')).toBeInTheDocument();
+    expect(screen.getByText('Otros: 10 GB')).toBeInTheDocument();
+    expect(screen.getByText('Libre: 60 GB')).toBeInTheDocument();
   });
 
   it('oculta la barra de uso si la API de estadísticas falla', async () => {
-    mock().library.getStorageStats.mockRejectedValueOnce(new Error('sin acceso al disco'));
+    // Rechaza siempre: el indicador del sidebar también pide las stats.
+    mock().library.getStorageStats.mockRejectedValue(new Error('sin acceso al disco'));
     await irAAlmacenamiento();
 
     expect(screen.queryByText(/Clips: /)).not.toBeInTheDocument();

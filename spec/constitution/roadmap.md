@@ -194,6 +194,21 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > switchGame, reanudación tras corte manual, re-target de video con forceWindowCapture,
 > feedback del modal, colisiones de hotkeys).
 
+## Fase 10 · Organización del almacenamiento — 🚧 en curso
+
+- [x] Indicador de almacenamiento en el sidebar: anillo con el espacio usado por el catálogo
+      sobre el límite configurado (el par de cifras que gobierna el auto-borrado), con enlace a
+      Ajustes → Almacenamiento y estado de alerta al pasarse.
+- [ ] Evento `settings:changed`: el sidebar refleja el cambio de límite al instante.
+- [ ] Estructura de carpetas por juego (`<carpeta>/<Juego|Desktop>/…`, capturas en `Capturas/`)
+      y nomenclatura `<Juego> [Screenshot] AAAA.MM.DD - HH.MM.SS.CC`, con migración de lo viejo.
+
+> `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
+> `library:get-storage-stats` (las mismas contra las que el auto-borrado compara el límite, o el
+> indicador mentiría) y de `storageLimitGb`. Anillo SVG a mano (dos círculos y un `dashoffset`),
+> refrescado con `library:changed`. `formatStorage` pasa a `@shared/library` para que el sidebar y
+> la leyenda de Ajustes digan lo mismo.
+
 ## Futuro (fuera de alcance por ahora)
 
 - Guardado en la nube y compartir alojado.

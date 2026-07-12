@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import type { AppVersionInfo } from '@shared/ipc';
 import { useAuth } from '../auth/AuthContext';
+import StorageIndicator from './StorageIndicator';
 
 const links = [
   { to: '/biblioteca', label: 'Biblioteca' },
@@ -29,6 +30,7 @@ export default function Sidebar({ versionInfo }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
+      <StorageIndicator />
       {session && (
         <div className="sidebar-user">
           <span className="sidebar-user-name">{session.user.displayName}</span>
