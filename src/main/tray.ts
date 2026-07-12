@@ -40,10 +40,15 @@ export function createTray(actions: TrayActions): AppTray {
 
   return {
     setRecording(rec: boolean) {
+      // Un `status` tardío (uno en vuelo, un timer pendiente) puede llegar con la bandeja ya
+      // destruida, y en Electron tocar un Tray muerto LANZA. El cierre está ordenado para que no
+      // ocurra, pero la bandeja se defiende igual: así el bug no vuelve por otro camino.
+      if (tray.isDestroyed()) return;
       tray.setImage(rec ? recording : normal);
       tray.setToolTip(rec ? 'GameClip — grabando' : 'GameClip');
     },
     destroy() {
+      if (tray.isDestroyed()) return;
       tray.destroy();
     },
   };

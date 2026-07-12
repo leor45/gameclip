@@ -9,6 +9,7 @@ import { buildGameNotice } from '@shared/overlay';
 import ffmpegPath from 'ffmpeg-static';
 import { startApi, type ApiHandle } from '../../server/api';
 import { unpackedPath } from './paths';
+import { teardown } from './shutdown';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
 import type { DisplayInfo } from './capture/obs';
@@ -400,14 +401,26 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-  pushToTalk.stop();
-  if (autoSwitchTimer) clearInterval(autoSwitchTimer);
-  detector?.stop();
-  overlay?.destroy();
-  tray?.destroy();
-  capture?.shutdown();
-  api?.close();
+  // El orden lo decide shutdown.ts: primero se apaga lo que emite (la captura emite un `status`
+  // final), después se destruye lo que escucha (overlay y bandeja).
+  teardown({
+    unregisterHotkeys: () => globalShortcut.unregisterAll(),
+    pushToTalk,
+    clearTimers: () => {
+      if (autoSwitchTimer) clearInterval(autoSwitchTimer);
+    },
+    detector,
+    capture,
+    overlay,
+    tray,
+    api,
+  });
+  // Sin referencias, un evento tardío no tiene a quién pegarle.
+  capture = null;
+  overlay = null;
+  tray = null;
+  detector = null;
+  api = null;
 });
 
 // Smoke test de captura sin UI: GAMECLIP_SELFTEST=recording graba unos segundos y sale.
