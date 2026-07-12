@@ -353,6 +353,21 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > segundo F7 cortó y guardó el clip**. El PTT sigue en Audio: usa otro motor (uiohook), con lista
 > blanca cerrada y sin combinaciones.
 
+### 🐞 Clip negro en perfil de juego — ✅ arreglado (`fix/game-capture-negro`, 2026-07-12)
+
+Introducido por la v0.2.0 (`58f9c7c`): al pasar a una sola fuente de vídeo, el `game_capture` se
+apuntaba en modo ventana con `window: '::<exe>'`. **Las fuentes de VÍDEO de libobs no matchean esa
+forma abreviada** — solo vale para el audio por proceso (`wasapi_process_output_capture`, otro
+matcher), de donde se copió. El source quiere la cadena COMPLETA `título:clase:exe` que él mismo
+lista en su propiedad `window`; con `::<exe>` no enganchaba nada y, sin monitor de fondo, el clip
+salía negro. Sonda en máquina real (Miles Morales corriendo): `any_fullscreen` → 2560×1440;
+`::MilesMorales.exe` → **0×0**; cadena completa → 2560×1440.
+
+Arreglo: `resolveGameWindow()` resuelve la ventana contra la propiedad-lista del source ya creado
+(mismo patrón que `resolveMonitorId`, el bug hermano del monitor equivocado) y el capture se apunta
+con la cadena completa; sin ventana que resolver, `any_fullscreen` — nunca apuntando a una ventana
+inexistente. Verificado con el juego real: el clip muestra el juego, sin nada del escritorio.
+
 ## Fase 11 · Distribución — 🚧 en curso
 
 - [x] Build `.exe` **portable** (sin instalador) con la API embebida en el proceso main:

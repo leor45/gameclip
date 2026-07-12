@@ -13,6 +13,7 @@ import {
   faderDeflection,
   gameCaptureSettings,
   monitorCaptureSettings,
+  resolveGameWindow,
   resolveMonitorId,
 } from '../capture/obs';
 
@@ -248,16 +249,59 @@ describe('effectiveCapture (perfil → vídeo y audio)', () => {
   });
 });
 
+// Items reales de la propiedad `window` del game_capture en la máquina del bug (sonda 2026-07-12,
+// con Marvel's Spider-Man: Miles Morales corriendo). libobs escapa los ':' del título como '#3A'.
+const REAL_WINDOWS = [
+  { name: '', value: '' },
+  { name: 'Buscar', value: 'Buscar:Windows.UI.Core.CoreWindow:SearchHost.exe' },
+  {
+    name: "[MilesMorales.exe]: Marvel's Spider-Man: Miles Morales",
+    value: "Marvel's Spider-Man#3A Miles Morales v4.630.0.0:GameNxApp:MilesMorales.exe",
+  },
+  {
+    name: '[Code.exe]: Visual Studio Code',
+    value: 'gameclip - Visual Studio Code:Chrome_WidgetWin_1:Code.exe',
+  },
+];
+
+describe('resolveGameWindow', () => {
+  it('regresión (clip negro): devuelve la cadena COMPLETA de libobs, nunca la forma ::exe', () => {
+    // El bug de la v0.2.0: se apuntaba con '::MilesMorales.exe', que las fuentes de VÍDEO de libobs
+    // no matchean (solo vale para el audio por proceso) → el game capture no enganchaba → negro.
+    expect(resolveGameWindow(REAL_WINDOWS, 'MilesMorales.exe')).toBe(
+      "Marvel's Spider-Man#3A Miles Morales v4.630.0.0:GameNxApp:MilesMorales.exe",
+    );
+  });
+
+  it('matchea el ejecutable sin importar mayúsculas y solo por el campo exe', () => {
+    expect(resolveGameWindow(REAL_WINDOWS, 'milesmorales.exe')).toContain('GameNxApp');
+    expect(resolveGameWindow(REAL_WINDOWS, 'code.exe')).toContain('Chrome_WidgetWin_1');
+  });
+
+  it('sin ejecutable, o si libobs no ve la ventana, no hay cadena que apuntar', () => {
+    expect(resolveGameWindow(REAL_WINDOWS, null)).toBeNull();
+    expect(resolveGameWindow(REAL_WINDOWS, 'valorant.exe')).toBeNull();
+    expect(resolveGameWindow([], 'cs2.exe')).toBeNull();
+  });
+});
+
 describe('gameCaptureSettings', () => {
-  it('con el ejecutable detectado usa modo window (engancha también en ventana sin bordes)', () => {
-    expect(gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, 'cs2.exe')).toMatchObject({
+  const ventana = "Marvel's Spider-Man#3A Miles Morales v4.630.0.0:GameNxApp:MilesMorales.exe";
+
+  it('con la ventana resuelta usa modo window con la cadena completa', () => {
+    expect(gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, ventana)).toMatchObject({
       capture_mode: 'window',
-      window: '::cs2.exe',
+      window: ventana,
       priority: 2,
     });
   });
 
-  it('sin ejecutable no hay a qué apuntar: any_fullscreen', () => {
+  it('regresión: nunca emite la forma abreviada ::exe (no matchea, clip negro)', () => {
+    const s = gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, ventana);
+    expect(String(s.window)).not.toMatch(/^::/);
+  });
+
+  it('sin ventana cae a any_fullscreen (mejor eso que apuntar a una ventana inexistente)', () => {
     const s = gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, null);
     expect(s.capture_mode).toBe('any_fullscreen');
     expect(s.window).toBeUndefined();
@@ -266,7 +310,7 @@ describe('gameCaptureSettings', () => {
   it('respeta HDR y captura experimental', () => {
     const s = gameCaptureSettings(
       { ...DEFAULT_CAPTURE_SETTINGS, hdrCompatibility: true, experimentalCapture: true },
-      'cs2.exe',
+      ventana,
     );
     expect(s).toMatchObject({ rgb10a2_space: '2100pq', capture_overlays: true });
   });
