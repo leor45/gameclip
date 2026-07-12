@@ -1,10 +1,14 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, globalShortcut, protocol, shell } from 'electron';
+import { BrowserWindow, app, dialog, globalShortcut, protocol, shell } from 'electron';
+import Database from 'better-sqlite3-electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
+import { SERVER_PORT } from '@shared/config';
 import type { RunningGameMatch } from '@shared/games';
 import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
 import ffmpegPath from 'ffmpeg-static';
+import { startApi, type ApiHandle } from '../../server/api';
+import { unpackedPath } from './paths';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
 import type { DisplayInfo } from './capture/obs';
@@ -26,7 +30,11 @@ import { createTray } from './tray';
 import type { AppTray } from './tray';
 import { registerIpcHandlers } from './ipc';
 
+// ffmpeg es un ejecutable que spawneamos: dentro del asar no existe como archivo (ver paths.ts).
+const ffmpegBin = ffmpegPath ? unpackedPath(ffmpegPath) : 'ffmpeg';
+
 let mainWindow: BrowserWindow | null = null;
+let api: ApiHandle | null = null;
 let capture: CaptureManager | null = null;
 let library: LibraryManager | null = null;
 let storage: StorageManager | null = null;
@@ -50,6 +58,46 @@ if (!settingsStore.load().hardwareAcceleration) {
   console.log('[app] aceleración por hardware desactivada por ajustes');
 }
 const pushToTalk = new PushToTalk();
+
+// Una sola instancia viva: la segunda ejecución enfoca la ventana de la primera y se cierra. Sin
+// esto, dos copias pelearían por el puerto fijo de la API (EADDRINUSE) y por el mismo encoder.
+const primeraInstancia = app.requestSingleInstanceLock();
+if (!primeraInstancia) app.quit();
+app.on('second-instance', () => showMainWindow());
+
+/**
+ * API embebida en el main. Solo empaquetada: en desarrollo la API sigue siendo un proceso aparte
+ * (`npm run dev:server`, con recarga en caliente), y si el main también escuchara, el segundo en
+ * arrancar chocaría por el puerto.
+ *
+ * La DB va a `userData` (junto a `library.db`) y no a `server/data/`: el .exe portable se
+ * descomprime en una carpeta temporal distinta en cada arranque, así que una DB junto al código se
+ * perdería —usuarios y sesión— en cada ejecución.
+ */
+function setupApi(): void {
+  const fallo = (detalle: string): void => {
+    console.error('[api] no arrancó:', detalle);
+    dialog.showErrorBox(
+      'GameClip: la API no pudo arrancar',
+      `${detalle}\n\nLa app abre igual, pero no vas a poder iniciar sesión.`,
+    );
+  };
+  try {
+    api = startApi({
+      driver: Database,
+      dbPath: join(app.getPath('userData'), 'auth.db'),
+      port: SERVER_PORT,
+      onError: (err) =>
+        fallo(
+          err.code === 'EADDRINUSE'
+            ? `El puerto ${SERVER_PORT} ya está ocupado por otro programa.`
+            : err.message,
+        ),
+    });
+  } catch (err) {
+    fallo(err instanceof Error ? err.message : String(err));
+  }
+}
 
 function createMainWindow(options: { hidden?: boolean } = {}): void {
   const win = new BrowserWindow({
@@ -128,7 +176,7 @@ function setupCapture(): CaptureManager {
   },
   // obs por defecto (ObsCapture); ffmpeg para el remux de nombres de pista.
   undefined,
-  ffmpegPath ?? 'ffmpeg');
+  ffmpegBin);
 
   // El aviso se dispara en la TRANSICIÓN sin-juego → juego, no con cada status: el estado se emite
   // en cada cambio del buffer y el aviso reaparecería solo.
@@ -279,6 +327,9 @@ function applyAutoLaunch(settings: CaptureSettings): void {
 }
 
 app.whenReady().then(() => {
+  if (!primeraInstancia) return;
+  // Antes de la ventana: el renderer llama a /api apenas carga (sesión persistida).
+  if (app.isPackaged) setupApi();
   capture = setupCapture();
   const libSetup = setupLibrary(capture);
   library = libSetup?.lib ?? null;
@@ -290,7 +341,7 @@ app.whenReady().then(() => {
     onSaveReplay: () => void capture?.saveReplay(),
     onQuit: () => app.quit(),
   });
-  const exporter = new ExportManager(ffmpegPath ?? 'ffmpeg');
+  const exporter = new ExportManager(ffmpegBin);
   exporter.on('progress', (progress) =>
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
@@ -356,6 +407,7 @@ app.on('will-quit', () => {
   overlay?.destroy();
   tray?.destroy();
   capture?.shutdown();
+  api?.close();
 });
 
 // Smoke test de captura sin UI: GAMECLIP_SELFTEST=recording graba unos segundos y sale.

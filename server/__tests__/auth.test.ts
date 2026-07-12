@@ -1,9 +1,10 @@
+import Database from 'better-sqlite3';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../app';
 import { openDatabase } from '../db/database';
 
-const db = openDatabase(':memory:');
+const db = openDatabase(Database, ':memory:');
 const app = createApp(db);
 
 const usuario = {
@@ -131,6 +132,45 @@ describe('POST /api/auth/refresh', () => {
     const res = await request(app)
       .post('/api/auth/refresh')
       .send({ refreshToken: 'inventado' });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('compatibilidad con los hashes de bcrypt nativo', () => {
+  // El server pasó de `bcrypt` (nativo) a `bcryptjs` para poder correr embebido en el main de
+  // Electron. Los usuarios registrados ANTES tienen el hash escrito por el bcrypt nativo: si
+  // bcryptjs no lo validara, quedarían fuera de su cuenta sin forma de recuperarla.
+  // Vector generado con bcrypt@6 (`hashSync('contraseña-segura', 10)`) y fijado a propósito: el
+  // paquete nativo ya no está instalado y la gracia del test es probar contra su salida real.
+  const HASH_DE_BCRYPT_NATIVO = '$2b$10$5G7RSlDgJiUODMghT033P.nfyeMPNS5ppNIaWWRzAQQqv1.Fp.pby';
+
+  const registrarConHashViejo = (): void => {
+    db.prepare('INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)').run(
+      usuario.email,
+      HASH_DE_BCRYPT_NATIVO,
+      usuario.displayName,
+    );
+  };
+
+  it('un usuario con hash de bcrypt nativo puede iniciar sesión', async () => {
+    registrarConHashViejo();
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: usuario.email, password: usuario.password });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.email).toBe(usuario.email);
+    expect(res.body.tokens.accessToken).toBeTruthy();
+  });
+
+  it('sigue rechazando la contraseña equivocada contra ese mismo hash', async () => {
+    registrarConHashViejo();
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: usuario.email, password: 'otra-cosa' });
+
     expect(res.status).toBe(401);
   });
 });

@@ -284,6 +284,39 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > dispara nada) y al salir el `<video>` se **desmonta**, no se pausa. El bucle de 10 s va a mano en
 > `onTimeUpdate` (HTML no acota la reproducción a un rango). Respeta `prefers-reduced-motion`.
 
+## Fase 11 · Distribución — 🚧 en curso
+
+- [x] Build `.exe` **portable** (sin instalador) con la API embebida en el proceso main:
+      `npm run build:portable` → `release/GameClip-<version>-portable.exe` (~190 MB).
+- [x] Licencia **GPL-3.0** (`LICENSE`): la app enlaza `obs-studio-node` (GPL-2.0, es libobs) y
+      redistribuye el `ffmpeg.exe` de `ffmpeg-static` (GPL-3.0-or-later) — el copyleft no es opcional.
+      Mismo encuadre que Streamlabs Desktop.
+- [ ] Ícono propio del `.exe` (hoy sale con el de Electron por defecto: no hay `.ico` en el repo).
+- [ ] Publicar el release en GitHub.
+
+> `feature/build-portable` (2026-07-11): la API va **embebida en el main**, no como proceso hijo —
+> un hijo con `ELECTRON_RUN_AS_NODE` corre el runtime de Electron igual, así que necesitaría la
+> misma ABI para los nativos y solo sumaría un proceso que supervisar. Eso obligó a que `server/`
+> cargue bajo la ABI de Electron: `bcrypt` (nativo) → **`bcryptjs`** (JS puro; los hashes `$2b` ya
+> guardados siguen validando, con test de regresión sobre un vector real de bcrypt), y el driver de
+> `better-sqlite3` pasa a **inyectarse** (`openDatabase(driver, path)`) para que el main use el
+> alias ABI-Electron y `dev:server`/tests sigan con el binario de Node. **En dev nada cambia**: la
+> API embebida solo arranca `if (app.isPackaged)`; si no, chocaría con `dev:server` por el puerto.
+> La DB del server va a `userData/auth.db` (junto a `library.db`): el portable se descomprime en una
+> carpeta temporal distinta en cada arranque, así que `server/data/` se perdería en cada ejecución.
+> El detalle que hace fallar los empaquetados con libobs: **`require.resolve()` sigue devolviendo
+> rutas `…/app.asar/…` aunque el archivo esté en `asarUnpack`**, y un `.exe` no se ejecuta desde
+> dentro del asar — libobs lanza `obs64.exe` desde el working directory que le pasamos y ffmpeg se
+> spawnea, así que ambas rutas se reescriben con `unpackedPath()` (`src/main/paths.ts`). Lock de
+> instancia única: la segunda ejecución enfoca la ventana de la primera (sin él, dos copias chocarían
+> por el puerto fijo de la API). Verificado sobre el `.exe`: API embebida OK, registro/login,
+> `obs64.exe` corriendo desde `app.asar.unpacked`, F8 → clip de 36 MB con las 5 pistas nombradas
+> (el remux con ffmpeg desempaquetado también corre), y la sesión sobrevive a cerrar y reabrir.
+> **Bug encontrado, fuera de alcance:** la **grabación manual** (start/stop) escribe `Total frames
+> output: 1` y deja un MP4 de 261 bytes — reproducido **también en dev**, así que es previo al
+> empaquetado y no lo causa esta tarea. El clip retroactivo (replay buffer) no está afectado. Va con
+> su propio spec en una rama `fix/`.
+
 ## Futuro (fuera de alcance por ahora)
 
 - **Overlay in-game por inyección (estilo Discord):** hoy el overlay es una BrowserWindow

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import Database from 'better-sqlite3';
 import { SCHEMA_VERSION, openDatabase } from '../db/database';
 import { MetaRepository } from '../db/meta.repository';
 
@@ -14,7 +15,7 @@ afterAll(() => {
 
 describe('openDatabase', () => {
   it('crea la base con la tabla meta y registra la versión de esquema', () => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(Database, dbPath);
     const meta = new MetaRepository(db);
 
     expect(meta.get('schema_version')).toBe(String(SCHEMA_VERSION));
@@ -23,7 +24,7 @@ describe('openDatabase', () => {
   });
 
   it('la migración es idempotente al reabrir la misma base', () => {
-    const db = openDatabase(dbPath);
+    const db = openDatabase(Database, dbPath);
     const meta = new MetaRepository(db);
 
     expect(meta.get('schema_version')).toBe(String(SCHEMA_VERSION));
@@ -34,7 +35,7 @@ describe('openDatabase', () => {
 
 describe('MetaRepository', () => {
   it('set sobreescribe el valor de una clave existente', () => {
-    const db = openDatabase(':memory:');
+    const db = openDatabase(Database, ':memory:');
     const meta = new MetaRepository(db);
 
     meta.set('clave', 'a');
@@ -45,7 +46,7 @@ describe('MetaRepository', () => {
   });
 
   it('get devuelve undefined para claves inexistentes', () => {
-    const db = openDatabase(':memory:');
+    const db = openDatabase(Database, ':memory:');
     const meta = new MetaRepository(db);
 
     expect(meta.get('no-existe')).toBeUndefined();

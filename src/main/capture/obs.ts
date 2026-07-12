@@ -11,6 +11,7 @@ import type {
   RecordingQuality,
 } from '@shared/capture';
 import { AUDIO_APPS_TRACK_MAX, orderedActiveAudioApps } from '@shared/capture';
+import { unpackedPath } from '../paths';
 
 // Valores espejo de los const enum de module.d.ts (esbuild no inlinea const enums de .d.ts).
 const VIDEO_FORMAT_NV12 = 2;
@@ -494,7 +495,10 @@ export class ObsCapture extends EventEmitter {
     if (this.initialized) return;
     const require = createRequire(__filename);
     const osn = require('@streamlabs/obs-studio-node') as OsnModule;
-    const packageDir = dirname(require.resolve('@streamlabs/obs-studio-node/package.json'));
+    // Desempaquetado: desde este directorio libobs lanza obs64.exe, que no puede vivir en el asar.
+    const packageDir = unpackedPath(
+      dirname(require.resolve('@streamlabs/obs-studio-node/package.json')),
+    );
 
     const hostResult = osn.NodeObs.IPC.host(`gameclip-osn-${process.pid}`);
     if (hostResult !== VIDEO_CODE_SUCCESS) {

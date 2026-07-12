@@ -1,0 +1,41 @@
+appId: com.leo.gameclip
+productName: GameClip
+directories:
+  output: release
+
+# El bundle de electron-vite. Las dependencias de producción las resuelve electron-builder solo.
+files:
+  - out/**
+  - package.json
+
+asar: true
+
+# Todo lo que se toca desde FUERA del fs de Electron tiene que existir como archivo real: libobs
+# lanza obs64.exe desde su carpeta, ffmpeg se spawnea, y los .node se cargan con dlopen. Ojo: aun
+# desempaquetado, require.resolve() sigue devolviendo la ruta …/app.asar/…, así que las rutas que
+# le pasamos a un ejecutable se reescriben con unpackedPath() (src/main/paths.ts).
+asarUnpack:
+  - '**/node_modules/@streamlabs/obs-studio-node/**'
+  - '**/node_modules/better-sqlite3-electron/**'
+  - '**/node_modules/uiohook-napi/**'
+  - '**/node_modules/ffmpeg-static/**'
+  - '**/*.node'
+
+# Sin recompilar nativos: better-sqlite3 debe conservar su binario de ABI-Node (lo usa dev:server),
+# y el main carga el alias better-sqlite3-electron, que ya trae el prebuild de ABI-Electron desde
+# el postinstall. Un rebuild global rompería uno de los dos.
+npmRebuild: false
+
+# GPL: el ffmpeg.exe que redistribuimos es GPL-3.0-or-later y su licencia viaja con el binario.
+extraResources:
+  - from: LICENSE
+    to: LICENSE
+  - from: node_modules/ffmpeg-static/ffmpeg.exe.LICENSE
+    to: licenses/ffmpeg.LICENSE
+
+win:
+  target:
+    - portable
+
+portable:
+  artifactName: GameClip-${version}-portable.exe

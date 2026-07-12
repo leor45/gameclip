@@ -1,9 +1,10 @@
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../app';
+import Database from 'better-sqlite3';
 import { SCHEMA_VERSION, openDatabase } from '../db/database';
 
-const db = openDatabase(':memory:');
+const db = openDatabase(Database, ':memory:');
 const app = createApp(db);
 
 afterAll(() => db.close());
