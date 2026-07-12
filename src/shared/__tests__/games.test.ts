@@ -3,6 +3,7 @@ import {
   KNOWN_GAME_PROCESSES,
   findRunningGame,
   findRunningGamesMatch,
+  isManualGame,
 } from '../games';
 
 describe('findRunningGame', () => {
@@ -84,5 +85,21 @@ describe('findRunningGamesMatch (multi-juego)', () => {
   it('devuelve lista vacía sin coincidencias', () => {
     expect(findRunningGamesMatch(['explorer.exe', 'svchost.exe'])).toEqual([]);
     expect(findRunningGamesMatch([])).toEqual([]);
+  });
+});
+
+describe('isManualGame', () => {
+  it('es manual si su nombre coincide con un ejecutable de la lista del usuario', () => {
+    expect(isManualGame('MiJuego', ['MiJuego.exe'])).toBe(true);
+    expect(isManualGame('mijuego', ['MIJUEGO.EXE'])).toBe(true); // NTFS ignora la capitalización
+  });
+
+  it('un juego de la lista curada no es manual', () => {
+    expect(isManualGame('Terraria', ['MiJuego.exe'])).toBe(false);
+    expect(isManualGame('Terraria', [])).toBe(false);
+  });
+
+  it('sin juego activo no hay nada que marcar', () => {
+    expect(isManualGame(null, ['MiJuego.exe'])).toBe(false);
   });
 });

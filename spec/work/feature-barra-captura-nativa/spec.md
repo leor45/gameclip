@@ -42,12 +42,12 @@ Referencia visual del owner: una píldora `🎮 Waiting For Game` a la izquierda
 
 Observables y verificables uno a uno:
 
-- [ ] Sin juego: la barra muestra "Esperando juego".
-- [ ] Con un juego detectado por la lista curada: muestra su nombre.
-- [ ] Con un juego añadido manualmente por el usuario: muestra su nombre y una marca de "manual".
-- [ ] El selector de duración muestra el valor actual (p. ej. `1 m`) y al cambiarlo guarda
+- [x] Sin juego: la barra muestra "Esperando juego".
+- [x] Con un juego detectado por la lista curada: muestra su nombre.
+- [x] Con un juego añadido manualmente por el usuario: muestra su nombre y una marca de "manual".
+- [x] El selector de duración muestra el valor actual (p. ej. `1 m`) y al cambiarlo guarda
       `replaySeconds` sin pasar por Ajustes.
-- [ ] Cambiar la duración desde Ajustes actualiza el control de la barra en el acto.
-- [ ] Grabando, la barra lo indica (punto rojo) y ofrece Detener; en buffer ofrece Guardar clip y
+- [x] Cambiar la duración desde Ajustes actualiza el control de la barra en el acto.
+- [x] Grabando, la barra lo indica (punto rojo) y ofrece Detener; en buffer ofrece Guardar clip y
       Grabar.
-- [ ] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
+- [x] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
