@@ -3,13 +3,17 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // jsdom no calcula layout: la regresión se fija sobre la hoja de estilos real, igual que
-// el fix del CSP se fijó sobre index.html. Extrae el cuerpo de una regla por su selector.
-const css = readFileSync(join(__dirname, '..', 'styles.css'), 'utf8');
+// el fix del CSP se fijó sobre index.html. Devuelve el cuerpo de la regla que aplica al selector
+// (puede estar agrupado con otros: `.clip-thumb img, .clip-preview { … }`).
+// Sin comentarios: si no, el texto previo a una regla se cuela en su lista de selectores.
+const css = readFileSync(join(__dirname, '..', 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 function rule(selector: string): string {
-  const re = new RegExp(`${selector.replace(/[.\\s]/g, (c) => (c === '.' ? '\\.' : '\\s+'))}\\s*\\{([^}]*)\\}`);
-  const m = re.exec(css);
-  if (!m) throw new Error(`No existe la regla '${selector}' en styles.css`);
-  return m[1];
+  const normalizar = (s: string) => s.trim().replace(/\s+/g, ' ');
+  for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const selectores = m[1].split(',').map(normalizar);
+    if (selectores.includes(normalizar(selector))) return m[2];
+  }
+  throw new Error(`No existe la regla '${selector}' en styles.css`);
 }
 
 describe('Biblioteca: cards uniformes (regresión)', () => {
@@ -26,5 +30,12 @@ describe('Biblioteca: cards uniformes (regresión)', () => {
     const thumb = rule('.clip-thumb');
     expect(thumb).toMatch(/aspect-ratio:\s*16\s*\/\s*9/);
     expect(thumb).toMatch(/position:\s*relative/);
+  });
+
+  it('la preview en hover ocupa el MISMO marco que la imagen (no puede estirar la card)', () => {
+    const preview = rule('.clip-preview');
+    expect(preview).toMatch(/position:\s*absolute/);
+    expect(preview).toMatch(/inset:\s*0/);
+    expect(preview).toMatch(/object-fit:\s*contain/);
   });
 });

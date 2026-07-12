@@ -1,9 +1,17 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Biblioteca from '../views/Biblioteca';
 import { crearClip } from './helpers';
 import { crearGameclipMock } from './setup';
+
+/** jsdom no trae matchMedia: la preview lo consulta para respetar prefers-reduced-motion. */
+function matchMediaFalso(reduce: boolean) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({ matches: reduce, media: query }),
+  });
+}
 
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
 
@@ -181,6 +189,112 @@ describe('Biblioteca — acciones', () => {
     await user.click(await screen.findByRole('button', { name: 'Abrir carpeta' }));
 
     expect(mock().library.openFolder).toHaveBeenCalledWith(clip.id);
+  });
+});
+
+describe('Biblioteca — preview al pasar el cursor', () => {
+  const RETARDO = 250;
+
+  /** El cursor entra en la tarjeta y pasa el retardo de arranque. */
+  async function apuntar(card: HTMLElement) {
+    fireEvent.mouseEnter(card);
+    await act(async () => {
+      vi.advanceTimersByTime(RETARDO);
+    });
+  }
+
+  function tarjetas(): HTMLElement[] {
+    return Array.from(document.querySelectorAll('.clip-card'));
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // jsdom no reproduce video: play() no existe en HTMLMediaElement.
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    matchMediaFalso(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('tras el retardo monta el video, mudo y sobre el thumbnail', async () => {
+    const clip = crearClip({ id: 3, title: 'Con preview' });
+    mock().library.list.mockResolvedValue([clip]);
+    render(<Biblioteca />);
+    const card = (await screen.findByText('Con preview')).closest('.clip-card') as HTMLElement;
+
+    // Antes del retardo no hay nada: barrer la grilla no debe disparar previews.
+    fireEvent.mouseEnter(card);
+    expect(screen.queryByTestId('preview-3')).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(RETARDO);
+    });
+
+    const video = screen.getByTestId('preview-3') as HTMLVideoElement;
+    expect(video).toBeInTheDocument();
+    expect(video.muted).toBe(true);
+    expect(video.getAttribute('src')).toBe(`gameclip-media://clip/${clip.id}`);
+    expect(video.getAttribute('poster')).toContain('gameclip-media://thumb/3');
+  });
+
+  it('al salir el cursor, la preview MUERE (el video se desmonta, no se pausa)', async () => {
+    mock().library.list.mockResolvedValue([crearClip({ id: 3, title: 'Con preview' })]);
+    render(<Biblioteca />);
+    const card = (await screen.findByText('Con preview')).closest('.clip-card') as HTMLElement;
+
+    await apuntar(card);
+    expect(screen.getByTestId('preview-3')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(card);
+
+    expect(screen.queryByTestId('preview-3')).not.toBeInTheDocument();
+    expect(document.querySelector('.clip-thumb img')).toBeInTheDocument(); // vuelve el thumbnail
+  });
+
+  it('la preview vuelve a empezar a los 10 s (bucle)', async () => {
+    mock().library.list.mockResolvedValue([crearClip({ id: 3, title: 'Con preview' })]);
+    render(<Biblioteca />);
+    const card = (await screen.findByText('Con preview')).closest('.clip-card') as HTMLElement;
+    await apuntar(card);
+
+    const video = screen.getByTestId('preview-3') as HTMLVideoElement;
+    video.currentTime = 10.2;
+    fireEvent.timeUpdate(video);
+
+    expect(video.currentTime).toBe(0);
+  });
+
+  it('solo hay UNA preview viva: apuntar otra tarjeta mata la anterior', async () => {
+    mock().library.list.mockResolvedValue([
+      crearClip({ id: 3, title: 'Primera' }),
+      crearClip({ id: 4, title: 'Segunda' }),
+    ]);
+    render(<Biblioteca />);
+    await screen.findByText('Primera');
+    const [primera, segunda] = tarjetas();
+
+    await apuntar(primera);
+    expect(screen.getByTestId('preview-3')).toBeInTheDocument();
+
+    // El cursor pasa a la otra tarjeta (mouseleave de la primera + enter en la segunda).
+    fireEvent.mouseLeave(primera);
+    await apuntar(segunda);
+
+    expect(screen.queryByTestId('preview-3')).not.toBeInTheDocument();
+    expect(screen.getByTestId('preview-4')).toBeInTheDocument();
+  });
+
+  it('con prefers-reduced-motion no se reproduce nada (queda el thumbnail)', async () => {
+    matchMediaFalso(true);
+    mock().library.list.mockResolvedValue([crearClip({ id: 3, title: 'Con preview' })]);
+    render(<Biblioteca />);
+    const card = (await screen.findByText('Con preview')).closest('.clip-card') as HTMLElement;
+
+    await apuntar(card);
+
+    expect(screen.queryByTestId('preview-3')).not.toBeInTheDocument();
   });
 });
 

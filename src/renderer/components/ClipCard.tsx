@@ -1,24 +1,58 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Clip } from '@shared/library';
 import { formatDuration } from '@shared/library';
-import { thumbMediaUrl } from '../lib/media';
+import { clipMediaUrl, thumbMediaUrl } from '../lib/media';
+
+/** Segundos de clip que muestra la preview antes de volver al principio. */
+const PREVIEW_SECONDS = 10;
+/** Retardo antes de arrancar: barrer la grilla con el mouse no debe disparar una preview por card. */
+const PREVIEW_DELAY_MS = 250;
 
 interface Props {
   clip: Clip;
   onPlay: (clip: Clip) => void;
+  /** ¿Esta tarjeta es la que previsualiza? Lo decide la grilla (solo una a la vez). */
+  previewActiva?: boolean;
+  /** Avisa a la grilla de que el cursor entró (true) o salió (false). */
+  onPreviewChange?: (activa: boolean) => void;
 }
 
-export default function ClipCard({ clip, onPlay }: Props) {
+/** El usuario pidió menos animación: la preview no se reproduce (queda el borde y el thumbnail). */
+function prefiereMenosMovimiento(): boolean {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange }: Props) {
   const [editando, setEditando] = useState(false);
   const [titulo, setTitulo] = useState(clip.title);
   const [tags, setTags] = useState(clip.tags.join(', '));
   const [ocupado, setOcupado] = useState(false);
+  const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Si el clip cambia desde fuera (push del main), el borrador se realinea.
   useEffect(() => {
     setTitulo(clip.title);
     setTags(clip.tags.join(', '));
   }, [clip.title, clip.tags]);
+
+  // Al desmontar (filtro, borrado, navegación) no puede quedar un arranque pendiente.
+  useEffect(() => cancelarPreview, []);
+
+  function cancelarPreview() {
+    if (temporizador.current) clearTimeout(temporizador.current);
+    temporizador.current = null;
+  }
+
+  function entrar() {
+    if (prefiereMenosMovimiento()) return;
+    cancelarPreview();
+    temporizador.current = setTimeout(() => onPreviewChange?.(true), PREVIEW_DELAY_MS);
+  }
+
+  function salir() {
+    cancelarPreview();
+    onPreviewChange?.(false);
+  }
 
   async function accion(fn: () => Promise<unknown>) {
     setOcupado(true);
@@ -49,16 +83,44 @@ export default function ClipCard({ clip, onPlay }: Props) {
 
   const fecha = new Date(clip.createdAt).toLocaleDateString();
 
+  const poster = clip.thumbnailPath ? thumbMediaUrl(clip.id, clip.thumbnailPath) : undefined;
+
   return (
-    <article className="clip-card">
+    <article
+      className="clip-card"
+      onMouseEnter={entrar}
+      onMouseLeave={salir}
+      onFocus={entrar}
+      onBlur={salir}
+    >
       <button
         type="button"
         className="clip-thumb"
         aria-label={`Reproducir ${clip.title}`}
         onClick={() => onPlay(clip)}
       >
-        {clip.thumbnailPath ? (
-          <img src={thumbMediaUrl(clip.id, clip.thumbnailPath)} alt="" />
+        {/* La preview se MONTA al apuntar y se DESMONTA al salir: pausarla dejaría vivos el búfer
+            y el decodificador, y la app corre mientras el usuario juega. */}
+        {previewActiva ? (
+          <video
+            className="clip-preview"
+            data-testid={`preview-${clip.id}`}
+            src={clipMediaUrl(clip.id)}
+            poster={poster}
+            muted
+            autoPlay
+            loop
+            playsInline
+            preload="metadata"
+            // HTML no sabe acotar la reproducción a un rango: el bucle de los primeros segundos se
+            // hace a mano. `loop` cubre además el clip más corto que la ventana.
+            onTimeUpdate={(e) => {
+              const video = e.currentTarget;
+              if (video.currentTime >= PREVIEW_SECONDS) video.currentTime = 0;
+            }}
+          />
+        ) : poster ? (
+          <img src={poster} alt="" />
         ) : (
           <span className="clip-thumb-placeholder">▶</span>
         )}

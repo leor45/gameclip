@@ -334,6 +334,14 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+  transition: border-color 120ms ease;
+}
+
+/* La tarjeta apuntada (mouse o teclado) se resalta. Solo cambia el COLOR del borde que ya existe:
+   sumar grosor correría la grilla entera. */
+.clip-card:hover,
+.clip-card:focus-within {
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .clip-thumb {
@@ -348,8 +356,10 @@ body {
 }
 
 /* Absoluta para salir del flujo: si la imagen participa del sizing, un thumbnail 9:16
-   estira la card y anula el aspect-ratio del contenedor. Contain: preview completo. */
-.clip-thumb img {
+   estira la card y anula el aspect-ratio del contenedor. Contain: preview completo.
+   El video de la preview ocupa el mismo marco, con las mismas reglas. */
+.clip-thumb img,
+.clip-preview {
   position: absolute;
   inset: 0;
   width: 100%;

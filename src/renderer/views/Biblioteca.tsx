@@ -13,6 +13,9 @@ export default function Biblioteca() {
   const [soloFavoritos, setSoloFavoritos] = useState(false);
   const [juego, setJuego] = useState('');
   const [reproduciendo, setReproduciendo] = useState<Clip | null>(null);
+  // Qué tarjeta previsualiza. Vive aquí (y no en cada tarjeta) para que solo haya UNA preview
+  // viva: la app corre mientras se juega y no puede quedarse decodificando videos olvidados.
+  const [preview, setPreview] = useState<number | null>(null);
 
   // El desplegable mezcla juegos con un criterio que NO es un juego (escritorio = sin juego): el
   // centinela se traduce aquí y al catálogo le cruza `withoutGame`, no la cadena.
@@ -97,7 +100,19 @@ export default function Biblioteca() {
       {clips && clips.length > 0 && (
         <div className="library-grid">
           {clips.map((clip) => (
-            <ClipCard key={clip.id} clip={clip} onPlay={setReproduciendo} />
+            <ClipCard
+              key={clip.id}
+              clip={clip}
+              onPlay={setReproduciendo}
+              previewActiva={preview === clip.id}
+              // Apagar solo apaga LA PROPIA: un mouseleave tardío de otra tarjeta no puede matar
+              // la preview de la que el cursor ya está apuntando.
+              onPreviewChange={(activa) =>
+                setPreview((actual) =>
+                  activa ? clip.id : actual === clip.id ? null : actual,
+                )
+              }
+            />
           ))}
         </div>
       )}
