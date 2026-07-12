@@ -290,9 +290,12 @@ export interface AudioTrackLayout {
   tracks: { index: number; name: string }[];
   /** OR de los bits de `tracks` → valor de `recording.mixer`. */
   mixer: number;
-  /** true solo con el layout por rol (apps + separadas): habilita el remux de nombres. */
+  /** true con layout por rol (pistas separadas): habilita el remux de nombres. */
   named: boolean;
 }
+
+/** Nombre de la pista con el audio del PC aislado (escritorio + pistas separadas). */
+export const PC_TRACK_NAME = 'pc';
 
 const TRACK_BIT = (index: number): number => 1 << (index - 1);
 const MIX_BIT = TRACK_BIT(1); // pista 1 = mezcla completa, en TODA máscara
@@ -302,7 +305,9 @@ const MIX_BIT = TRACK_BIT(1); // pista 1 = mezcla completa, en TODA máscara
  * La pista 1 SIEMPRE lleva la mezcla completa (los reproductores solo reproducen la primera).
  *
  * - Sin "pistas separadas": todo a la pista 1 (una sola pista).
- * - Modo `desktop` + separadas: pista 1 mezcla, pista 2 mic (comportamiento previo).
+ * - Modo `desktop` + separadas (layout por rol): pista 1 `default`, 2 `pc`, 3 `mic`. El audio del
+ *   PC va AISLADO en su pista, no solo dentro de la mezcla: sin una fuente nombrada detrás de la
+ *   mezcla, el editor no puede rehacerla (`hasRoleTracks`) y separar las pistas no serviría de nada.
  * - Modo `apps` + separadas (layout por rol): pista 1 `default`, 2 `game`, 3 `mic`, y una
  *   por app activa (`<exe sin .exe>`) en las pistas 4/5/6 — tope `AUDIO_APPS_TRACK_MAX`.
  */
@@ -325,16 +330,17 @@ export function audioTrackLayout(
 
   if (audioMode === 'desktop') {
     return {
-      micMask: MIX_BIT | TRACK_BIT(2),
+      micMask: MIX_BIT | TRACK_BIT(3),
       gameMask: MIX_BIT,
-      desktopMask: MIX_BIT,
+      desktopMask: MIX_BIT | TRACK_BIT(2),
       appMasks: [],
       tracks: [
         { index: 1, name: 'default' },
-        { index: 2, name: 'mic' },
+        { index: 2, name: PC_TRACK_NAME },
+        { index: 3, name: 'mic' },
       ],
-      mixer: MIX_BIT | TRACK_BIT(2),
-      named: false,
+      mixer: MIX_BIT | TRACK_BIT(2) | TRACK_BIT(3),
+      named: true,
     };
   }
 

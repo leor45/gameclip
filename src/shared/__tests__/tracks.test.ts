@@ -18,13 +18,27 @@ const porRol: ClipAudioTrack[] = [
   { index: 3, name: 'opera' },
 ];
 
-// Clip de modo escritorio o anterior al layout por rol: una sola pista, sin nombre.
+// Layout por rol de una captura de escritorio con "PC y micrófono en pistas separadas".
+const escritorioSeparado: ClipAudioTrack[] = [
+  { index: 0, name: 'default' },
+  { index: 1, name: 'pc' },
+  { index: 2, name: 'mic' },
+];
+
+// Clip de escritorio con un solo audio (o anterior al layout por rol): una pista, sin nombre.
 const sinRoles: ClipAudioTrack[] = [{ index: 0, name: null }];
 
 describe('pistas de audio — layout por rol', () => {
   it('reconoce el layout por rol y ofrece las fuentes (sin la mezcla)', () => {
     expect(hasRoleTracks(porRol)).toBe(true);
     expect(selectableTracks(porRol).map(trackLabel)).toEqual(['game', 'mic', 'opera']);
+  });
+
+  it('un clip de escritorio con PC y micro separados se edita como uno de juego', () => {
+    expect(hasRoleTracks(escritorioSeparado)).toBe(true);
+    expect(selectableTracks(escritorioSeparado).map(trackLabel)).toEqual(['pc', 'mic']);
+    // Muteando el micro, la mezcla se rehace solo con el audio del PC.
+    expect(activeTrackIndexes(escritorioSeparado, ['mic'])).toEqual([1]);
   });
 
   it('un clip sin pistas nombradas no soporta edit y solo ofrece su única pista', () => {

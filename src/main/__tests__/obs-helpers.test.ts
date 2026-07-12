@@ -209,12 +209,14 @@ describe('effectiveCapture (perfil → vídeo y audio)', () => {
   it("escritorio con desktopAudioTracks 'separate': PC y micro en pistas separadas", () => {
     const eff = effectiveCapture({ ...porApps, desktopAudioTracks: 'separate' }, false);
     expect(eff).toMatchObject({ profile: 'desktop', audioMode: 'desktop', separateTracks: true });
-    // T1 mezcla + T2 mic: el layout de escritorio con pistas separadas, ya existente.
+    // Layout por rol: mezcla + PC aislado + micro aislado, editable como un clip de juego.
     const layout = audioTrackLayout(eff.audioMode, eff.separateTracks, []);
     expect(layout.tracks).toEqual([
       { index: 1, name: 'default' },
-      { index: 2, name: 'mic' },
+      { index: 2, name: 'pc' },
+      { index: 3, name: 'mic' },
     ]);
+    expect(layout.named).toBe(true);
   });
 
   it('con juego y auto-switch: solo el juego, y el audio vuelve a los ajustes del usuario', () => {
@@ -317,12 +319,19 @@ describe('audioTrackLayout', () => {
     expect(layout.mixer).toBe(0b111111); // las 6 pistas
   });
 
-  it('modo desktop + separadas: plan actual (T1 mezcla + T2 mic), sin nombres', () => {
+  it('modo desktop + separadas: layout por rol (T1 mezcla, T2 pc, T3 mic) y nombres', () => {
     const layout = audioTrackLayout('desktop', true, []);
-    expect(layout.desktopMask).toBe(0b001);
-    expect(layout.micMask).toBe(0b011);
-    expect(layout.mixer).toBe(0b011);
-    expect(layout.named).toBe(false);
+    // El audio del PC va AISLADO en T2, no solo dentro de la mezcla: si no, el editor no puede
+    // rehacer la mezcla (hasRoleTracks pide fuentes nombradas detrás de la pista 1).
+    expect(layout.desktopMask).toBe(0b011); // T1 + T2
+    expect(layout.micMask).toBe(0b101); // T1 + T3
+    expect(layout.tracks).toEqual([
+      { index: 1, name: 'default' },
+      { index: 2, name: 'pc' },
+      { index: 3, name: 'mic' },
+    ]);
+    expect(layout.mixer).toBe(0b111);
+    expect(layout.named).toBe(true); // dispara el remux de nombres → editable como los de juego
   });
 
   it('sin pistas separadas: todo a la pista 1 en cualquier modo (regresión)', () => {
