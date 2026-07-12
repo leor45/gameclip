@@ -449,6 +449,25 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > basura fabricada con la forma exacta de la real: borra las cuatro carpetas nuestras y deja intactas
 > las de otro instalador NSIS y las de otra app de Electron.
 
+> Fix post-entrega (2026-07-12, `fix/limpieza-temporales-cierre-sucio`): aquella limpieza **solo corría
+> al cerrar**, así que un cierre sucio —apagar el PC sin cerrar la app, un cuelgue, un kill— dejaba
+> entre **94 y 515 MB** que ya no se borraban nunca. Con el auto-arranque activado eso se repite en cada
+> encendido: es el origen real de los 4,15 GB. Dos causas: (1) nadie limpiaba **al arrancar**, que es la
+> única red que atrapa un cierre que no pasó por el `will-quit`; y (2) parte de la basura era
+> **irreconocible**: al morir, el launcher alcanza a borrar el `7z-out` del staging pero no el
+> `app-64.7z`, y lo que queda es idéntico al staging de cualquier otra app de electron-builder — barrerlo
+> por contenido se llevaría temporales ajenos. Arreglo: la limpieza corre también al arrancar, y **cada
+> ejecución anota la ruta de su propio staging** (`userData/portable-temp.json`) mientras aún es
+> reconocible; la siguiente la borra por lo que *era*, sin adivinar. Verificado sobre el `.exe` con tres
+> ciclos apagón→arranque (matando también al launcher, como un corte de luz): antes crecía 684 MB →
+> 1031 MB y subiendo; ahora se queda en **2 carpetas** (payload + staging vivos) ciclo tras ciclo.
+> **Dos errores de diseño que solo aparecieron contra el `.exe` real:** el filtro de edad tomaba el
+> staging huérfano por el de la ejecución en curso si el PC reiniciaba en menos de un minuto (una ruta
+> registrada nunca puede ser la actual: la actual es una carpeta aleatoria recién creada, así que se
+> salta ese filtro); y del **segundo arranque en adelante el launcher no crea `7z-out`** —el payload ya
+> está extraído—, así que usarlo como marcador dejaba el staging sin registrar justo en el caso más
+> común. El marcador es `app-64.7z`, que está siempre.
+
 ## Fase 15 · Detección de juegos instalados y nombres reales — ✅ entregado
 
 - [x] **Índice de juegos instalados**: la app lee lo que los launchers dejan en el PC y sabe qué juegos

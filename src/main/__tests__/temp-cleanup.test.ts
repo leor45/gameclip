@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { carpetasHuerfanas, type EntornoTemp } from '../temp-cleanup';
+import {
+  carpetasHuerfanas,
+  limpiarTemporales,
+  stagingsActuales,
+  type EntornoTemp,
+  type RegistroStaging,
+} from '../temp-cleanup';
 
 const TEMP = 'C:\\Users\\Leo\\AppData\\Local\\Temp';
 const EN_USO = `${TEMP}\\GameClip-0.1.0`;
@@ -107,6 +113,57 @@ describe('carpetasHuerfanas', () => {
     expect(carpetasHuerfanas(e)).toEqual([]);
   });
 
+  // REGRESIÓN. Un cierre sucio (apagón, cuelgue, kill) mata también al launcher, que alcanza a
+  // borrar el `7z-out` del staging pero no el `app-64.7z`. Lo que queda no tiene NINGUNO de los tres
+  // marcadores: es indistinguible del staging de cualquier otra app de electron-builder, así que la
+  // limpieza no puede reclamarlo por lo que hay dentro... pero sí por lo que la app anotó cuando ese
+  // staging todavía era reconocible (al arrancar, con el `7z-out` recién extraído).
+  it('borra un staging huérfano SIN marcador si lo registramos en su día', () => {
+    const huerfano = `${TEMP}\\nsn6CB8.tmp`; // medido en la máquina del owner: 94 MB permanentes
+    const e = entorno(['nsn6CB8.tmp'], [`${huerfano}\\app-64.7z`]);
+
+    expect(carpetasHuerfanas(e)).toEqual([]); // por sí solo es invisible: no hay nada que lo delate
+    expect(carpetasHuerfanas(e, [huerfano])).toEqual([huerfano]); // registrado, se reclama
+  });
+
+  it('un ns*.tmp ajeno con app-64.7z NO se toca (nunca lo registramos)', () => {
+    // Otra app de electron-builder deja exactamente lo mismo dentro. Por eso no se reclama por el
+    // contenido: solo se borra lo que anotamos nosotros.
+    const ajeno = `${TEMP}\\nsAJENA.tmp`;
+    const e = entorno(['nsAJENA.tmp'], [`${ajeno}\\app-64.7z`, `${ajeno}\\nsis7z.dll`]);
+
+    expect(carpetasHuerfanas(e)).toEqual([]);
+    expect(carpetasHuerfanas(e, [`${TEMP}\\nsOTRA.tmp`])).toEqual([]); // registrado ≠ este
+  });
+
+  it('una ruta registrada que ya no existe se ignora (no se inventa trabajo)', () => {
+    const e = entorno([], []);
+    expect(carpetasHuerfanas(e, [`${TEMP}\\nsBORRADA.tmp`])).toEqual([]);
+  });
+
+  it('el staging de ESTA ejecución se excluye explícitamente (lo tiene abierto el launcher)', () => {
+    const ahora = `${TEMP}\\nseCD55.tmp`;
+    const e = entorno(['nseCD55.tmp'], [`${ahora}\\7z-out\\GameClip.exe`], [ahora]);
+
+    expect(carpetasHuerfanas(e, [], [ahora])).toEqual([]);
+  });
+
+  // REGRESIÓN 2 (encontrada verificando el .exe): tras un apagón, si el PC vuelve a arrancar rápido,
+  // el staging huérfano es tan reciente que `esAnterior` lo toma por el de la ejecución en curso y
+  // se salta. Por eso una ruta registrada se salta el filtro de edad: no puede ser la actual, porque
+  // la actual es una carpeta aleatoria recién creada que ninguna ejecución anterior pudo anotar.
+  it('borra el staging registrado aunque sea recentísimo (reinicio rápido tras el apagón)', () => {
+    const delApagon = `${TEMP}\\nsq8065.tmp`;
+    const miStaging = `${TEMP}\\nsNUEVO.tmp`;
+    const e = entorno(
+      ['nsq8065.tmp', 'nsNUEVO.tmp'],
+      [`${delApagon}\\7z-out\\GameClip.exe`, `${miStaging}\\7z-out\\GameClip.exe`],
+      [delApagon, miStaging], // las dos parecen "de ahora": el apagón fue hace 30 segundos
+    );
+
+    expect(carpetasHuerfanas(e, [delApagon], [miStaging])).toEqual([delApagon]);
+  });
+
   it('junta payload y staging de varias ejecuciones anteriores', () => {
     const p1 = `${TEMP}\\GameClip-0.0.9`;
     const s1 = `${TEMP}\\nsi1.tmp`;
@@ -123,5 +180,105 @@ describe('carpetasHuerfanas', () => {
     );
 
     expect(carpetasHuerfanas(e)).toEqual([p1, s1, s2]);
+  });
+});
+
+describe('stagingsActuales', () => {
+  // El staging de ESTA ejecución todavía tiene el marcador (el launcher acaba de extraerlo). Es la
+  // única ventana en la que se puede reclamar sin ambigüedad: después degrada a un `app-64.7z`
+  // genérico. De ahí que se anote ahora, para poder borrarlo en el arranque siguiente.
+  it('es el staging con marcador que NO es de una ejecución anterior', () => {
+    const ahora = `${TEMP}\\nsAHORA.tmp`;
+    const viejo = `${TEMP}\\nsVIEJO.tmp`;
+    const e = entorno(
+      ['nsAHORA.tmp', 'nsVIEJO.tmp'],
+      [`${ahora}\\app-64.7z`, `${viejo}\\app-64.7z`],
+      [ahora],
+    );
+
+    expect(stagingsActuales(e)).toEqual([ahora]);
+  });
+
+  // REGRESIÓN 3 (encontrada verificando el .exe): a partir del SEGUNDO arranque el payload ya está
+  // en el temporal, así que el launcher no extrae nada y **no crea `7z-out`**. Buscar ese marcador
+  // dejaba sin registrar el staging justo en el caso más común, y esos 94 MB volvían a ser basura
+  // permanente. El `app-64.7z` sí está siempre.
+  it('reconoce su staging aunque no haya 7z-out (el payload ya estaba extraído)', () => {
+    const ahora = `${TEMP}\\nsnDFAE.tmp`;
+    const e = entorno(['nsnDFAE.tmp'], [`${ahora}\\app-64.7z`], [ahora]);
+
+    expect(stagingsActuales(e)).toEqual([ahora]);
+  });
+
+  it('no reclama el staging de otro instalador NSIS que corra a la vez', () => {
+    const ajeno = `${TEMP}\\nsAJENA.tmp`;
+    const e = entorno(['nsAJENA.tmp'], [`${ajeno}\\nsProcess.dll`], [ajeno]);
+
+    expect(stagingsActuales(e)).toEqual([]);
+  });
+
+  it('en dev (sin portable) no hay staging que registrar', () => {
+    expect(stagingsActuales(entorno([], []))).toEqual([]);
+  });
+});
+
+describe('limpiarTemporales + registro', () => {
+  /** Registro en memoria, con el mismo contrato que el de disco. */
+  function registro(inicial: string[] = []): RegistroStaging & { rutas: string[] } {
+    const r = {
+      rutas: [...inicial],
+      leer: () => r.rutas,
+      escribir: (rutas: string[]) => {
+        r.rutas = rutas;
+      },
+    };
+    return r;
+  }
+
+  it('deja anotado el staging de esta ejecución, para poder borrarlo tras un cierre sucio', () => {
+    const ahora = `${TEMP}\\nsAHORA.tmp`;
+    const e = entorno(['nsAHORA.tmp'], [`${ahora}\\app-64.7z`], [ahora]);
+    const reg = registro();
+
+    limpiarTemporales(e, reg);
+
+    expect(reg.rutas).toEqual([ahora]);
+  });
+
+  it('el staging propio no se anota dos veces al arrancar y al cerrar', () => {
+    const ahora = `${TEMP}\\nsAHORA.tmp`;
+    const e = entorno(['nsAHORA.tmp'], [`${ahora}\\app-64.7z`], [ahora]);
+    const reg = registro();
+
+    limpiarTemporales(e, reg); // arranque
+    limpiarTemporales(e, reg); // cierre
+
+    expect(reg.rutas).toEqual([ahora]);
+  });
+
+  it('una ruta registrada que no se pudo borrar sigue anotada, para reintentarla', () => {
+    // El borrado real falla (la carpeta no existe en el disco de verdad, como si estuviera en uso):
+    // la ruta no puede perderse, o esa basura volvería a ser irreclamable.
+    const viejo = `${TEMP}\\nsVIEJO.tmp`;
+    const e = entorno(['nsVIEJO.tmp'], [`${viejo}\\app-64.7z`]);
+    const reg = registro([viejo]);
+
+    limpiarTemporales(e, reg);
+
+    expect(reg.rutas).toContain(viejo);
+  });
+
+  it('una ruta registrada que ya no está en el temporal se poda del registro', () => {
+    const fantasma = `${TEMP}\\nsBORRADA.tmp`;
+    const reg = registro([fantasma]);
+
+    limpiarTemporales(entorno([], []), reg);
+
+    expect(reg.rutas).toEqual([]);
+  });
+
+  it('sin registro se comporta como siempre (no rompe nada)', () => {
+    const e = entorno([], []);
+    expect(() => limpiarTemporales(e)).not.toThrow();
   });
 });
