@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { StorageStats } from '@shared/library';
+import { formatStorage } from '@shared/library';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
 const LIMITE_OPCIONES_GB = [0, 5, 10, 20, 50, 100, 250, 500];
-
-/** Formatea bytes como GB con un decimal, para la barra y la leyenda de uso de disco. */
-function formatearGb(bytes: number): string {
-  const gb = bytes / 1024 ** 3;
-  return `${gb.toFixed(1)} GB`;
-}
 
 export default function AjustesAlmacenamiento() {
   const { settings, set, save, saving, saved } = useCaptureSettings();
@@ -135,19 +130,19 @@ export default function AjustesAlmacenamiento() {
           <ul className="storage-legend">
             <li>
               <span className="storage-dot storage-seg-clips" />
-              Clips: {formatearGb(stats.clipsBytes)}
+              Clips: {formatStorage(stats.clipsBytes)}
             </li>
             <li>
               <span className="storage-dot storage-seg-recordings" />
-              Grabaciones: {formatearGb(stats.recordingsBytes)}
+              Grabaciones: {formatStorage(stats.recordingsBytes)}
             </li>
             <li>
               <span className="storage-dot storage-seg-other" />
-              Otros: {formatearGb(otrosBytes)}
+              Otros: {formatStorage(otrosBytes)}
             </li>
             <li>
               <span className="storage-dot storage-seg-free" />
-              Libre: {formatearGb(stats.driveFreeBytes)}
+              Libre: {formatStorage(stats.driveFreeBytes)}
             </li>
           </ul>
         </fieldset>

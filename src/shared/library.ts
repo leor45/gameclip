@@ -109,6 +109,18 @@ export function titleFromFileName(fileName: string): string {
   return base.trim() || fileName;
 }
 
+/**
+ * Formatea bytes para la UI: `750 MB`, `3.4 GB`, `20 GB` (sin el decimal cuando es .0).
+ * Lo usan el indicador del sidebar y la leyenda de uso de disco, que deben decir lo mismo.
+ */
+export function formatStorage(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 MB';
+  const gb = bytes / 1024 ** 3;
+  if (gb < 1) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  const redondeado = Math.round(gb * 10) / 10;
+  return `${Number.isInteger(redondeado) ? redondeado : redondeado.toFixed(1)} GB`;
+}
+
 /** Formatea segundos como m:ss (o h:mm:ss). Para la UI. */
 export function formatDuration(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '–:––';
