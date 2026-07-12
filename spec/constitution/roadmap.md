@@ -468,6 +468,9 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
       Morales` → carpeta `Marvel's Spider-Man Miles Morales`), y los ya grabados bajo el ejecutable
       (`acblackflag/`) se **re-etiquetan en la BD sin moverse del disco**: la Biblioteca los muestra en la
       misma entrada que los nuevos.
+- [x] Publicado como **v0.4.0** (portable): https://github.com/leor45/gameclip/releases/tag/v0.4.0
+      Verificado sobre el `.exe` empaquetado: construye el índice igual que en dev (66 ejecutables, nombres
+      correctos), así que las fuentes no sufren el problema de rutas dentro del `asar`.
 
 > `feature/deteccion-juegos-y-nombres` (2026-07-12): la detección **no estaba rota, estaba ciega**. La
 > única fuente de juegos era `KNOWN_GAME_PROCESSES`, una lista curada de ~40 procesos: todo lo que no
