@@ -202,6 +202,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Evento `settings:changed`: el sidebar refleja el cambio de límite al instante.
 - [x] Estructura de carpetas por juego (`<carpeta>/<Juego|Desktop>/…`, capturas en `Capturas/`)
       y nomenclatura `<Juego> [Screenshot] AAAA.MM.DD - HH.MM.SS.CC`, con migración de lo viejo.
+- [x] Filtro "Escritorio" en la biblioteca: aísla las grabaciones que no vienen de un juego.
 
 > `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
 > `library:get-storage-stats` (las mismas contra las que el auto-borrado compara el límite, o el
@@ -224,6 +225,11 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > que cierra es del anterior). El reconcile pasa a ser recursivo y una migración mueve/renombra lo
 > que quedó suelto en la raíz, actualizando el catálogo (mismo id → miniaturas y URLs de medios
 > siguen valiendo). Verificado sobre copias de la carpeta y la DB reales.
+> `feature/filtro-escritorio-biblioteca` (2026-07-11): "sin juego" **no es un juego** — `game` es un
+> nombre exacto, así que el filtro va como criterio propio (`ClipsQuery.withoutGame` → `game IS
+> NULL`, con precedencia sobre `game`) y el desplegable usa un centinela que traduce el renderer.
+> Así un clip cuyo juego se llamara "Escritorio" sigue filtrándose como el juego que es, y no hace
+> falta escribir un pseudo-juego en el catálogo.
 
 ## Futuro (fuera de alcance por ahora)
 

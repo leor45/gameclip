@@ -85,7 +85,22 @@ describe('Biblioteca — búsqueda y filtros', () => {
 
     await waitFor(() => {
       expect(mock().library.list).toHaveBeenLastCalledWith(
-        expect.objectContaining({ game: 'Valorant' }),
+        expect.objectContaining({ game: 'Valorant', withoutGame: false }),
+      );
+    });
+  });
+
+  it('el filtro "Escritorio" pide los clips sin juego, no un juego llamado así', async () => {
+    const user = userEvent.setup();
+    mock().library.games.mockResolvedValue(['CS2']);
+    render(<Biblioteca />);
+    await screen.findByRole('option', { name: 'Escritorio' });
+
+    await user.selectOptions(screen.getByLabelText('Filtrar por juego'), 'Escritorio');
+
+    await waitFor(() => {
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ withoutGame: true, game: undefined }),
       );
     });
   });

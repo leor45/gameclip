@@ -48,7 +48,19 @@ export interface ClipsQuery {
   favoritesOnly?: boolean;
   /** Filtra por juego exacto. */
   game?: string;
+  /**
+   * Solo los clips sin juego (grabaciones de escritorio). No es un juego más: `game` es un nombre
+   * exacto, y un clip cuyo juego se llamara "Escritorio" no debe confundirse con esto. Tiene
+   * precedencia sobre `game`.
+   */
+  withoutGame?: boolean;
 }
+
+/**
+ * Valor del desplegable de la biblioteca para "sin juego". Vive solo en la UI: al catálogo le
+ * cruza `withoutGame`, no esta cadena.
+ */
+export const DESKTOP_FILTER_VALUE = '__escritorio__';
 
 export const CLIP_TITLE_MAX = 120;
 export const CLIP_TAG_MAX = 30;
