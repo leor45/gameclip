@@ -25,6 +25,15 @@ export class LibraryManager extends EventEmitter {
     private readonly opts: LibraryOptions,
   ) {
     super();
+    // Al migrar, el repo fusiona los clips que estaban duplicados por la ruta; sus miniaturas
+    // quedan sin dueño y las borra el manager (tocar el disco no es tarea del repositorio).
+    for (const thumbnail of this.repo.takeOrphanThumbnails()) {
+      try {
+        rmSync(thumbnail, { force: true });
+      } catch {
+        // best-effort: una miniatura huérfana no rompe nada
+      }
+    }
   }
 
   list(query: ClipsQuery = {}): Clip[] {

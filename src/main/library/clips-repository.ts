@@ -2,9 +2,13 @@ import type { Database } from 'better-sqlite3';
 import type { Clip, ClipPatch, ClipSource, ClipsQuery } from '@shared/library';
 import { normalizeTags } from '@shared/library';
 import { normalizeMutedTracks } from '@shared/tracks';
+import { canonicalClipPath, clipPathKey } from './clip-path';
 
-// Migraciones secuenciales; la posición i lleva el esquema de la versión i a la i+1.
-const migrations: string[] = [
+// Migraciones secuenciales; la posición i lleva el esquema de la versión i a la i+1. Una migración
+// es SQL suelto o una función (cuando hay que fusionar datos, no solo mover el esquema).
+type Migration = string | ((db: Database, orphanThumbnails: string[]) => void);
+
+const migrations: Migration[] = [
   `CREATE TABLE clips (
      id               INTEGER PRIMARY KEY AUTOINCREMENT,
      file_path        TEXT NOT NULL UNIQUE,
@@ -21,6 +25,10 @@ const migrations: string[] = [
    CREATE INDEX idx_clips_created ON clips(created_at DESC);`,
   // Selección de pistas de audio del editor (claves muteadas en la mezcla), JSON.
   `ALTER TABLE clips ADD COLUMN muted_tracks TEXT NOT NULL DEFAULT '[]';`,
+  // Rutas a su forma canónica + fusión de los duplicados que dejó el bug de los separadores.
+  (db, orphans) => dedupeByCanonicalPath(db, orphans),
+  // La DB misma impide el duplicado, aunque alguien esquive el repositorio.
+  `CREATE UNIQUE INDEX idx_clips_path_nocase ON clips(file_path COLLATE NOCASE);`,
 ];
 
 interface ClipRow {
@@ -52,8 +60,16 @@ export interface NewClip {
  * con ABI de Electron, en tests el better-sqlite3 de Node con ':memory:'.
  */
 export class ClipsRepository {
+  /** Miniaturas huérfanas que dejó la fusión de duplicados; las borra el LibraryManager. */
+  private readonly orphanThumbnails: string[] = [];
+
   constructor(private readonly db: Database) {
     this.migrate();
+  }
+
+  /** Devuelve (y olvida) las miniaturas de los registros descartados al fusionar duplicados. */
+  takeOrphanThumbnails(): string[] {
+    return this.orphanThumbnails.splice(0);
   }
 
   list(query: ClipsQuery = {}): Clip[] {
@@ -83,10 +99,15 @@ export class ClipsRepository {
     return row ? toClip(row) : null;
   }
 
+  /**
+   * Busca por ruta canónica y sin distinguir mayúsculas: la misma ruta llega escrita de formas
+   * distintas según quién la produzca (libobs con `/`, Node con `\`), y NTFS además ignora la
+   * capitalización. Comparar el string crudo duplicaba el clip.
+   */
   getByPath(filePath: string): Clip | null {
-    const row = this.db.prepare('SELECT * FROM clips WHERE file_path = ?').get(filePath) as
-      | ClipRow
-      | undefined;
+    const row = this.db
+      .prepare('SELECT * FROM clips WHERE file_path = ? COLLATE NOCASE')
+      .get(canonicalClipPath(filePath)) as ClipRow | undefined;
     return row ? toClip(row) : null;
   }
 
@@ -113,7 +134,14 @@ export class ClipsRepository {
         `INSERT INTO clips (file_path, title, game, size_bytes, created_at, source)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(clip.filePath, clip.title, clip.game, clip.sizeBytes, clip.createdAt, clip.source);
+      .run(
+        canonicalClipPath(clip.filePath),
+        clip.title,
+        clip.game,
+        clip.sizeBytes,
+        clip.createdAt,
+        clip.source,
+      );
     return this.mustGet(Number(info.lastInsertRowid));
   }
 
@@ -179,7 +207,9 @@ export class ClipsRepository {
     const current = this.db.pragma('user_version', { simple: true }) as number;
     const apply = this.db.transaction(() => {
       for (let v = current; v < migrations.length; v++) {
-        this.db.exec(migrations[v]);
+        const migration = migrations[v];
+        if (typeof migration === 'string') this.db.exec(migration);
+        else migration(this.db, this.orphanThumbnails);
         this.db.pragma(`user_version = ${v + 1}`);
       }
     });
@@ -187,14 +217,74 @@ export class ClipsRepository {
   }
 }
 
-function toClip(row: ClipRow): Clip {
-  let tags: string[] = [];
-  try {
-    const parsed: unknown = JSON.parse(row.tags);
-    if (Array.isArray(parsed)) tags = parsed.filter((t): t is string => typeof t === 'string');
-  } catch {
-    // columna corrupta → sin tags
+/**
+ * Lleva las rutas a su forma canónica y fusiona las filas que apuntan al mismo archivo (el bug de
+ * los separadores dejó hasta dos por clip). Se conserva el registro más antiguo — el que creó la
+ * captura, con su miniatura y su duración ya calculadas, y cuyo id usan las URLs de medios — y se
+ * le suman los datos que solo tenga el descartado, para no perder favoritos ni etiquetas puestos
+ * sobre la tarjeta "equivocada".
+ */
+function dedupeByCanonicalPath(db: Database, orphanThumbnails: string[]): void {
+  const rows = db.prepare('SELECT * FROM clips ORDER BY id').all() as ClipRow[];
+  const grupos = new Map<string, ClipRow[]>();
+  for (const row of rows) {
+    const key = clipPathKey(row.file_path);
+    const grupo = grupos.get(key);
+    if (grupo) grupo.push(row);
+    else grupos.set(key, [row]);
   }
+
+  const actualizar = db.prepare(
+    `UPDATE clips SET file_path = ?, game = ?, duration_seconds = ?, thumbnail_path = ?,
+                      favorite = ?, tags = ?, source = ?
+     WHERE id = ?`,
+  );
+  const borrar = db.prepare('DELETE FROM clips WHERE id = ?');
+
+  for (const grupo of grupos.values()) {
+    const [principal, ...descartados] = grupo;
+    const fusionado = { ...principal, file_path: canonicalClipPath(principal.file_path) };
+    const tags = new Set(parseTags(principal.tags));
+
+    for (const otro of descartados) {
+      fusionado.game ??= otro.game;
+      fusionado.duration_seconds ??= otro.duration_seconds;
+      fusionado.favorite ||= otro.favorite;
+      // 'scan' es el alta genérica: si el otro sabe de dónde salió el clip, gana su origen.
+      if (fusionado.source === 'scan' && otro.source !== 'scan') fusionado.source = otro.source;
+      for (const tag of parseTags(otro.tags)) tags.add(tag);
+
+      if (fusionado.thumbnail_path === null) fusionado.thumbnail_path = otro.thumbnail_path;
+      else if (otro.thumbnail_path && otro.thumbnail_path !== fusionado.thumbnail_path) {
+        orphanThumbnails.push(otro.thumbnail_path);
+      }
+      borrar.run(otro.id);
+    }
+
+    actualizar.run(
+      fusionado.file_path,
+      fusionado.game,
+      fusionado.duration_seconds,
+      fusionado.thumbnail_path,
+      fusionado.favorite,
+      JSON.stringify(normalizeTags([...tags])),
+      fusionado.source,
+      fusionado.id,
+    );
+  }
+}
+
+function parseTags(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function toClip(row: ClipRow): Clip {
+  const tags = parseTags(row.tags);
   return {
     id: row.id,
     filePath: row.file_path,
