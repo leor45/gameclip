@@ -11,7 +11,7 @@ import { targetPathFor } from './relocate';
 export async function takeScreenshot(
   monitorIndex: number,
   outputDir: string,
-  gameExecutable: string | null = null,
+  gameName: string | null = null,
 ): Promise<string | null> {
   try {
     // require diferido: en tests unitarios no se puede cargar electron.
@@ -38,7 +38,7 @@ export async function takeScreenshot(
 
     const filePath = targetPathFor({
       outputDir,
-      gameExecutable,
+      gameName,
       date: new Date(),
       kind: 'screenshot',
       extension: 'png',

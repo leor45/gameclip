@@ -99,8 +99,8 @@ export class CaptureManager extends EventEmitter {
   private bufferRunning = false;
   /** Ejecutable del juego activo (el proceso real que vio el detector). */
   private detectedGameExe: string | null = null;
-  /** Ejecutable del juego de la grabación en curso: el clip pertenece a él, no al juego actual. */
-  private sessionGameExe: string | null = null;
+  /** Juego de la grabación en curso: el clip pertenece a él, no al que esté activo al cortarla. */
+  private sessionGameName: string | null = null;
   /** Todos los juegos en ejecución (el activo es uno de ellos). */
   private runningGames: RunningGameMatch[] = [];
   /** Juego activo: el que se graba y cuyo audio se captura. */
@@ -141,13 +141,13 @@ export class CaptureManager extends EventEmitter {
    * cambiar (foco o hotkey) sin reconstruir el pipeline —y reconstruirlo vaciaría el buffer de
    * repetición—, así que la carpeta que libobs conoce puede estar vencida al guardar.
    */
-  private async finishSavedClip(file: string, gameExecutable: string | null): Promise<string> {
+  private async finishSavedClip(file: string, gameName: string | null): Promise<string> {
     await this.applyTrackNames(file);
     return relocateSavedFile(
       file,
       targetPathFor({
         outputDir: this.outputDir(),
-        gameExecutable,
+        gameName,
         date: new Date(),
         kind: 'video',
         extension: 'mp4',
@@ -176,7 +176,7 @@ export class CaptureManager extends EventEmitter {
     return [...this.runningGames];
   }
 
-  /** Ejecutable del juego activo (null si no hay): decide la carpeta y el nombre de lo guardado. */
+  /** Ejecutable del juego activo (null si no hay): es su identidad interna (captura y audio). */
   activeGameExecutable(): string | null {
     return this.detectedGameExe;
   }
@@ -393,7 +393,7 @@ export class CaptureManager extends EventEmitter {
     // El buffer sigue disponible para el replay hotkey mientras dura la sesión.
     if (this.shouldBuffer() && !this.bufferRunning) await this.startBuffer();
     await this.obs.startRecording();
-    this.sessionGameExe = this.detectedGameExe; // el juego de ESTA sesión, aunque luego cambie
+    this.sessionGameName = this.activeGame?.name ?? null; // el juego de ESTA sesión, aunque cambie
     this.setStatus({ state: 'recording', error: null });
   }
 
@@ -405,11 +405,10 @@ export class CaptureManager extends EventEmitter {
   private async stopSessionRecording(game: string | null = this.status.detectedGame): Promise<void> {
     if (this.status.state !== 'recording') return;
     const raw = await this.obs.stopRecording();
-    // El ejecutable es el que tenía la sesión al arrancar: al cambiar de juego, el status ya
-    // apunta al nuevo pero el clip que se cierra es del anterior.
-    const exe = this.sessionGameExe ?? gameExecutableForName(game);
-    const file = await this.finishSavedClip(raw, exe);
-    this.sessionGameExe = null;
+    // El juego es el que tenía la sesión al arrancar: al cambiar de juego, el status ya apunta al
+    // nuevo pero el clip que se cierra es del anterior.
+    const file = await this.finishSavedClip(raw, this.sessionGameName ?? game);
+    this.sessionGameName = null;
     await this.settleAfterRecording();
     this.setStatus({
       state: this.bufferRunning ? 'buffering' : 'idle',
@@ -454,8 +453,8 @@ export class CaptureManager extends EventEmitter {
     if (this.status.state !== 'recording') return;
     try {
       const raw = await this.obs.stopRecording();
-      const file = await this.finishSavedClip(raw, this.detectedGameExe);
-      this.sessionGameExe = null;
+      const file = await this.finishSavedClip(raw, this.status.detectedGame);
+      this.sessionGameName = null;
       await this.settleAfterRecording();
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',
@@ -485,7 +484,7 @@ export class CaptureManager extends EventEmitter {
     if (this.status.state !== 'buffering' && this.status.state !== 'recording') return;
     try {
       const raw = await this.obs.saveReplay();
-      const file = await this.finishSavedClip(raw, this.detectedGameExe);
+      const file = await this.finishSavedClip(raw, this.status.detectedGame);
       this.setStatus({ error: null, lastClipPath: file });
       this.emitClipSaved(file, 'replay');
     } catch (err) {

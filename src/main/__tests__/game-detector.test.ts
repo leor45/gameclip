@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RunningGameMatch } from '@shared/games';
+import type { CustomGame, RunningGameMatch } from '@shared/games';
 import { GameDetector } from '../capture/game-detector';
 
 // El sondeo es async: tras avanzar el timer hay que drenar las microtareas pendientes.
@@ -20,7 +20,7 @@ describe('GameDetector (multi-juego)', () => {
     vi.useRealTimers();
   });
 
-  function crear(procesosPorSondeo: string[][], customGames: string[] = []) {
+  function crear(procesosPorSondeo: string[][], customGames: CustomGame[] = []) {
     let i = 0;
     const detector = new GameDetector({
       listProcessNames: () => {
@@ -100,7 +100,10 @@ describe('GameDetector (multi-juego)', () => {
   });
 
   it('detecta ejecutables añadidos a mano (customGames) como juegos', async () => {
-    const { detector, emisiones } = crear([['MiJuego.exe', 'explorer.exe']], ['MiJuego.exe']);
+    const { detector, emisiones } = crear(
+      [['MiJuego.exe', 'explorer.exe']],
+      [{ executable: 'MiJuego.exe' }],
+    );
     detector.start();
     await avanzar(0);
     expect(emisiones[0]).toEqual([{ name: 'MiJuego', executable: 'mijuego.exe' }]);
@@ -113,9 +116,22 @@ describe('GameDetector (multi-juego)', () => {
     await avanzar(0);
     expect(emisiones).toEqual([]); // sin registrarlo, no es un juego
 
-    detector.setCustomGames(['MiJuego.exe']);
+    detector.setCustomGames([{ executable: 'MiJuego.exe' }]);
     await avanzar(1000);
     expect(nombres(emisiones)).toEqual([['MiJuego']]);
+    detector.stop();
+  });
+
+  it('detecta un juego instalado en cuanto el índice de launchers llega (regresión)', async () => {
+    // Arc Raiders arranca `pioneergame.exe`: no está en la lista curada ni lo añadió nadie a mano.
+    const { detector, emisiones } = crear([['PioneerGame.exe'], ['PioneerGame.exe']]);
+    detector.start();
+    await avanzar(0);
+    expect(emisiones).toEqual([]); // sin índice, la app es ciega: el bug que arreglamos
+
+    detector.setIndex({ pioneergame: 'ARC Raiders' });
+    await avanzar(1000);
+    expect(emisiones[0]).toEqual([{ name: 'ARC Raiders', executable: 'pioneergame.exe' }]);
     detector.stop();
   });
 

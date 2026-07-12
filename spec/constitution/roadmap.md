@@ -449,6 +449,69 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > basura fabricada con la forma exacta de la real: borra las cuatro carpetas nuestras y deja intactas
 > las de otro instalador NSIS y las de otra app de Electron.
 
+## Fase 15 · Detección de juegos instalados y nombres reales — ✅ entregado
+
+- [x] **Índice de juegos instalados**: la app lee lo que los launchers dejan en el PC y sabe qué juegos
+      hay. Fuentes con contrato único (`GameSource`), todas fail-soft: **Steam** (`libraryfolders.vdf` +
+      `appmanifest_*.acf`), **Epic** (manifiestos `.item`), **Xbox** (`MicrosoftGame.config`), **GOG**
+      (registro) y una fuente genérica sobre el **registro de desinstalación** que cubre Ubisoft Connect,
+      EA App y Battle.net de una pasada. Caché en `userData/games-index.json` con huella; se reconstruye
+      en background y **el sondeo de procesos sigue costando lo mismo** (`tasklist` + un mapa en memoria).
+- [x] Un juego instalado se detecta **sin darlo de alta a mano**, y con su nombre de catálogo: Arc Raiders
+      arranca `pioneergame.exe` y se muestra como `ARC Raiders`.
+- [x] **Nombre visible con una prioridad única** (`resolveGameName`): nombre manual del owner → índice de
+      launchers → lista curada → `FileDescription` del `.exe` → ejecutable. El `.exe` sigue siendo la
+      identidad interna (captura, targeting de ventana, pistas de audio).
+- [x] **Alta manual con nombre opcional**, pre-rellenado con lo que la app deduzca, y renombrable después.
+      `customGames: string[]` → `CustomGame[]` (`{ executable, name? }`), con migración de lo ya guardado.
+- [x] Los clips se guardan con el **nombre del juego**, saneado para Windows (`Marvel's Spider-Man: Miles
+      Morales` → carpeta `Marvel's Spider-Man Miles Morales`), y los ya grabados bajo el ejecutable
+      (`acblackflag/`) se **re-etiquetan en la BD sin moverse del disco**: la Biblioteca los muestra en la
+      misma entrada que los nuevos.
+
+> `feature/deteccion-juegos-y-nombres` (2026-07-12): la detección **no estaba rota, estaba ciega**. La
+> única fuente de juegos era `KNOWN_GAME_PROCESSES`, una lista curada de ~40 procesos: todo lo que no
+> estuviera en ella había que añadirlo a mano. El dato bueno ya estaba en disco — el `appmanifest` de
+> Steam de `MilesMorales.exe` dice literalmente `Marvel's Spider-Man: Miles Morales`—, así que el arreglo
+> fue leerlo, no inventar una heurística de "¿esto es un juego?" (que además no habría dado el nombre).
+> Se indexan **todos** los `.exe` de la carpeta del juego, no el que declara el manifiesto: el
+> `LaunchExecutable` de Fortnite es un bootstrapper y el proceso real es `FortniteClient-Win64-Shipping.exe`.
+> **El bug que solo aparece contra datos reales:** con eso, la app detectaba **Fortnite a todas horas** —
+> `EpicWebHelper.exe` vive dentro de la carpeta de Fortnite pero lo arranca el launcher de Epic y corre
+> siempre. De ahí dos reglas: la blacklist descarta helpers/launchers/bootstrappers, y un ejecutable que
+> aparece en **dos juegos** se descarta por ambiguo (quedarse con el primero es peor que no tenerlo: basta
+> con que ese proceso corra para detectar el juego equivocado). Ruido: de 79 ejecutables a 66, cero falsos
+> positivos. La carpeta del clip pasa a ser el **nombre** y no el ejecutable, lo cual es seguro porque OBS
+> graba a un temporal y es Node quien mueve el fichero — los caracteres raros no llegan a libobs. Y no hay
+> que mover nada de lo viejo: `gameFromFolderName()` resuelve tanto la carpeta vieja (el ejecutable) como
+> la nueva (el nombre saneado) al **mismo** nombre, así que el juego no se parte en dos en la Biblioteca.
+> Verificado en la máquina del owner: 31 juegos y 66 ejecutables indexados, los 12 clips de `acblackflag/`
+> ya se ven como `Assassin's Creed Black Flag Resynced`, y un juego falso llamado `Prueba: El Juego™` se
+> detecta, se guarda en `Prueba El Juego/` y se cataloga con su nombre exacto.
+>
+> **Sin verificar de extremo a extremo:** las fuentes de Ubisoft, EA, GOG, Battle.net y Xbox. El owner las
+> tiene instaladas pero **sin un solo juego**, así que su lógica solo está probada con fixtures. Cada una
+> está aislada: si el formato no es el esperado, devuelve `[]` y el resto del índice sigue igual.
+
+## Verificación pendiente (no es un bug: es que no se pudo probar)
+
+### 🔍 Detección de juegos de Ubisoft, EA, GOG, Battle.net y Xbox
+
+Las fuentes del índice para esos cinco launchers (`src/main/games/sources/`) están **escritas y
+probadas con fixtures, pero nunca ejecutadas contra un juego real**: en la máquina del owner los cinco
+launchers están instalados y **vacíos** (ni un juego), así que no hubo con qué comprobarlas. Steam y
+Epic sí están verificados de extremo a extremo.
+
+**Qué hay que hacer:** instalar **un** juego en cada launcher y comprobar que (a) aparece en el índice
+con su nombre de catálogo, (b) se detecta al abrirlo, y (c) no mete falsos positivos (el caso
+`EpicWebHelper.exe` de Fortnite: helpers del launcher que corren aunque el juego esté cerrado). Basta
+con arrancar la app y mirar el log `[games]`, o el contador de "ejecutables reconocidos" en
+Ajustes → Grabación.
+
+**Riesgo si fallan:** acotado por diseño. Cada fuente está aislada y devuelve `[]` ante cualquier
+error, así que un formato inesperado deja el índice sin esos juegos —se siguen pudiendo añadir a
+mano— pero no rompe la detección de Steam/Epic ni la app.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🐞 La grabación manual escribe un solo frame (MP4 de 261 bytes)

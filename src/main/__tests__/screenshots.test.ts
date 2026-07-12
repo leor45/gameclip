@@ -7,7 +7,7 @@ describe('ruta de las capturas de pantalla', () => {
   it('van a la subcarpeta Capturas del juego, con Screenshot en el nombre', () => {
     const ruta = targetPathFor({
       outputDir: 'D:\\Clips',
-      gameExecutable: 'Terraria.exe',
+      gameName: 'Terraria',
       date: new Date(2025, 11, 22, 20, 47, 50, 780),
       kind: 'screenshot',
       extension: 'png',
@@ -23,7 +23,7 @@ describe('ruta de las capturas de pantalla', () => {
     expect(
       targetPathFor({
         outputDir: 'D:\\Clips',
-        gameExecutable: null,
+        gameName: null,
         date: new Date(2026, 6, 9, 8, 5, 3, 40),
         kind: 'screenshot',
         extension: 'png',

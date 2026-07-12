@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { GAME_POLL_INTERVAL_MS, findRunningGamesMatch } from '@shared/games';
-import type { RunningGameMatch } from '@shared/games';
+import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
 
 export interface GameDetectorOptions {
   /** Listador de nombres de proceso; inyectable para tests. */
@@ -9,16 +9,21 @@ export interface GameDetectorOptions {
   intervalMs?: number;
   /** Sondeos consecutivos sin ver NINGÚN juego antes de dar la lista por vacía (anti-parpadeo). */
   missesBeforeStop?: number;
-  /** Ejecutables añadidos a mano (tratados como juegos conocidos). */
-  customGames?: string[];
+  /** Juegos añadidos a mano (tratados como juegos conocidos). */
+  customGames?: CustomGame[];
+  /** Juegos instalados que encontró la app en los launchers (`pioneergame` → `ARC Raiders`). */
+  index?: GameIndex;
 }
 
 /**
- * Sondea los procesos en ejecución y detecta TODOS los juegos conocidos (lista curada +
- * ejecutables manuales) que corren a la vez. Emite 'games-changed' con la lista completa
+ * Sondea los procesos en ejecución y detecta TODOS los juegos que corren a la vez: los del índice
+ * de launchers, los de la lista curada y los manuales. Emite 'games-changed' con la lista completa
  * cuando el CONJUNTO cambia (comparado por nombres). Un solo juego que desaparece un sondeo
  * mientras otros siguen actualiza la lista de inmediato; solo el vaciado total espera
  * `missesBeforeStop` sondeos seguidos sin ver ninguno (anti-parpadeo).
+ *
+ * El sondeo es deliberadamente barato —`tasklist` y una consulta al índice en memoria—: construir
+ * el índice cuesta, pero eso pasa fuera de aquí, al arrancar.
  */
 export class GameDetector extends EventEmitter {
   private readonly list: () => Promise<string[]>;
@@ -27,7 +32,8 @@ export class GameDetector extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
   private misses = 0;
   private polling = false;
-  private customGames: string[];
+  private customGames: CustomGame[];
+  private index: GameIndex;
   /** Juegos vistos en el último estado confirmado (el que se emitió). */
   running: RunningGameMatch[] = [];
 
@@ -37,11 +43,17 @@ export class GameDetector extends EventEmitter {
     this.intervalMs = options.intervalMs ?? GAME_POLL_INTERVAL_MS;
     this.missesBeforeStop = options.missesBeforeStop ?? 2;
     this.customGames = options.customGames ?? [];
+    this.index = options.index ?? {};
   }
 
-  /** Actualiza los ejecutables manuales (los ajustes cambiaron); se aplican en el próximo sondeo. */
-  setCustomGames(exes: string[]): void {
-    this.customGames = exes;
+  /** Actualiza los juegos manuales (los ajustes cambiaron); se aplican en el próximo sondeo. */
+  setCustomGames(games: CustomGame[]): void {
+    this.customGames = games;
+  }
+
+  /** Actualiza el índice de juegos instalados (terminó de construirse, o el owner re-escaneó). */
+  setIndex(index: GameIndex): void {
+    this.index = index;
   }
 
   start(): void {
@@ -59,7 +71,10 @@ export class GameDetector extends EventEmitter {
     if (this.polling) return; // un sondeo lento no debe apilarse con el siguiente
     this.polling = true;
     try {
-      const matches = findRunningGamesMatch(await this.list(), this.customGames);
+      const matches = findRunningGamesMatch(await this.list(), {
+        customGames: this.customGames,
+        index: this.index,
+      });
       if (matches.length > 0) {
         // Con al menos un juego, la lista es de fiar: se aplica de inmediato (aunque alguno
         // haya desaparecido respecto al sondeo anterior).

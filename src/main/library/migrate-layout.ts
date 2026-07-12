@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { SCREENSHOTS_FOLDER } from '@shared/clip-naming';
-import { gameExecutableForName } from '../capture/manager';
 import { relocateSavedFile, targetPathFor } from '../capture/relocate';
 import { canonicalClipPath } from './clip-path';
 import type { ClipsRepository } from './clips-repository';
@@ -18,9 +17,9 @@ export interface MigrateLayoutResult {
  * carpeta pasan a `<salida>/<Juego|Desktop>/<Nombre> <marca>.mp4`, y las capturas del viejo
  * `<salida>/Capturas/` a `<salida>/Desktop/Capturas/`.
  *
- * El juego sale del catálogo (`clip.game` → ejecutable) y la marca de tiempo de `createdAt`: el
- * nombre debe decir cuándo se grabó el clip, no cuándo se migró. Clip por clip y best-effort: el
- * que no se pueda mover (archivo abierto, permisos) se queda donde está, con su fila intacta.
+ * El juego sale del catálogo (`clip.game`) y la marca de tiempo de `createdAt`: el nombre debe decir
+ * cuándo se grabó el clip, no cuándo se migró. Clip por clip y best-effort: el que no se pueda mover
+ * (archivo abierto, permisos) se queda donde está, con su fila intacta.
  */
 export function migrateClipLayout(
   repo: ClipsRepository,
@@ -37,7 +36,7 @@ export function migrateClipLayout(
 
     const destino = targetPathFor({
       outputDir: raiz,
-      gameExecutable: gameExecutableForName(clip.game),
+      gameName: clip.game,
       date: new Date(clip.createdAt),
       kind: 'video',
       extension: extensionOf(clip.filePath),
@@ -64,7 +63,7 @@ function migrateScreenshots(outputDir: string): number {
     const file = join(viejo, name);
     const destino = targetPathFor({
       outputDir,
-      gameExecutable: null, // el layout viejo no guardaba a qué juego pertenecía la captura
+      gameName: null, // el layout viejo no guardaba a qué juego pertenecía la captura
       date: statSync(file).mtime,
       kind: 'screenshot',
       extension: 'png',

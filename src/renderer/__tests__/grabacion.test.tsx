@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import App from '../App';
 import { sesionFalsa } from './helpers';
 import { crearGameclipMock } from './setup';
@@ -82,6 +83,83 @@ describe('Ajustes — Grabación', () => {
     await user.click(screen.getByRole('button', { name: 'Añadir juego' }));
 
     expect(await screen.findByText('MiJuego.exe')).toBeInTheDocument();
+  });
+
+  it('pre-rellena el nombre con el que deduce la app, y lo guarda con el juego', async () => {
+    mock().games.suggestName.mockResolvedValue("Marvel's Spider-Man: Miles Morales");
+    const user = await irAGrabacion();
+
+    await user.type(screen.getByLabelText('Escribe el ejecutable'), 'MilesMorales.exe');
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nombre (opcional)')).toHaveValue(
+        "Marvel's Spider-Man: Miles Morales",
+      ),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Añadir juego' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customGames: [
+          { executable: 'MilesMorales.exe', name: "Marvel's Spider-Man: Miles Morales" },
+        ],
+      }),
+    );
+  });
+
+  it('el listado muestra «Nombre (ejecutable.exe)» cuando el juego tiene nombre', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }, { executable: 'Otro.exe' }],
+    });
+    await irAGrabacion();
+
+    expect(await screen.findByText('Spiderman (MilesMorales.exe)')).toBeInTheDocument();
+    // Sin nombre, se sigue viendo solo el ejecutable, como hasta ahora.
+    expect(screen.getByText('Otro.exe')).toBeInTheDocument();
+  });
+
+  it('un juego sin nombre propio toma el del índice de launchers', async () => {
+    mock().games.getIndex.mockResolvedValue({ pioneergame: 'ARC Raiders' });
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      customGames: [{ executable: 'PioneerGame.exe' }],
+    });
+    await irAGrabacion();
+
+    expect(await screen.findByText('ARC Raiders (PioneerGame.exe)')).toBeInTheDocument();
+  });
+
+  it('renombrar un juego ya añadido guarda el nombre nuevo', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      customGames: [{ executable: 'MilesMorales.exe' }],
+    });
+    const user = await irAGrabacion();
+
+    const campo = await screen.findByLabelText('Nombre de MilesMorales.exe');
+    await user.type(campo, 'Spiderman');
+    await user.tab(); // el nombre se guarda al salir del campo
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }],
+      }),
+    );
+  });
+
+  it('«Volver a escanear» relee los launchers', async () => {
+    mock().games.rescan.mockResolvedValue({ pioneergame: 'ARC Raiders' });
+    const user = await irAGrabacion();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Volver a escanear los juegos instalados' }),
+    );
+
+    expect(mock().games.rescan).toHaveBeenCalledOnce();
+    expect(await screen.findByText(/1 ejecutables reconocidos/)).toBeInTheDocument();
   });
 
   it('abre el modal de displays, muestra los mockeados y "Empezar a grabar" fija el monitor', async () => {

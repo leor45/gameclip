@@ -17,7 +17,7 @@ export async function takeAndRegisterScreenshot(
   const filePath = await takeScreenshot(
     capture.getSettings().screenMonitorIndex,
     capture.outputDir(),
-    capture.activeGameExecutable(),
+    capture.getStatus().detectedGame, // la carpeta lleva el NOMBRE del juego, no su ejecutable
   );
   if (!filePath) return null;
 

@@ -6,19 +6,22 @@ import { clipFileName, clipFolderSegments } from '@shared/clip-naming';
 /**
  * Ruta destino de un archivo guardado: `<outputDir>/<Juego|Desktop>/<Nombre> <marca>.<ext>`
  * (las capturas van a la subcarpeta `Capturas/` del juego).
+ *
+ * `gameName` es el NOMBRE del juego ya resuelto, no su ejecutable: los clips de Arc Raiders van a
+ * `ARC Raiders/`, no a `pioneergame/`.
  */
 export function targetPathFor(opts: {
   outputDir: string;
-  gameExecutable: string | null;
+  gameName: string | null;
   date: Date;
   kind: ClipKind;
   extension: string;
 }): string {
-  const carpeta = join(opts.outputDir, ...clipFolderSegments(opts.gameExecutable, opts.kind));
+  const carpeta = join(opts.outputDir, ...clipFolderSegments(opts.gameName, opts.kind));
   return join(
     carpeta,
     clipFileName({
-      gameExecutable: opts.gameExecutable,
+      gameName: opts.gameName,
       date: opts.date,
       kind: opts.kind,
       extension: opts.extension,

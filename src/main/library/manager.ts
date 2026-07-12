@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { gameFromFolderName } from '@shared/clip-naming';
+import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
 import { normalizeClipPatch, titleFromFileName } from '@shared/library';
 import type { ClipsRepository } from './clips-repository';
@@ -15,6 +16,12 @@ export interface LibraryOptions {
   thumbnailsDir: string;
   /** Ventana activa al guardar un clip; inyectable en tests. */
   getForegroundTitle?: () => Promise<string | null>;
+  /**
+   * De dónde salen los nombres de los juegos (índice de launchers + juegos manuales). Es una función
+   * porque el índice se construye en background y el owner puede re-escanear: hay que leerlo en el
+   * momento de usarlo, no capturarlo al arrancar.
+   */
+  gameNames?: () => GameNameContext;
 }
 
 /**
@@ -97,7 +104,7 @@ export class LibraryManager extends EventEmitter {
       this.repo.insert({
         filePath,
         title: titleFromFileName(fileName(filePath)),
-        game: gameFromPath(outputDir, filePath),
+        game: gameFromPath(outputDir, filePath, this.gameNames()),
         sizeBytes: stats.size,
         createdAt: stats.mtime.toISOString(),
         source: 'scan',
@@ -107,6 +114,35 @@ export class LibraryManager extends EventEmitter {
 
     if (added || removed) this.emit('changed');
     return { added, removed };
+  }
+
+  /**
+   * Re-resuelve el juego de cada clip a partir de su carpeta y actualiza los que cambien. Es lo que
+   * hace que los clips viejos de `acblackflag/` pasen a verse como el juego de verdad en cuanto el
+   * índice de launchers lo sabe — **sin mover un solo fichero**, solo la columna `game`.
+   *
+   * Idempotente (correrlo dos veces no cambia nada la segunda), así que puede dispararse al arrancar
+   * y cada vez que el owner renombra un juego.
+   *
+   * OJO si algún día la UI deja editar el juego de un clip suelto: esto lo pisaría en el siguiente
+   * arranque. Hoy `ClipCard` solo edita título y etiquetas, así que no hay conflicto.
+   */
+  relabelGames(outputDir: string): number {
+    const ctx = this.gameNames();
+    const cambios: { id: number; game: string | null }[] = [];
+    for (const clip of this.repo.allGames()) {
+      const game = gameFromPath(outputDir, clip.filePath, ctx);
+      if (game !== clip.game) cambios.push({ id: clip.id, game });
+    }
+    if (cambios.length === 0) return 0;
+
+    this.repo.setGames(cambios);
+    this.emit('changed');
+    return cambios.length;
+  }
+
+  private gameNames(): GameNameContext {
+    return this.opts.gameNames?.() ?? {};
   }
 
   updateClip(id: number, rawPatch: unknown): Clip {
@@ -199,7 +235,11 @@ function mediaFilesIn(dir: string): string[] {
  * Juego de un archivo escaneado, según la carpeta en la que está: el primer segmento bajo la carpeta
  * de clips (`Terraria/…`, `Desktop/Capturas/…`). Un archivo suelto en la raíz no tiene juego.
  */
-function gameFromPath(outputDir: string, filePath: string): string | null {
+function gameFromPath(
+  outputDir: string,
+  filePath: string,
+  ctx: GameNameContext = {},
+): string | null {
   const segmentos = relative(outputDir, filePath).split(sep);
-  return segmentos.length > 1 ? gameFromFolderName(segmentos[0]) : null;
+  return segmentos.length > 1 ? gameFromFolderName(segmentos[0], ctx) : null;
 }
