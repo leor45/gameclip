@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
+import type { EffectiveCapture } from '../capture/obs';
 import {
   DESKTOP_AUDIO_SETTINGS,
   ObsCapture,
   appTrackName,
   audioTrackLayout,
   computePipelineSizes,
+  effectiveCapture,
   encoderFamily,
   encoderRateControlSettings,
   faderDeflection,
+  gameCaptureSettings,
   monitorCaptureSettings,
   resolveMonitorId,
 } from '../capture/obs';
@@ -148,6 +151,7 @@ type BuildAudioSources = {
   buildAudioSources(
     osn: unknown,
     settings: unknown,
+    eff: EffectiveCapture,
     gameExecutable: string | null,
     setSource: (src: unknown) => void,
   ): number;
@@ -157,9 +161,11 @@ describe('volumen por fader', () => {
   it('regresión: buildAudioSources nunca usa el setter volume (silencia la fuente) y ata un fader por fuente', () => {
     const { osn, volumeSets, faders } = fakeOsnAudio();
     const capture = new ObsCapture() as unknown as BuildAudioSources;
+    const settings = { ...DEFAULT_CAPTURE_SETTINGS, separateAudioTracks: false };
     const mask = capture.buildAudioSources(
       osn,
-      { ...DEFAULT_CAPTURE_SETTINGS, separateAudioTracks: false },
+      settings,
+      effectiveCapture(settings, false),
       null,
       () => {},
     );
@@ -179,6 +185,88 @@ describe('volumen por fader', () => {
     expect(faderDeflection(0)).toBe(0);
     expect(faderDeflection(250)).toBe(1);
     expect(faderDeflection(Number.NaN)).toBe(1);
+  });
+});
+
+describe('effectiveCapture (perfil → vídeo y audio)', () => {
+  // Config del usuario que reproduce el bug: audio por aplicación + pistas separadas.
+  const porApps = {
+    ...DEFAULT_CAPTURE_SETTINGS,
+    audioMode: 'apps' as const,
+    separateAudioTracks: true,
+    audioApps: [{ executable: 'Discord.exe', volume: 100, enabled: true }],
+  };
+
+  it('escritorio sin juego: captura TODO el audio del PC aunque el modo sea por apps', () => {
+    expect(effectiveCapture(porApps, false)).toEqual({
+      profile: 'desktop',
+      video: 'monitor',
+      audioMode: 'desktop', // ni apps ni pistas por rol: el troceado es cosa del juego
+      separateTracks: false, // desktopAudioTracks: 'mixed' (default)
+    });
+  });
+
+  it("escritorio con desktopAudioTracks 'separate': PC y micro en pistas separadas", () => {
+    const eff = effectiveCapture({ ...porApps, desktopAudioTracks: 'separate' }, false);
+    expect(eff).toMatchObject({ profile: 'desktop', audioMode: 'desktop', separateTracks: true });
+    // T1 mezcla + T2 mic: el layout de escritorio con pistas separadas, ya existente.
+    const layout = audioTrackLayout(eff.audioMode, eff.separateTracks, []);
+    expect(layout.tracks).toEqual([
+      { index: 1, name: 'default' },
+      { index: 2, name: 'mic' },
+    ]);
+  });
+
+  it('con juego y auto-switch: solo el juego, y el audio vuelve a los ajustes del usuario', () => {
+    expect(effectiveCapture(porApps, true)).toEqual({
+      profile: 'game',
+      video: 'game',
+      audioMode: 'apps',
+      separateTracks: true,
+    });
+  });
+
+  it('con juego pero sin auto-switch: se sigue grabando el escritorio', () => {
+    const eff = effectiveCapture({ ...porApps, desktopAutoSwitchToGame: false }, true);
+    expect(eff).toMatchObject({ profile: 'desktop', video: 'monitor', audioMode: 'desktop' });
+  });
+
+  it('sin grabación de escritorio: con juego captura el juego; sin juego, nada', () => {
+    const soloJuego = { ...porApps, desktopRecordingEnabled: false };
+    expect(effectiveCapture(soloJuego, true)).toMatchObject({ profile: 'game', video: 'game' });
+    expect(effectiveCapture(soloJuego, false)).toMatchObject({ profile: 'none', video: 'none' });
+  });
+
+  it("sin grabación de escritorio, el auto-switch da igual: el juego manda", () => {
+    const eff = effectiveCapture(
+      { ...porApps, desktopRecordingEnabled: false, desktopAutoSwitchToGame: false },
+      true,
+    );
+    expect(eff.profile).toBe('game');
+  });
+});
+
+describe('gameCaptureSettings', () => {
+  it('con el ejecutable detectado usa modo window (engancha también en ventana sin bordes)', () => {
+    expect(gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, 'cs2.exe')).toMatchObject({
+      capture_mode: 'window',
+      window: '::cs2.exe',
+      priority: 2,
+    });
+  });
+
+  it('sin ejecutable no hay a qué apuntar: any_fullscreen', () => {
+    const s = gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, null);
+    expect(s.capture_mode).toBe('any_fullscreen');
+    expect(s.window).toBeUndefined();
+  });
+
+  it('respeta HDR y captura experimental', () => {
+    const s = gameCaptureSettings(
+      { ...DEFAULT_CAPTURE_SETTINGS, hdrCompatibility: true, experimentalCapture: true },
+      'cs2.exe',
+    );
+    expect(s).toMatchObject({ rgb10a2_space: '2100pq', capture_overlays: true });
   });
 });
 

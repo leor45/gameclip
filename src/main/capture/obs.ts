@@ -5,12 +5,13 @@ import type {
   AspectRatioMode,
   AudioDeviceInfo,
   AudioMode,
+  CaptureProfile,
   CaptureSettings,
   EncoderInfo,
   OutputResolution,
   RecordingQuality,
 } from '@shared/capture';
-import { AUDIO_APPS_TRACK_MAX, orderedActiveAudioApps } from '@shared/capture';
+import { AUDIO_APPS_TRACK_MAX, captureProfile, orderedActiveAudioApps } from '@shared/capture';
 import { unpackedPath } from '../paths';
 
 // Valores espejo de los const enum de module.d.ts (esbuild no inlinea const enums de .d.ts).
@@ -358,6 +359,45 @@ export function audioTrackLayout(
   };
 }
 
+/** Qué fuente de vídeo lleva la escena en cada perfil. */
+export type VideoSourceKind = 'monitor' | 'game' | 'none';
+
+/** Configuración efectiva del pipeline: lo que se construye de verdad, ya resuelto el perfil. */
+export interface EffectiveCapture {
+  profile: CaptureProfile;
+  video: VideoSourceKind;
+  audioMode: AudioMode;
+  separateTracks: boolean;
+}
+
+/**
+ * Resuelve el perfil y los ajustes de audio/vídeo que se aplican de verdad (helper puro).
+ *
+ * En perfil `game` mandan los ajustes del usuario (audio por app, pistas por rol). En perfil
+ * `desktop` el audio es SIEMPRE el del PC entero — el troceado por aplicación es cosa del juego —
+ * y las pistas las decide `desktopAudioTracks`. En perfil `none` no hay nada que capturar.
+ */
+export function effectiveCapture(
+  settings: CaptureSettings,
+  gameDetected: boolean,
+): EffectiveCapture {
+  const profile = captureProfile(settings, gameDetected);
+  if (profile === 'game') {
+    return {
+      profile,
+      video: 'game',
+      audioMode: settings.audioMode,
+      separateTracks: settings.separateAudioTracks,
+    };
+  }
+  return {
+    profile,
+    video: profile === 'desktop' ? 'monitor' : 'none',
+    audioMode: 'desktop',
+    separateTracks: settings.desktopAudioTracks === 'separate',
+  };
+}
+
 /** Display objetivo de la captura: tamaño y origen en píxeles físicos del escritorio virtual. */
 export interface DisplayInfo {
   width: number;
@@ -449,6 +489,31 @@ export function monitorCaptureSettings(settings: CaptureSettings): Record<string
     capture_cursor: settings.showMouseCursor,
     method: MONITOR_METHOD_WGC,
   };
+}
+
+/**
+ * Settings del source game_capture (helper puro, testeable sin libobs).
+ *
+ * Con el ejecutable detectado se usa el modo `window` (match por ejecutable): engancha también
+ * los juegos en ventana / sin bordes, que `any_fullscreen` deja pasar. Sin ejecutable no hay a
+ * qué apuntar, así que se cae a `any_fullscreen` (o a `window` vacío si el usuario forzó ventana).
+ */
+export function gameCaptureSettings(
+  settings: CaptureSettings,
+  gameExecutable: string | null,
+): Record<string, unknown> {
+  const s: Record<string, unknown> = {
+    capture_mode: gameExecutable || settings.forceWindowCapture ? 'window' : 'any_fullscreen',
+    capture_cursor: settings.showMouseCursor,
+  };
+  if (gameExecutable) {
+    s.window = `::${gameExecutable}`;
+    s.priority = 2; // 2 = coincidencia por ejecutable
+  }
+  if (settings.experimentalCapture) s.capture_overlays = true;
+  // Convierte HDR → SDR indicando el espacio de color de origen del juego.
+  if (settings.hdrCompatibility) s.rgb10a2_space = '2100pq';
+  return s;
 }
 
 /** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
@@ -587,32 +652,38 @@ export class ObsCapture extends EventEmitter {
     };
     this.context = context;
 
-    // Escena: monitor de fondo y game capture encima (si hay juego fullscreen, gana). Con
-    // desktopAutoSwitchToGame=false se graba solo el monitor (no se apila el game capture).
+    // Escena: UNA sola fuente de vídeo, la que dicte el perfil. Apilar el game capture sobre el
+    // monitor dejaba el resultado en manos de que la capa de juego enganchara: si no lo hacía
+    // (juego en ventana / sin bordes) se grababa el escritorio entero. Con una sola fuente, el
+    // perfil `game` graba solo el juego y el perfil `desktop` solo el monitor.
+    const eff = effectiveCapture(settings, gameExecutable !== null);
     const scene = osn.SceneFactory.create('gameclip-scene');
-    const monitor = osn.InputFactory.create(
-      'monitor_capture',
-      'gameclip-monitor',
-      monitorCaptureSettings(settings),
-    );
-    // El monitor se elige por device id: la propiedad-lista `monitor_id` solo existe en el
-    // source ya creado, así que se resuelve contra el display objetivo y se aplica en update.
-    const monitorId = resolveMonitorId(this.monitorIdItems(monitor), screen);
-    if (monitorId !== 'Auto') monitor.update({ monitor_id: monitorId });
-    const monitorItem = scene.add(monitor);
-    this.inputs = [monitor];
-    const items: OsnSceneItem[] = [monitorItem];
-    if (settings.desktopAutoSwitchToGame) {
+    this.inputs = [];
+    const items: OsnSceneItem[] = [];
+    if (eff.video === 'monitor') {
+      const monitor = osn.InputFactory.create(
+        'monitor_capture',
+        'gameclip-monitor',
+        monitorCaptureSettings(settings),
+      );
+      // El monitor se elige por device id: la propiedad-lista `monitor_id` solo existe en el
+      // source ya creado, así que se resuelve contra el display objetivo y se aplica en update.
+      const monitorId = resolveMonitorId(this.monitorIdItems(monitor), screen);
+      if (monitorId !== 'Auto') monitor.update({ monitor_id: monitorId });
+      this.inputs.push(monitor);
+      items.push(scene.add(monitor));
+    } else if (eff.video === 'game') {
       const game = osn.InputFactory.create(
         'game_capture',
         'gameclip-game',
-        this.gameSettings(settings, gameExecutable),
+        gameCaptureSettings(settings, gameExecutable),
       );
-      const gameItem = scene.add(game);
       this.inputs.push(game);
       this.gameCaptureSource = game;
-      items.push(gameItem);
+      items.push(scene.add(game));
     }
+    // Perfil `none`: escena vacía. El manager no arranca buffer ni grabación, pero las salidas
+    // se construyen igual para que un cambio de ajustes/juego solo tenga que reconstruir.
     this.applyBounds(items, sizes);
     this.scene = scene;
 
@@ -627,7 +698,7 @@ export class ObsCapture extends EventEmitter {
       channel++;
     };
 
-    const mixer = this.buildAudioSources(osn, settings, gameExecutable, setSource);
+    const mixer = this.buildAudioSources(osn, settings, eff, gameExecutable, setSource);
 
     // Salidas advanced: comparten encoder de video y las pistas de audio (bitmask mixer).
     const encoderId = this.pickEncoder(settings.encoderId);
@@ -754,19 +825,31 @@ export class ObsCapture extends EventEmitter {
   }
 
   /**
-   * Crea las fuentes de audio según los ajustes, las asigna a canales y a pistas
-   * (audioMixers) según el reparto de `audioTrackLayout`, crea las pistas nombradas y
+   * Crea las fuentes de audio según la config EFECTIVA (perfil ya resuelto), las asigna a canales
+   * y a pistas (audioMixers) según el reparto de `audioTrackLayout`, crea las pistas nombradas y
    * devuelve el bitmask `mixer` de las salidas. Guarda el layout para el remux de nombres.
    */
   private buildAudioSources(
     osn: OsnModule,
     settings: CaptureSettings,
+    eff: EffectiveCapture,
     gameExecutable: string | null,
     setSource: (src: OsnInput) => void,
   ): number {
-    const activeApps = orderedActiveAudioApps(settings.audioApps).slice(0, AUDIO_APPS_TRACK_MAX);
-    const layout = audioTrackLayout(settings.audioMode, settings.separateAudioTracks, activeApps);
+    // Las apps solo cuentan en modo apps (perfil de juego): en escritorio se captura el PC entero.
+    const activeApps =
+      eff.audioMode === 'apps'
+        ? orderedActiveAudioApps(settings.audioApps).slice(0, AUDIO_APPS_TRACK_MAX)
+        : [];
+    const layout = audioTrackLayout(eff.audioMode, eff.separateTracks, activeApps);
     this.currentLayout = layout;
+
+    // Perfil `none`: no hay nada que grabar, así que no se abre ningún dispositivo de audio.
+    // Las pistas sí se registran: las salidas necesitan un mixer válido.
+    if (eff.profile === 'none') {
+      this.createAudioTracks(osn, layout);
+      return layout.mixer;
+    }
 
     // Micrófono: siempre existe (silenciado si está desactivado) para poder religarlo sin rebuild.
     const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic', {
@@ -792,7 +875,7 @@ export class ObsCapture extends EventEmitter {
       }
     }
 
-    if (settings.audioMode === 'desktop') {
+    if (eff.audioMode === 'desktop') {
       const desktop = osn.InputFactory.create(
         'wasapi_output_capture',
         'gameclip-audio',
@@ -841,16 +924,22 @@ export class ObsCapture extends EventEmitter {
       }
     }
 
-    // Crear cada pista del layout (una sola vez por sesión: las pistas son globales en libobs
-    // y no tienen release; re-crearlas en cada rebuild las fugaría). El nombre es best-effort
-    // interno; el nombre final del MP4 lo pone el remux post-grabación.
+    this.createAudioTracks(osn, layout);
+    return layout.mixer;
+  }
+
+  /**
+   * Crea cada pista del layout (una sola vez por sesión: las pistas son globales en libobs y no
+   * tienen release; re-crearlas en cada rebuild las fugaría). El nombre es best-effort interno;
+   * el nombre final del MP4 lo pone el remux post-grabación.
+   */
+  private createAudioTracks(osn: OsnModule, layout: AudioTrackLayout): void {
     for (const t of layout.tracks) {
       if (this.audioTracksCreated.has(t.index)) continue;
       const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${t.index}`);
       osn.AudioTrackFactory.setAtIndex(track, t.index);
       this.audioTracksCreated.add(t.index);
     }
-    return layout.mixer;
   }
 
   /** Pistas nombradas del layout vigente, o null si no aplica el remux (no es layout por rol). */
@@ -909,24 +998,6 @@ export class ObsCapture extends EventEmitter {
   /** Items de la propiedad-lista `monitor_id` del source de monitor (vacío si no existe). */
   private monitorIdItems(source: OsnInput): MonitorIdItem[] {
     return this.findProperty(source.properties, 'monitor_id')?.details?.items ?? [];
-  }
-
-  private gameSettings(
-    settings: CaptureSettings,
-    gameExecutable: string | null,
-  ): Record<string, unknown> {
-    const s: Record<string, unknown> = {
-      capture_mode: settings.forceWindowCapture ? 'window' : 'any_fullscreen',
-      capture_cursor: settings.showMouseCursor,
-    };
-    if (settings.forceWindowCapture && gameExecutable) {
-      s.window = `::${gameExecutable}`;
-      s.priority = 2; // 2 = coincidencia por ejecutable
-    }
-    if (settings.experimentalCapture) s.capture_overlays = true;
-    // Convierte HDR → SDR indicando el espacio de color de origen del juego.
-    if (settings.hdrCompatibility) s.rgb10a2_space = '2100pq';
-    return s;
   }
 
   private applyBounds(items: OsnSceneItem[], sizes: PipelineSizes): void {

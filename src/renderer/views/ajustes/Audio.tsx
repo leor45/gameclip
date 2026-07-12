@@ -209,6 +209,10 @@ export default function AjustesAudio() {
 
       <fieldset>
         <legend>Audio a grabar</legend>
+        <p className="settings-hint">
+          Solo aplica a las capturas de juego. Grabando el escritorio siempre se captura todo el
+          audio del PC (sus pistas se eligen en Grabación → Grabación de escritorio).
+        </p>
         <label className="settings-check">
           <input
             type="radio"

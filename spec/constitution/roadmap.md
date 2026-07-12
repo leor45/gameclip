@@ -284,6 +284,37 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > dispara nada) y al salir el `<video>` se **desmonta**, no se pausa. El bucle de 10 s va a mano en
 > `onTimeUpdate` (HTML no acota la reproducción a un rango). Respeta `prefers-reduced-motion`.
 
+## Fase 12 · Perfil de captura (escritorio vs juego) — ✅ entregado
+
+- [x] La captura tiene un **perfil** derivado de los ajustes + la detección de juego
+      (`captureProfile`): `game` · `desktop` · `none`. De él salen la escena y las fuentes de audio.
+- [x] Grabando el escritorio se captura **todo el audio del PC**: el audio por aplicación y las
+      pistas por rol quedan reservados a las capturas de juego. Las pistas del clip de escritorio
+      las elige `desktopAudioTracks` (todo junto · PC y micro separados).
+- [x] El check de auto-switch **cambia la fuente de verdad**: al lanzarse un juego se graba solo el
+      juego. Desmarcado, se sigue grabando el monitor aunque haya un juego corriendo.
+- [x] `desktopRecordingEnabled`: se puede apagar la grabación de escritorio. Sin juego y sin
+      escritorio no se captura nada (buffer parado; grabar/replay devuelven el motivo).
+
+> `feature/captura-escritorio-vs-juego` (2026-07-12): la escena pasa a llevar **una sola fuente de
+> vídeo**. Antes siempre había `monitor_capture` de fondo y el `game_capture` se apilaba encima en
+> `any_fullscreen` esperando "ganar": si no enganchaba (juego en ventana sin bordes) se grababa el
+> escritorio entero — el auto-switch no cambiaba nada de verdad. Ahora el perfil elige la fuente y,
+> con el ejecutable del detector, el game capture va en modo `window` (engancha también sin bordes).
+> El precio: cambiar de perfil obliga a **reconstruir el pipeline** (las fuentes de audio y el
+> bitmask de pistas de las salidas son otros, y eso no se reasigna en caliente), así que el replay
+> buffer se reinicia al aparecer/desaparecer un juego. Una grabación en curso **nunca** se corta: el
+> rebuild queda pendiente y se aplica al terminarla. Versión de la app → `0.2.0`.
+>
+> La E2E destapó una carrera que ya existía y que esta fase volvía probable: `startRecording` /
+> `stopRecording` / `saveReplay` **no pasaban por la cola** de mutaciones del pipeline. Un juego
+> detectado justo al pulsar grabar reconstruía el pipeline con la salida a medio arrancar y la señal
+> `start` de libobs no llegaba nunca ("timeout esperando señal 'start' de recording", grabación
+> muerta). Encoladas, el rebuild ve el estado `recording` ya asentado y se aplaza. Verificado en
+> máquina real con los ajustes del owner (audio por apps + pistas separadas): clip de escritorio con
+> 1 pista y el audio del PC dentro; clip de juego con las pistas por rol; y grabación en curso +
+> juego lanzado → clip entero.
+
 ## Fase 11 · Distribución — 🚧 en curso
 
 - [x] Build `.exe` **portable** (sin instalador) con la API embebida en el proceso main:

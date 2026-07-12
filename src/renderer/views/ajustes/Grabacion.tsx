@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   CUSTOM_GAMES_MAX,
   type AudioAppInfo,
+  type DesktopAudioTracks,
   type DisplayInfo,
   type RecordingMode,
 } from '@shared/capture';
@@ -65,6 +66,8 @@ export default function AjustesGrabacion() {
 
   // Capturado tras el guard: TS no estrecha `settings` dentro de las funciones anidadas.
   const customGames = settings.customGames;
+  // Interruptor maestro de la sección: sin grabación de escritorio, sus opciones no pintan nada.
+  const escritorio = settings.desktopRecordingEnabled;
   const limiteAlcanzado = customGames.length >= CUSTOM_GAMES_MAX;
   const agregados = new Set(customGames.map(claveExe));
   const procesosDisponibles = procesos.filter((p) => !agregados.has(claveExe(p.executable)));
@@ -237,9 +240,22 @@ export default function AjustesGrabacion() {
 
         <fieldset>
           <legend>Grabación de escritorio</legend>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={settings.desktopRecordingEnabled}
+              onChange={(e) => set('desktopRecordingEnabled', e.target.checked)}
+            />
+            Grabar el escritorio cuando no hay ningún juego
+          </label>
+          {!escritorio && (
+            <p className="settings-hint">
+              Solo se capturan juegos: sin un juego detectado no se graba nada.
+            </p>
+          )}
           <button
             type="button"
-            disabled={settings.recordingMode === 'off'}
+            disabled={settings.recordingMode === 'off' || !escritorio}
             onClick={() => setMostrarModal(true)}
           >
             Grabar escritorio…
@@ -252,6 +268,7 @@ export default function AjustesGrabacion() {
             Monitor
             <select
               value={settings.screenMonitorIndex}
+              disabled={!escritorio}
               onChange={(e) => set('screenMonitorIndex', Number(e.target.value))}
             >
               {displays.map((d) => (
@@ -266,10 +283,29 @@ export default function AjustesGrabacion() {
             <input
               type="checkbox"
               checked={settings.desktopAutoSwitchToGame}
+              disabled={!escritorio}
               onChange={(e) => set('desktopAutoSwitchToGame', e.target.checked)}
             />
             Cambiar automáticamente a captura de juego al lanzarse un juego
           </label>
+          <p className="settings-hint">
+            Sin esto, se sigue grabando el escritorio aunque haya un juego corriendo.
+          </p>
+          <label>
+            Audio del clip de escritorio
+            <select
+              value={settings.desktopAudioTracks}
+              disabled={!escritorio}
+              onChange={(e) => set('desktopAudioTracks', e.target.value as DesktopAudioTracks)}
+            >
+              <option value="mixed">Todo junto en una pista</option>
+              <option value="separate">PC y micrófono en pistas separadas</option>
+            </select>
+          </label>
+          <p className="settings-hint">
+            Grabando el escritorio se captura todo el audio del PC. El audio por aplicación y las
+            pistas por rol (sección Audio) solo se aplican a las capturas de juego.
+          </p>
         </fieldset>
       </SeccionForm>
 
