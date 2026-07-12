@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   carpetasHuerfanas,
   limpiarTemporales,
+  sinAsar,
   stagingsActuales,
   type EntornoTemp,
   type RegistroStaging,
@@ -10,8 +11,7 @@ import {
 const TEMP = 'C:\\Users\\Leo\\AppData\\Local\\Temp';
 const EN_USO = `${TEMP}\\GameClip-0.1.0`;
 const EXE = `${EN_USO}\\GameClip.exe`;
-const OBS64 =
-  'resources\\app.asar.unpacked\\node_modules\\@streamlabs\\obs-studio-node\\obs64.exe';
+const OBS64 = 'resources\\app.asar.unpacked\\node_modules\\@streamlabs\\obs-studio-node\\obs64.exe';
 
 /**
  * Temporal falso. `archivos` es la lista de rutas que "existen": así cada carpeta se describe por lo
@@ -59,7 +59,10 @@ describe('carpetasHuerfanas', () => {
   // los temporales de otros programas (en la máquina del owner hay tres).
   it('NO toca el ns*.tmp de otro programa', () => {
     const ajeno = `${TEMP}\\nsr584C.tmp`;
-    const e = entorno(['nsr584C.tmp'], [`${ajeno}\\nsProcess.dll`, `${ajeno}\\7z-out\\OtraApp.exe`]);
+    const e = entorno(
+      ['nsr584C.tmp'],
+      [`${ajeno}\\nsProcess.dll`, `${ajeno}\\7z-out\\OtraApp.exe`],
+    );
 
     expect(carpetasHuerfanas(e)).toEqual([]);
   });
@@ -210,6 +213,19 @@ describe('stagingsActuales', () => {
     expect(stagingsActuales(e)).toEqual([ahora]);
   });
 
+  // REGRESIÓN 4 (v0.4.1, encontrada por el owner: 118 MB en su temporal). Al apartar una carpeta, el
+  // renombrado le deja el mtime de ahora y el `app-64.7z` sigue dentro (el borrado falló, el
+  // contenido está entero): durante el margen de edad es idéntica al staging de la ejecución en
+  // curso. Se adoptaba como propia → se pasaba a `excluir` → `carpetasHuerfanas` la daba por
+  // intocable antes de mirar el sufijo, y la carpeta condenada sobrevivía un ciclo más. Un `.borrar`
+  // NUNCA es el staging de ahora: ese sufijo solo lo escribimos al dar una carpeta por muerta.
+  it('no adopta como staging propio una carpeta ya apartada (.borrar)', () => {
+    const apartada = `${TEMP}\\nsl4E5E.tmp.borrar`;
+    const e = entorno(['nsl4E5E.tmp.borrar'], [`${apartada}\\app-64.7z`], [apartada]);
+
+    expect(stagingsActuales(e)).toEqual([]);
+  });
+
   it('no reclama el staging de otro instalador NSIS que corra a la vez', () => {
     const ajeno = `${TEMP}\\nsAJENA.tmp`;
     const e = entorno(['nsAJENA.tmp'], [`${ajeno}\\nsProcess.dll`], [ajeno]);
@@ -277,8 +293,51 @@ describe('limpiarTemporales + registro', () => {
     expect(reg.rutas).toEqual([]);
   });
 
+  // El daño colateral de la regresión 4: la carpeta condenada no solo se saltaba, sino que entraba
+  // en el registro como si fuera el staging vivo de esta ejecución.
+  it('una carpeta apartada (.borrar) no se anota como staging de esta ejecución', () => {
+    const apartada = `${TEMP}\\nsl4E5E.tmp.borrar`;
+    const e = entorno(['nsl4E5E.tmp.borrar'], [`${apartada}\\app-64.7z`], [apartada]);
+    const reg = registro();
+
+    limpiarTemporales(e, reg);
+
+    expect(reg.rutas).toEqual([]);
+  });
+
   it('sin registro se comporta como siempre (no rompe nada)', () => {
     const e = entorno([], []);
     expect(() => limpiarTemporales(e)).not.toThrow();
+  });
+
+  // REGRESIÓN 5, la gemela de la 4 y la que de verdad dejaba los 118 MB: Electron intercepta todo
+  // `fs` sobre un path con `.asar` dentro, ABRE el archivo y cachea el handle para siempre. El
+  // staging que borramos lleva un `7z-out\resources\app.asar`, así que el propio `rmSync` lo abría y
+  // se bloqueaba a sí mismo: EBUSY contra un handle nuestro que no se soltaba mientras la app viviera
+  // — y ni siquiera un arranque posterior podía rematar la carpeta, porque volvía a bloquearla.
+  it('el borrado corre con el intérprete de asar apagado', () => {
+    const proceso = process as NodeJS.Process & { noAsar?: boolean };
+    let durante: boolean | undefined;
+
+    const e = entorno([], []);
+    e.listar = () => {
+      durante = proceso.noAsar;
+      return [];
+    };
+
+    limpiarTemporales(e);
+
+    expect(durante).toBe(true);
+    expect(proceso.noAsar).toBeUndefined(); // y se restaura al salir
+  });
+});
+
+describe('sinAsar', () => {
+  const proceso = process as NodeJS.Process & { noAsar?: boolean };
+
+  it('restaura el valor anterior aunque fn reviente', () => {
+    expect(() => sinAsar(() => { throw new Error('boom'); })).toThrow('boom'); // prettier-ignore
+
+    expect(proceso.noAsar).toBeUndefined();
   });
 });

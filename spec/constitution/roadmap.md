@@ -474,6 +474,21 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > electron-builder, así que borrarlos sería meterse con temporales ajenos. Son restos históricos y ya no
 > se generan más. Se documenta en las notas del release v0.4.1, con la instrucción de borrarlos a mano.
 > Publicado como **v0.4.1** (portable): https://github.com/leor45/gameclip/releases/tag/v0.4.1
+>
+> Hotfix (2026-07-12, `hotfix/borrar-adoptado-como-staging`): la 0.4.1 **seguía acumulando 118 MB por
+> ciclo**. Lo cazó el owner al ver un `nsl4E5E.tmp.borrar` en su temporal. El `.borrar` es el paso
+> intermedio del borrado (se renombra antes de borrar, regla 3), y ese reintento nunca ganaba, por dos
+> motivos encadenados. (1) Al renombrar, la carpeta conserva su `app-64.7z` y estrena mtime: durante el
+> margen de 60 s era indistinguible del staging en curso, se **adoptaba como propia** y se saltaba. (2) El
+> grave: `rmSync` moría con `EBUSY` sobre `7z-out\resources\app.asar` —y el Restart Manager señaló a
+> **nuestro propio proceso**—. Electron intercepta todo `fs` cuya ruta lleve un `.asar`, lo trata como
+> archivo empaquetado y **deja el handle cacheado para siempre**: el propio borrado abría el fichero que
+> intentaba borrar y se bloqueaba a sí mismo. Como `rmSync` aborta al primer error, la carpeta quedaba a
+> medias (93 MB de `app-64.7z` intactos) y **ningún arranque posterior podía rematarla**: se volvía a
+> bloquear sola. Por eso la 0.4.1 pasó su verificación: en aquellos ciclos el launcher no extraía nada y el
+> staging **no tenía `7z-out`** — sin `.asar` en el árbol, sin bloqueo. Arreglo: un `.borrar` nunca es el
+> staging en curso, y el borrado corre con `process.noAsar = true` (`sinAsar()`). Verificado sobre el
+> `.exe`: tres apagones seguidos dejan el temporal **plano en 937 MB** (payload + staging), sin residuo.
 
 ## Fase 15 · Detección de juegos instalados y nombres reales — ✅ entregado
 
