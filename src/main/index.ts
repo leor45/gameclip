@@ -17,6 +17,7 @@ import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
 import { LibraryManager } from './library/manager';
+import { migrateClipLayout } from './library/migrate-layout';
 import { StorageManager } from './library/storage-manager';
 import { MEDIA_SCHEME, MEDIA_SCHEME_PRIVILEGES } from './media-protocol';
 import { OverlayController } from './overlay';
@@ -179,6 +180,13 @@ function setupLibrary(
       aplicarLimite();
     });
     lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
+
+    // Antes del primer escaneo: lo que quedó suelto en la raíz pasa al layout por juego. Después
+    // de migrar, el reconcile ve los archivos ya en su sitio y no los da de alta por duplicado.
+    const migracion = migrateClipLayout(repo, manager.outputDir());
+    if (migracion.movedClips || migracion.movedScreenshots) {
+      console.log('[library] layout migrado:', JSON.stringify(migracion));
+    }
     lib.reconcile(manager.outputDir());
     // Diferido: un backlog sobre el límite no debe bloquear el arranque de la ventana.
     setTimeout(() => aplicarLimite(), 5000);
@@ -247,7 +255,11 @@ function registerHotkeys(manager: CaptureManager): void {
   if (s.screenshotsEnabled) {
     registrar(s.screenshotHotkey, () => {
       const cur = manager.getSettings();
-      void takeScreenshot(cur.screenMonitorIndex, manager.outputDir()).then((path) => {
+      void takeScreenshot(
+        cur.screenMonitorIndex,
+        manager.outputDir(),
+        manager.activeGameExecutable(),
+      ).then((path) => {
         if (path) overlay?.showToast('Captura guardada ✓');
       });
     });

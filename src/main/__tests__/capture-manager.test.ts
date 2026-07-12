@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -65,9 +65,12 @@ class FakeObs implements CaptureBackend {
     this.bufferActivo = false;
     return Promise.resolve();
   }
+  /** Rutas que libobs "devuelve" al guardar; los tests de reubicación las apuntan a archivos reales. */
+  archivoReplay = 'C:\\v\\replay.mp4';
+  archivoGrabacion = 'C:\\v\\clip.mp4';
   saveReplay(): Promise<string> {
     this.llamadas.push('saveReplay');
-    return Promise.resolve('C:\\v\\replay.mp4');
+    return Promise.resolve(this.archivoReplay);
   }
   startRecording(): Promise<void> {
     this.llamadas.push('startRecording');
@@ -77,7 +80,7 @@ class FakeObs implements CaptureBackend {
   stopRecording(): Promise<string> {
     this.llamadas.push('stopRecording');
     this.grabando = false;
-    return Promise.resolve('C:\\v\\clip.mp4');
+    return Promise.resolve(this.archivoGrabacion);
   }
   /** Pistas nombradas que el manager remuxará; null = no aplica (por defecto). */
   tracks: { index: number; name: string }[] | null = null;
@@ -517,6 +520,93 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       // El activo deja de correr: pasa al primero disponible.
       await manager.setRunningGames([cs2]);
       expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+    });
+  });
+
+  describe('colocación del clip guardado (carpeta por juego)', () => {
+    /** Simula el archivo que libobs acaba de escribir en la carpeta de salida. */
+    function archivoDeLibobs(nombre = '2026-07-11 19-14-42.mp4'): string {
+      const salida = join(dir, 'salida');
+      mkdirSync(salida, { recursive: true });
+      const file = join(salida, nombre);
+      writeFileSync(file, 'video');
+      return file;
+    }
+
+    it('con juego detectado, el clip termina en la carpeta del juego con su nombre', async () => {
+      const manager = crear({ recordingMode: 'manual' });
+      await manager.initialize();
+      await manager.setRunningGames([{ name: 'Terraria', executable: 'Terraria.exe' }]);
+      const crudo = archivoDeLibobs();
+      obs.archivoGrabacion = crudo;
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.startRecording();
+      await manager.stopRecording();
+
+      const final = guardados[0].filePath;
+      expect(final).toMatch(/\\Terraria\\Terraria \d{4}\.\d{2}\.\d{2} - \d{2}\.\d{2}\.\d{2}\.\d{2}\.mp4$/);
+      expect(existsSync(final)).toBe(true);
+      expect(existsSync(crudo)).toBe(false); // se movió, no se copió
+      expect(manager.getStatus().lastClipPath).toBe(final); // el status apunta al definitivo
+    });
+
+    it('sin juego, el clip va a Desktop', async () => {
+      const manager = crear({ recordingMode: 'manual' });
+      await manager.initialize();
+      obs.archivoGrabacion = archivoDeLibobs();
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.startRecording();
+      await manager.stopRecording();
+
+      expect(guardados[0].filePath).toMatch(/\\Desktop\\Desktop \d{4}\.\d{2}\.\d{2} - .+\.mp4$/);
+    });
+
+    it('el clip retroactivo también cae en la carpeta del juego activo', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.setRunningGames([{ name: 'Terraria', executable: 'Terraria.exe' }]);
+      obs.archivoReplay = archivoDeLibobs('Replay 2026-07-11.mp4');
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.saveReplay();
+
+      expect(guardados[0].filePath).toContain(join('salida', 'Terraria', 'Terraria '));
+      expect(guardados[0].source).toBe('replay');
+    });
+
+    it('al cambiar de juego, el clip de la sesión que cierra va a la carpeta del juego VIEJO', async () => {
+      const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+      await manager.initialize();
+      await manager.setRunningGames([{ name: 'Terraria', executable: 'Terraria.exe' }]);
+      obs.archivoGrabacion = archivoDeLibobs();
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      // Aparece otro juego y el auto-switcher lo activa: la sesión de Terraria se cierra.
+      await manager.setRunningGames([
+        { name: 'Counter-Strike 2', executable: 'cs2.exe' },
+      ]);
+
+      expect(guardados[0].filePath).toContain(join('salida', 'Terraria', 'Terraria '));
+      expect(guardados[0].game).toBe('Terraria');
+    });
+
+    it('si el archivo no se puede mover, el clip conserva su ruta original', async () => {
+      const manager = crear({ recordingMode: 'manual' });
+      await manager.initialize();
+      obs.archivoGrabacion = 'C:\\v\\no-existe.mp4'; // libobs devolvió algo que no está
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.startRecording();
+      await manager.stopRecording();
+
+      expect(guardados[0].filePath).toBe('C:\\v\\no-existe.mp4');
     });
   });
 });

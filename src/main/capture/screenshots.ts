@@ -1,29 +1,17 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
-/** Dos dígitos con cero a la izquierda. */
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
-}
+import { dirname } from 'node:path';
+import { targetPathFor } from './relocate';
 
 /**
- * Nombre de archivo de una captura: "Captura AAAA-MM-DD HH-mm-ss.png" (helper puro,
- * testeable sin Electron; los ':' no valen en rutas de Windows, de ahí los guiones).
- */
-export function screenshotFileName(date: Date): string {
-  const fecha = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  const hora = `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
-  return `Captura ${fecha} ${hora}.png`;
-}
-
-/**
- * Captura el monitor configurado a un PNG en `<outputDir>/Capturas`. Usa desktopCapturer a
- * la resolución nativa del display (scaleFactor incluido) y guarda `nativeImage.toPNG()`.
+ * Captura el monitor configurado a un PNG en la carpeta del juego:
+ * `<outputDir>/<Juego|Desktop>/Capturas/<Juego> Screenshot <marca>.png`. Usa desktopCapturer a la
+ * resolución nativa del display (scaleFactor incluido) y guarda `nativeImage.toPNG()`.
  * Best-effort: cualquier fallo (o thumbnail vacío por fullscreen exclusivo) devuelve null.
  */
 export async function takeScreenshot(
   monitorIndex: number,
   outputDir: string,
+  gameExecutable: string | null = null,
 ): Promise<string | null> {
   try {
     // require diferido: en tests unitarios no se puede cargar electron.
@@ -48,9 +36,14 @@ export async function takeScreenshot(
     const png = source.thumbnail.toPNG();
     if (!png || png.length === 0) return null; // fullscreen exclusivo puede dar una imagen vacía
 
-    const dir = join(outputDir, 'Capturas');
-    await mkdir(dir, { recursive: true });
-    const filePath = join(dir, screenshotFileName(new Date()));
+    const filePath = targetPathFor({
+      outputDir,
+      gameExecutable,
+      date: new Date(),
+      kind: 'screenshot',
+      extension: 'png',
+    });
+    await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, png);
     return filePath;
   } catch {

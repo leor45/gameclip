@@ -185,6 +185,14 @@ export class ClipsRepository {
     return this.mustGet(id);
   }
 
+  /** Nueva ruta del archivo (lo mueve la migración de layout); se guarda canonicalizada. */
+  setPath(id: number, filePath: string): Clip {
+    this.db
+      .prepare('UPDATE clips SET file_path = ? WHERE id = ?')
+      .run(canonicalClipPath(filePath), id);
+    return this.mustGet(id);
+  }
+
   /** Edit de audio del editor: pistas muteadas en la mezcla y tamaño del archivo reescrito. */
   setAudioEdit(id: number, mutedTracks: string[], sizeBytes: number): Clip {
     this.db

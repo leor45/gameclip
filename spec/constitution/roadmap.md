@@ -200,7 +200,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
       sobre el límite configurado (el par de cifras que gobierna el auto-borrado), con enlace a
       Ajustes → Almacenamiento y estado de alerta al pasarse.
 - [x] Evento `settings:changed`: el sidebar refleja el cambio de límite al instante.
-- [ ] Estructura de carpetas por juego (`<carpeta>/<Juego|Desktop>/…`, capturas en `Capturas/`)
+- [x] Estructura de carpetas por juego (`<carpeta>/<Juego|Desktop>/…`, capturas en `Capturas/`)
       y nomenclatura `<Juego> [Screenshot] AAAA.MM.DD - HH.MM.SS.CC`, con migración de lo viejo.
 
 > `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
@@ -213,6 +213,17 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > preload expone `capture.onSettingsChanged`. El indicador queda con dos fuentes: el catálogo mueve
 > los bytes usados y los ajustes, el límite. Emitir desde el manager (y no desde el handler IPC)
 > hace que notifique cualquier vía de guardado del main, no solo la que viene de la UI.
+> `feature/estructura-carpetas-clips` (2026-07-11): el archivo se **coloca después de guardarlo**,
+> no configurando la carpeta de libobs — el juego puede cambiar (foco o F10) sin reconstruir el
+> pipeline (reconstruirlo vaciaría el buffer de repetición), así que la carpeta que libobs conoce
+> puede estar vencida al guardar. libobs escribe donde quiera y el post-proceso que ya remuxea los
+> nombres de pista mueve el clip con un `rename` (mismo volumen → atómico) a
+> `<salida>/<Juego|Desktop>/<Nombre> AAAA.MM.DD - HH.MM.SS.CC.mp4`; las capturas van a
+> `<Juego>/Capturas/` con `Screenshot` intercalado. Best-effort: si el `rename` falla, el clip se
+> queda donde estaba. `sessionGameExe` recuerda el juego de la sesión (al cambiar de juego, el clip
+> que cierra es del anterior). El reconcile pasa a ser recursivo y una migración mueve/renombra lo
+> que quedó suelto en la raíz, actualizando el catálogo (mismo id → miniaturas y URLs de medios
+> siguen valiendo). Verificado sobre copias de la carpeta y la DB reales.
 
 ## Futuro (fuera de alcance por ahora)
 

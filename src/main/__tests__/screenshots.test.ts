@@ -1,18 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { screenshotFileName } from '../capture/screenshots';
+import { targetPathFor } from '../capture/relocate';
 
-// Solo se testea el helper puro (nombre/fecha); takeScreenshot depende de Electron y se
-// verifica en el selftest E2E.
-describe('screenshotFileName', () => {
-  it('formatea "Captura AAAA-MM-DD HH-mm-ss.png" con ceros a la izquierda', () => {
-    // 2026-07-09 08:05:03 (mes 0-indexado en Date: 6 = julio).
-    const fecha = new Date(2026, 6, 9, 8, 5, 3);
-    expect(screenshotFileName(fecha)).toBe('Captura 2026-07-09 08-05-03.png');
+// `takeScreenshot` depende de Electron (desktopCapturer) y se verifica en el selftest E2E; aquí
+// se fija DÓNDE escribe: la ruta la calcula `targetPathFor`, que es puro.
+describe('ruta de las capturas de pantalla', () => {
+  it('van a la subcarpeta Capturas del juego, con Screenshot en el nombre', () => {
+    const ruta = targetPathFor({
+      outputDir: 'D:\\Clips',
+      gameExecutable: 'Terraria.exe',
+      date: new Date(2025, 11, 22, 20, 47, 50, 780),
+      kind: 'screenshot',
+      extension: 'png',
+    });
+
+    expect(ruta).toBe(
+      'D:\\Clips\\Terraria\\Capturas\\Terraria Screenshot 2025.12.22 - 20.47.50.78.png',
+    );
+    expect(ruta).not.toContain(':\\Clips\\Capturas'); // ya no hay Capturas/ suelto en la raíz
   });
 
-  it('usa guiones (no ":") para que la ruta valga en Windows', () => {
-    const nombre = screenshotFileName(new Date(2026, 11, 31, 23, 59, 59));
-    expect(nombre).toBe('Captura 2026-12-31 23-59-59.png');
-    expect(nombre).not.toContain(':');
+  it('sin juego, la captura va a Desktop/Capturas', () => {
+    expect(
+      targetPathFor({
+        outputDir: 'D:\\Clips',
+        gameExecutable: null,
+        date: new Date(2026, 6, 9, 8, 5, 3, 40),
+        kind: 'screenshot',
+        extension: 'png',
+      }),
+    ).toBe('D:\\Clips\\Desktop\\Capturas\\Desktop Screenshot 2026.07.09 - 08.05.03.04.png');
   });
 });
