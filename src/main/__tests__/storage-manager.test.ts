@@ -75,6 +75,17 @@ describe('StorageManager — getStats', () => {
     expect(sm.getStats(outputDir).clipsBytes).toBe(100); // antes: 200
   });
 
+  it('las capturas van a screenshotsBytes, no a clipsBytes', async () => {
+    await clip('replay.mp4', 100, { source: 'replay' });
+    await clip('captura.png', 40, { source: 'scan' });
+    const sm = new StorageManager(manager);
+
+    const stats = sm.getStats(outputDir);
+
+    expect(stats.clipsBytes).toBe(100);
+    expect(stats.screenshotsBytes).toBe(40);
+  });
+
   it('no lanza y devuelve ceros de disco con un outputDir inexistente', () => {
     const sm = new StorageManager(manager);
     const stats = sm.getStats(join(outputDir, 'no', 'existe', 'nada'));
@@ -184,6 +195,24 @@ describe('StorageManager — enforceLimit', () => {
     expect(borrados).toEqual([normal.filePath]);
     const restantes = manager.list().map((c) => c.filePath);
     expect(restantes).toEqual(expect.arrayContaining([favorito.filePath, protegido.filePath]));
+  });
+
+  it('las capturas cuentan para el límite pero nunca se borran', async () => {
+    const unidad = 1000;
+    // La captura es lo más viejo: sin la exclusión, sería la primera en caer.
+    await clip('captura.png', unidad, { source: 'scan', createdAt: '2026-01-01T00:00:00.000Z' });
+    const viejo = await clip('viejo.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+    await clip('nuevo.mp4', unidad, { createdAt: '2026-01-03T00:00:00.000Z' });
+    const sm = new StorageManager(manager);
+
+    // Límite = 2 unidades. Los 3 archivos suman 3: hay que liberar una, y solo los videos son
+    // elegibles → cae el video más viejo, no la captura (que sí contaba para llegar a 3).
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+    );
+
+    expect(borrados).toEqual([viejo.filePath]);
+    expect(manager.list().map((c) => c.title).sort()).toEqual(['captura', 'nuevo']);
   });
 
   it('con useRecycleBin usa trashItem inyectado y saca el registro del catálogo', async () => {

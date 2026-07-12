@@ -30,8 +30,12 @@ export default function ClipPlayer({ clip, onClose }: Props) {
             ✕
           </button>
         </div>
-        {/* El protocolo gameclip-media resuelve el archivo por id en el main. */}
-        <video className="player-video" src={clipMediaUrl(clip.id)} controls autoPlay />
+        {/* El protocolo gameclip-media resuelve el archivo por id en el main, sea video o captura. */}
+        {clip.kind === 'image' ? (
+          <img className="player-video" src={clipMediaUrl(clip.id)} alt={clip.title} />
+        ) : (
+          <video className="player-video" src={clipMediaUrl(clip.id)} controls autoPlay />
+        )}
       </div>
     </div>
   );

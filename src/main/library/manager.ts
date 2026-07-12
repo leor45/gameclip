@@ -1,11 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import { gameFromFolderName } from '@shared/clip-naming';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
 import { normalizeClipPatch, titleFromFileName } from '@shared/library';
 import type { ClipsRepository } from './clips-repository';
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const DATA_URL_JPEG = 'data:image/jpeg;base64,';
 
 export interface LibraryOptions {
@@ -87,14 +89,15 @@ export class LibraryManager extends EventEmitter {
       }
     }
 
-    // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…`.
-    for (const filePath of videoFilesIn(outputDir)) {
+    // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…` y las capturas en
+    // `<Juego>/Capturas/`. La carpeta es la única pista del juego que tiene un archivo escaneado.
+    for (const filePath of mediaFilesIn(outputDir)) {
       if (this.repo.getByPath(filePath)) continue;
       const stats = statSync(filePath);
       this.repo.insert({
         filePath,
         title: titleFromFileName(fileName(filePath)),
-        game: null,
+        game: gameFromPath(outputDir, filePath),
         sizeBytes: stats.size,
         createdAt: stats.mtime.toISOString(),
         source: 'scan',
@@ -176,18 +179,27 @@ function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
 
-/** Videos de la carpeta de clips, incluidas las subcarpetas por juego. */
-function videoFilesIn(dir: string): string[] {
+/** Videos y capturas de la carpeta de clips, incluidas las subcarpetas por juego. */
+function mediaFilesIn(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      out.push(...videoFilesIn(full));
+      out.push(...mediaFilesIn(full));
       continue;
     }
     const ext = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase();
-    if (VIDEO_EXTENSIONS.has(ext)) out.push(full);
+    if (VIDEO_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext)) out.push(full);
   }
   return out;
+}
+
+/**
+ * Juego de un archivo escaneado, según la carpeta en la que está: el primer segmento bajo la carpeta
+ * de clips (`Terraria/…`, `Desktop/Capturas/…`). Un archivo suelto en la raíz no tiene juego.
+ */
+function gameFromPath(outputDir: string, filePath: string): string | null {
+  const segmentos = relative(outputDir, filePath).split(sep);
+  return segmentos.length > 1 ? gameFromFolderName(segmentos[0]) : null;
 }

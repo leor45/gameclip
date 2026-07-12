@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3';
-import type { Clip, ClipPatch, ClipSource, ClipsQuery } from '@shared/library';
-import { normalizeTags } from '@shared/library';
+import type { Clip, ClipPatch, ClipSource, ClipsQuery, MediaKind } from '@shared/library';
+import { mediaKindForFile, normalizeTags } from '@shared/library';
 import { normalizeMutedTracks } from '@shared/tracks';
 import { canonicalClipPath, clipPathKey } from './clip-path';
 
@@ -29,6 +29,11 @@ const migrations: Migration[] = [
   (db, orphans) => dedupeByCanonicalPath(db, orphans),
   // La DB misma impide el duplicado, aunque alguien esquive el repositorio.
   `CREATE UNIQUE INDEX idx_clips_path_nocase ON clips(file_path COLLATE NOCASE);`,
+  // Video o captura. El backfill vale para cualquier imagen que ya estuviera catalogada.
+  `ALTER TABLE clips ADD COLUMN kind TEXT NOT NULL DEFAULT 'video';
+   UPDATE clips SET kind = 'image'
+    WHERE lower(file_path) LIKE '%.png' OR lower(file_path) LIKE '%.jpg'
+       OR lower(file_path) LIKE '%.jpeg' OR lower(file_path) LIKE '%.webp';`,
 ];
 
 interface ClipRow {
@@ -44,6 +49,7 @@ interface ClipRow {
   created_at: string;
   source: string;
   muted_tracks: string;
+  kind: string;
 }
 
 export interface NewClip {
@@ -132,18 +138,22 @@ export class ClipsRepository {
   }
 
   insert(clip: NewClip): Clip {
+    const path = canonicalClipPath(clip.filePath);
     const info = this.db
       .prepare(
-        `INSERT INTO clips (file_path, title, game, size_bytes, created_at, source)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO clips (file_path, title, game, size_bytes, created_at, source, kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        canonicalClipPath(clip.filePath),
+        path,
         clip.title,
         clip.game,
         clip.sizeBytes,
         clip.createdAt,
         clip.source,
+        // Lo decide la extensión, no quien da de alta: así ninguna vía puede catalogar un PNG
+        // como si fuera un video.
+        mediaKindForFile(path),
       );
     return this.mustGet(Number(info.lastInsertRowid));
   }
@@ -308,6 +318,7 @@ function toClip(row: ClipRow): Clip {
     thumbnailPath: row.thumbnail_path,
     createdAt: row.created_at,
     source: (['replay', 'recording', 'scan'] as const).find((s) => s === row.source) ?? 'scan',
+    kind: (row.kind === 'image' ? 'image' : 'video') satisfies MediaKind,
     mutedTracks: parseMutedTracks(row.muted_tracks),
   };
 }

@@ -42,7 +42,9 @@ export default function StorageIndicator() {
 
   if (!stats) return null;
 
-  const usados = stats.clipsBytes + stats.recordingsBytes;
+  // Las capturas cuentan: el auto-borrado compara el límite contra el total, y si el anillo las
+  // ignorara, diría menos de lo que la app está midiendo.
+  const usados = stats.clipsBytes + stats.recordingsBytes + stats.screenshotsBytes;
   const limiteBytes = limitGb * 1024 ** 3;
   const sinLimite = limitGb <= 0;
   const ratio = sinLimite ? 0 : Math.min(1, usados / limiteBytes);

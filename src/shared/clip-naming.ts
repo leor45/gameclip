@@ -1,3 +1,5 @@
+import { KNOWN_GAME_PROCESSES } from './games';
+
 // Nomenclatura de los archivos que guarda la app (clips y capturas). Puro: lo usan la captura,
 // las capturas de pantalla y la migración del layout viejo.
 //
@@ -63,4 +65,16 @@ export function clipFileName(opts: {
 export function clipFolderSegments(gameExecutable: string | null, kind: ClipKind): string[] {
   const base = clipBaseName(gameExecutable);
   return kind === 'screenshot' ? [base, SCREENSHOTS_FOLDER] : [base];
+}
+
+/**
+ * Camino inverso de `clipBaseName`: la carpeta que contiene un archivo dice de qué juego es. Como la
+ * base es el ejecutable sin extensión (`terraria`), se traduce con la misma lista curada que usa la
+ * detección; lo que no esté en ella (un juego manual, o una carpeta que creó el usuario) se toma tal
+ * cual, que es lo que el usuario espera al ver el nombre. `Desktop` no es un juego: devuelve null.
+ */
+export function gameFromFolderName(folder: string): string | null {
+  const limpio = folder.trim();
+  if (!limpio || limpio.toLowerCase() === DESKTOP_FOLDER.toLowerCase()) return null;
+  return KNOWN_GAME_PROCESSES[limpio.toLowerCase()] ?? limpio;
 }

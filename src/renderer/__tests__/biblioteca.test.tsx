@@ -298,6 +298,61 @@ describe('Biblioteca — preview al pasar el cursor', () => {
   });
 });
 
+describe('Biblioteca — capturas de pantalla', () => {
+  const captura = () =>
+    crearClip({
+      id: 7,
+      title: 'Terraria Screenshot 2026.07.11 - 10.00.00.00',
+      kind: 'image',
+      game: 'Terraria',
+      durationSeconds: 0,
+    });
+
+  it('la tarjeta de una captura no ofrece el editor (no hay nada que recortar)', async () => {
+    mock().library.list.mockResolvedValue([captura(), crearClip({ title: 'Un clip' })]);
+    render(<Biblioteca />);
+    await screen.findByText('Un clip');
+
+    // Un solo botón de editor en toda la grilla: el del video.
+    expect(screen.getAllByRole('button', { name: 'Editar' })).toHaveLength(1);
+    expect(screen.getByText('Captura')).toBeInTheDocument(); // en vez de la duración
+  });
+
+  it('el hover NO monta preview sobre una captura', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    matchMediaFalso(false);
+    mock().library.list.mockResolvedValue([captura()]);
+    render(<Biblioteca />);
+    const card = (await screen.findByText(/Terraria Screenshot/)).closest(
+      '.clip-card',
+    ) as HTMLElement;
+
+    fireEvent.mouseEnter(card);
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.queryByTestId('preview-7')).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('al abrirla, el visor muestra la imagen y no un reproductor', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue([captura()]);
+    render(<Biblioteca />);
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Ver Terraria Screenshot 2026.07.11 - 10.00.00.00',
+      }),
+    );
+
+    const dialogo = screen.getByRole('dialog');
+    expect(dialogo.querySelector('video')).toBeNull();
+    expect(dialogo.querySelector('img')?.getAttribute('src')).toBe('gameclip-media://clip/7');
+  });
+});
+
 describe('Biblioteca — reproducción', () => {
   it('clic en la tarjeta abre el reproductor y se puede cerrar', async () => {
     const user = userEvent.setup();

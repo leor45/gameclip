@@ -70,6 +70,20 @@ describe('LibraryManager — ingesta', () => {
     expect(await manager.registerSavedClip(ruta, 'recording')).toBeNull();
     expect(manager.list()).toHaveLength(1);
   });
+
+  it('una captura recién tomada queda catalogada como imagen, con su juego', async () => {
+    const manager = crearManager();
+    const ruta = join(outputDir, 'Terraria Screenshot 2026.07.11 - 10.00.00.00.png');
+    writeFileSync(ruta, 'png');
+
+    const captura = await manager.registerSavedClip(ruta, 'scan', 'Terraria');
+
+    expect(captura?.kind).toBe('image');
+    expect(captura?.game).toBe('Terraria');
+    // El clip de video sigue siendo video aunque lo dé de alta la misma vía.
+    const clip = await manager.registerSavedClip(video('x.mp4'), 'scan', 'Terraria');
+    expect(clip?.kind).toBe('video');
+  });
 });
 
 describe('LibraryManager — reconciliación', () => {
@@ -141,22 +155,47 @@ describe('LibraryManager — gestión', () => {
 });
 
 describe('LibraryManager — reconcile recursivo (carpetas por juego)', () => {
-  it('indexa los clips que viven en las subcarpetas de juego', () => {
-    const manager = crearManager();
-    mkdirSync(join(outputDir, 'Terraria', 'Capturas'), { recursive: true });
-    mkdirSync(join(outputDir, 'Desktop'), { recursive: true });
-    writeFileSync(join(outputDir, 'Terraria', 'Terraria 2026.07.02 - 10.02.01.01.mp4'), 'video');
+  function crearArbol(): void {
+    mkdirSync(join(outputDir, 'terraria', 'Capturas'), { recursive: true });
+    mkdirSync(join(outputDir, 'Desktop', 'Capturas'), { recursive: true });
+    writeFileSync(join(outputDir, 'terraria', 'terraria 2026.07.02 - 10.02.01.01.mp4'), 'video');
     writeFileSync(join(outputDir, 'Desktop', 'Desktop 2026.07.02 - 11.00.00.00.mp4'), 'video');
-    // Las capturas no entran al catálogo (no son video).
-    writeFileSync(join(outputDir, 'Terraria', 'Capturas', 'Terraria Screenshot.png'), 'png');
+    writeFileSync(join(outputDir, 'terraria', 'Capturas', 'terraria Screenshot.png'), 'png');
+    writeFileSync(join(outputDir, 'Desktop', 'Capturas', 'Desktop Screenshot.png'), 'png');
+  }
+
+  it('indexa los clips y las capturas que viven en las subcarpetas', () => {
+    const manager = crearManager();
+    crearArbol();
 
     const resultado = manager.reconcile(outputDir);
 
-    expect(resultado.added).toBe(2);
-    expect(manager.list().map((c) => c.title).sort()).toEqual([
-      'Desktop 2026.07.02 - 11.00.00.00',
-      'Terraria 2026.07.02 - 10.02.01.01',
-    ]);
+    expect(resultado.added).toBe(4);
+    expect(manager.list().filter((c) => c.kind === 'image')).toHaveLength(2);
+    expect(manager.list().filter((c) => c.kind === 'video')).toHaveLength(2);
+  });
+
+  it('infiere el juego desde la carpeta que contiene el archivo', () => {
+    const manager = crearManager();
+    crearArbol();
+
+    manager.reconcile(outputDir);
+
+    // La carpeta es el ejecutable sin extensión: se traduce con la lista curada.
+    const deTerraria = manager.list({ game: 'Terraria' });
+    expect(deTerraria.map((c) => c.kind).sort()).toEqual(['image', 'video']);
+    // `Desktop` no es un juego: esos quedan sin juego (y los pesca el filtro "Escritorio").
+    const escritorio = manager.list({ withoutGame: true });
+    expect(escritorio.map((c) => c.kind).sort()).toEqual(['image', 'video']);
+  });
+
+  it('un archivo suelto en la raíz no tiene juego (no hay carpeta que lo diga)', () => {
+    const manager = crearManager();
+    video('suelto.mp4');
+
+    manager.reconcile(outputDir);
+
+    expect(manager.list()[0].game).toBeNull();
   });
 });
 

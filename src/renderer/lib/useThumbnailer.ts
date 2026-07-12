@@ -6,10 +6,13 @@ const THUMB_WIDTH = 320;
 const TIMEOUT_MS = 10000;
 
 /**
- * Genera duración y thumbnail para el primer clip que no los tenga (video → canvas →
+ * Genera duración y thumbnail para el primer clip que no los tenga (video/imagen → canvas →
  * dataURL → IPC). Procesa uno por ciclo: setMedia dispara 'changed', la lista se recarga
  * y el efecto vuelve a correr hasta que no quedan pendientes. Si la generación falla,
  * no reintenta hasta la próxima recarga (sin bucles).
+ *
+ * Las capturas también llevan miniatura propia: pintar el PNG entero en cada tarjeta de la grilla
+ * es justo el coste que la app evita (corre mientras el usuario juega).
  */
 export function useThumbnailer(clips: Clip[] | null): void {
   useEffect(() => {
@@ -17,7 +20,8 @@ export function useThumbnailer(clips: Clip[] | null): void {
     if (!pendiente) return;
     let cancelado = false;
 
-    void extraerMedia(pendiente).then((media) => {
+    const extraer = pendiente.kind === 'image' ? extraerImagen : extraerMedia;
+    void extraer(pendiente).then((media) => {
       if (cancelado || !media) return;
       window.gameclip.library.setMedia(pendiente.id, media).catch(() => {
         // el clip pudo borrarse mientras se generaba
@@ -28,6 +32,44 @@ export function useThumbnailer(clips: Clip[] | null): void {
       cancelado = true;
     };
   }, [clips]);
+}
+
+/**
+ * Miniatura de una captura. La duración va a 0 (una imagen no dura): sin un número, el clip
+ * quedaría eternamente "pendiente" y el efecto lo reintentaría en cada recarga.
+ */
+function extraerImagen(
+  clip: Clip,
+): Promise<{ durationSeconds: number; thumbnailDataUrl?: string } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    let terminado = false;
+
+    const finalizar = (resultado: { durationSeconds: number; thumbnailDataUrl?: string } | null) => {
+      if (terminado) return;
+      terminado = true;
+      clearTimeout(timer);
+      resolve(resultado);
+    };
+    const timer = setTimeout(() => finalizar(null), TIMEOUT_MS);
+
+    img.onerror = () => finalizar(null);
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ratio = img.naturalHeight / img.naturalWidth || 9 / 16;
+        canvas.width = THUMB_WIDTH;
+        canvas.height = Math.round(THUMB_WIDTH * ratio);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return finalizar({ durationSeconds: 0 });
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        finalizar({ durationSeconds: 0, thumbnailDataUrl: canvas.toDataURL('image/jpeg', 0.75) });
+      } catch {
+        finalizar({ durationSeconds: 0 });
+      }
+    };
+    img.src = clipMediaUrl(clip.id);
+  });
 }
 
 function extraerMedia(
