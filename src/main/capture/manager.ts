@@ -68,8 +68,8 @@ export interface CaptureBackend {
   ): void;
   /** Religa el audio del juego (modo apps) a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void;
-  /** Re-apunta el game capture de VIDEO a otro ejecutable (solo importa en modo window). */
-  updateGameCaptureTarget(executable: string | null): void;
+  /** Re-apunta el game capture de VIDEO a la ventana de otro juego, sin reconstruir. */
+  updateGameCaptureTarget(executable: string | null, settings: CaptureSettings): void;
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
   setMicMuted(muted: boolean): void;
   startReplayBuffer(): Promise<void>;
@@ -337,7 +337,7 @@ export class CaptureManager extends EventEmitter {
     }
     if (rotacionDeJuego) {
       try {
-        this.obs.updateGameCaptureTarget(this.detectedGameExe);
+        this.obs.updateGameCaptureTarget(this.detectedGameExe, settings);
       } catch (err) {
         this.setStatus({ error: err instanceof Error ? err.message : String(err) });
       }

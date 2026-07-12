@@ -497,24 +497,50 @@ export function monitorCaptureSettings(settings: CaptureSettings): Record<string
   };
 }
 
+/** Item de la propiedad-lista `window` de un source de captura: value = "título:clase:ejecutable". */
+export interface WindowItem {
+  name: string;
+  value: string;
+}
+
+/**
+ * Cadena de ventana del juego, resuelta contra la lista que expone el propio source (helper puro).
+ *
+ * OJO: las fuentes de VÍDEO de libobs NO matchean con la forma abreviada `::<exe>` — esa solo vale
+ * para el audio por proceso (`wasapi_process_output_capture`, otro matcher). El game capture quiere
+ * la cadena COMPLETA `título:clase:exe`, tal cual la lista en su propiedad `window`; con `::<exe>`
+ * no engancha nada y el clip sale negro (bug de la v0.2.0).
+ */
+export function resolveGameWindow(items: WindowItem[], executable: string | null): string | null {
+  if (!executable) return null;
+  const exe = executable.toLowerCase();
+  const match = items.find((item) => {
+    const partes = String(item.value ?? '').split(':');
+    if (partes.length < 3) return false; // vacío o placeholder («Seleccionar ventana…»)
+    return partes[partes.length - 1].toLowerCase() === exe;
+  });
+  return match?.value ?? null;
+}
+
 /**
  * Settings del source game_capture (helper puro, testeable sin libobs).
  *
- * Con el ejecutable detectado se usa el modo `window` (match por ejecutable): engancha también
- * los juegos en ventana / sin bordes, que `any_fullscreen` deja pasar. Sin ejecutable no hay a
- * qué apuntar, así que se cae a `any_fullscreen` (o a `window` vacío si el usuario forzó ventana).
+ * Con la ventana ya resuelta se usa el modo `window` (engancha también los juegos en ventana o sin
+ * bordes). Sin ventana que apuntar —el juego aún no la creó, o libobs no la ve— se cae a
+ * `any_fullscreen`, que captura los juegos a pantalla completa: preferible a apuntar a una ventana
+ * inexistente y grabar un lienzo negro.
  */
 export function gameCaptureSettings(
   settings: CaptureSettings,
-  gameExecutable: string | null,
+  gameWindow: string | null,
 ): Record<string, unknown> {
   const s: Record<string, unknown> = {
-    capture_mode: gameExecutable || settings.forceWindowCapture ? 'window' : 'any_fullscreen',
+    capture_mode: gameWindow ? 'window' : 'any_fullscreen',
     capture_cursor: settings.showMouseCursor,
   };
-  if (gameExecutable) {
-    s.window = `::${gameExecutable}`;
-    s.priority = 2; // 2 = coincidencia por ejecutable
+  if (gameWindow) {
+    s.window = gameWindow;
+    s.priority = 2; // 2 = coincidencia por ejecutable (el último campo de la cadena)
   }
   if (settings.experimentalCapture) s.capture_overlays = true;
   // Convierte HDR → SDR indicando el espacio de color de origen del juego.
@@ -679,13 +705,16 @@ export class ObsCapture extends EventEmitter {
       this.inputs.push(monitor);
       items.push(scene.add(monitor));
     } else if (eff.video === 'game') {
+      // Igual que el monitor: la propiedad-lista `window` solo existe en el source ya creado, así
+      // que se crea en any_fullscreen y se re-apunta a la ventana del juego una vez resuelta.
       const game = osn.InputFactory.create(
         'game_capture',
         'gameclip-game',
-        gameCaptureSettings(settings, gameExecutable),
+        gameCaptureSettings(settings, null),
       );
       this.inputs.push(game);
       this.gameCaptureSource = game;
+      this.aimGameCapture(settings, game, gameExecutable);
       items.push(scene.add(game));
     }
     // Perfil `none`: escena vacía. El manager no arranca buffer ni grabación, pero las salidas
@@ -969,12 +998,28 @@ export class ObsCapture extends EventEmitter {
     this.gameAudioSource?.update(processCaptureSettings(executable));
   }
 
-  /** Re-apunta el game capture de video (modo window) a otro ejecutable. */
-  updateGameCaptureTarget(executable: string | null): void {
-    this.gameCaptureSource?.update({
-      window: executable ? `::${executable}` : '',
-      priority: 2, // 2 = coincidencia por ejecutable
-    });
+  /**
+   * Apunta el game capture a la ventana del juego, resolviéndola contra la propiedad-lista del
+   * propio source. Sin ventana que resolver, lo deja en `any_fullscreen` (nunca apuntando a una
+   * ventana inexistente: eso graba un lienzo negro).
+   */
+  private aimGameCapture(
+    settings: CaptureSettings,
+    game: OsnInput,
+    executable: string | null,
+  ): void {
+    const items = this.findProperty(game.properties, 'window')?.details?.items ?? [];
+    const ventana = resolveGameWindow(items as WindowItem[], executable);
+    // Siempre se aplica: sin ventana vuelve a any_fullscreen, y así no queda clavado en la ventana
+    // del juego anterior al rotar de juego.
+    game.update(gameCaptureSettings(settings, ventana));
+  }
+
+  /** Re-apunta el game capture de video a la ventana de otro juego, sin reconstruir el pipeline. */
+  updateGameCaptureTarget(executable: string | null, settings: CaptureSettings): void {
+    if (this.gameCaptureSource) {
+      this.aimGameCapture(settings, this.gameCaptureSource, executable);
+    }
   }
 
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
