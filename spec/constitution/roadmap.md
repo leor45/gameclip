@@ -203,6 +203,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Estructura de carpetas por juego (`<carpeta>/<Juego|Desktop>/…`, capturas en `Capturas/`)
       y nomenclatura `<Juego> [Screenshot] AAAA.MM.DD - HH.MM.SS.CC`, con migración de lo viejo.
 - [x] Filtro "Escritorio" en la biblioteca: aísla las grabaciones que no vienen de un juego.
+- [x] Preview al pasar el cursor: borde blanco en la tarjeta y los primeros 10 s en bucle, mudos.
 
 > `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
 > `library:get-storage-stats` (las mismas contra las que el auto-borrado compara el límite, o el
@@ -230,6 +231,13 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > NULL`, con precedencia sobre `game`) y el desplegable usa un centinela que traduce el renderer.
 > Así un clip cuyo juego se llamara "Escritorio" sigue filtrándose como el juego que es, y no hace
 > falta escribir un pseudo-juego en el catálogo.
+> `feature/preview-hover-biblioteca` (2026-07-11): la preview reproduce el MP4 original por el
+> protocolo de medios (ya sirve Range con `stream: true`), sin generar previews en disco ni pasar
+> por ffmpeg. **Restricción del owner: la app corre mientras se juega**, así que solo vive la
+> preview apuntada — el estado está en la grilla (no un booleano por tarjeta: un `mouseleave`
+> perdido dejaría un video decodificando detrás), arranca con 250 ms de retardo (barrer la grilla no
+> dispara nada) y al salir el `<video>` se **desmonta**, no se pausa. El bucle de 10 s va a mano en
+> `onTimeUpdate` (HTML no acota la reproducción a un rango). Respeta `prefers-reduced-motion`.
 
 ## Futuro (fuera de alcance por ahora)
 
