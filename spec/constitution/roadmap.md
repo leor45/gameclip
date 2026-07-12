@@ -74,6 +74,18 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > Fix post-entrega (2026-07-11, `fix/biblioteca-cards-uniformes`): los clips 9:16 estiraban
 > su card (la imagen participaba del sizing y anulaba el aspect-ratio); imagen absoluta +
 > `object-fit: contain` — marco fijo 16:9 y preview completo. Verificado vía CDP.
+> Fix post-entrega (2026-07-11, `fix/biblioteca-clips-duplicados`): un clip grabado por la app
+> aparecía **dos veces** en la biblioteca. Causa raíz: el catálogo indexaba la ruta cruda de cada
+> vía de alta, y no coinciden — `lastFile()` de libobs pega su carpeta con `/`
+> (`D:\…\GameClip/clip.mp4`) y el `reconcile()` la arma con `join()` (`\`); como `file_path` se
+> comparaba por igualdad de string, el escaneo no reconocía el clip ya registrado y lo insertaba
+> otra vez como `scan` (y el archivo se contaba doble en Almacenamiento). Ahora la ruta se
+> canonicaliza **en el repositorio** (`resolve()`, frontera única para toda alta o búsqueda), se
+> compara con `COLLATE NOCASE` (NTFS ignora mayúsculas) y un índice único case-insensitive lo
+> impide desde la DB. Migración que canonicaliza y **fusiona** los duplicados ya creados
+> conservando el id menor y los datos de ambas filas (miniatura, duración, favorito, juego,
+> etiquetas unidas); el manager borra las miniaturas huérfanas. Verificado sobre una copia de la
+> DB real: 3 filas → 2 clips, sin perder miniatura ni duración.
 
 ## Fase 5 · Editor de clips — ✅ entregado (base)
 

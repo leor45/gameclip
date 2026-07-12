@@ -64,6 +64,17 @@ describe('StorageManager — getStats', () => {
     expect(stats.recordingsBytes).toBe(200);
   });
 
+  it('regresión: un clip registrado dos veces (rutas con distinto separador) no se cuenta doble', async () => {
+    await clip('duplicable.mp4', 100, { source: 'replay' });
+    // Segunda alta del MISMO archivo con la ruta como la escribe libobs: no debe crear otra fila.
+    const rutaLibobs = `${outputDir}/duplicable.mp4`;
+    await manager.registerSavedClip(rutaLibobs, 'replay');
+    const sm = new StorageManager(manager);
+
+    expect(manager.list()).toHaveLength(1);
+    expect(sm.getStats(outputDir).clipsBytes).toBe(100); // antes: 200
+  });
+
   it('no lanza y devuelve ceros de disco con un outputDir inexistente', () => {
     const sm = new StorageManager(manager);
     const stats = sm.getStats(join(outputDir, 'no', 'existe', 'nada'));

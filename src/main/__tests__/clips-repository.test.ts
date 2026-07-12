@@ -169,3 +169,110 @@ describe('ClipsRepository — migración', () => {
     vieja.close();
   });
 });
+
+describe('ClipsRepository — rutas canónicas y duplicados', () => {
+  it('guarda la ruta canónica aunque llegue con separadores mezclados (la de libobs)', () => {
+    const clip = repo.insert(nuevo({ filePath: 'D:\\Videos\\GameClip/clip.mp4' }));
+
+    expect(clip.filePath).toBe('D:\\Videos\\GameClip\\clip.mp4');
+    expect(repo.getByPath('D:\\Videos\\GameClip/clip.mp4')?.id).toBe(clip.id);
+    expect(repo.getByPath('D:\\Videos\\GameClip\\clip.mp4')?.id).toBe(clip.id);
+    // NTFS no distingue mayúsculas: la misma ruta en otra capitalización es el mismo clip.
+    expect(repo.getByPath('d:\\videos\\gameclip\\CLIP.mp4')?.id).toBe(clip.id);
+  });
+
+  it('la DB rechaza dos filas para el mismo archivo, aunque la ruta venga escrita distinto', () => {
+    repo.insert(nuevo({ filePath: 'D:\\Videos\\GameClip\\clip.mp4' }));
+
+    expect(() => repo.insert(nuevo({ filePath: 'D:\\Videos\\GameClip/CLIP.mp4' }))).toThrow();
+  });
+});
+
+describe('ClipsRepository — migración: fusión de duplicados existentes', () => {
+  /** Siembra el esquema v2 (sin canonicalizar), como la DB del usuario antes del fix. */
+  function dbV2() {
+    const vieja = new Database(':memory:');
+    vieja.exec(`CREATE TABLE clips (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       file_path TEXT NOT NULL UNIQUE, title TEXT NOT NULL, game TEXT,
+       duration_seconds REAL, size_bytes INTEGER NOT NULL DEFAULT 0,
+       favorite INTEGER NOT NULL DEFAULT 0, tags TEXT NOT NULL DEFAULT '[]',
+       thumbnail_path TEXT, created_at TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'scan',
+       muted_tracks TEXT NOT NULL DEFAULT '[]');
+     PRAGMA user_version = 2;`);
+    return vieja;
+  }
+
+  function sembrar(db: Database.Database, fila: Record<string, unknown>): void {
+    const cols = Object.keys(fila);
+    db.prepare(
+      `INSERT INTO clips (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+    ).run(...cols.map((c) => fila[c]));
+  }
+
+  it('deja un solo clip por archivo y conserva los datos de ambas filas', () => {
+    const vieja = dbV2();
+    // Las dos filas reales: la de la captura (ruta de libobs, con miniatura y duración) …
+    sembrar(vieja, {
+      id: 107,
+      file_path: 'D:\\Videos\\GameClip/clip.mp4',
+      title: 'clip',
+      duration_seconds: 10.9,
+      size_bytes: 14300323,
+      thumbnail_path: 'C:\\thumbs\\107.jpg',
+      created_at: '2026-07-12T00:14:57.640Z',
+      source: 'recording',
+      tags: '["clutch"]',
+    });
+    // … y la que metió el reconcile con el separador nativo, marcada como favorita por el usuario.
+    sembrar(vieja, {
+      id: 108,
+      file_path: 'D:\\Videos\\GameClip\\clip.mp4',
+      title: 'clip',
+      size_bytes: 14282290,
+      favorite: 1,
+      thumbnail_path: 'C:\\thumbs\\108.jpg',
+      game: 'Valorant',
+      created_at: '2026-07-12T00:14:57.640Z',
+      source: 'scan',
+      tags: '["ace"]',
+    });
+
+    const migrado = new ClipsRepository(vieja);
+
+    const clips = migrado.list();
+    expect(clips).toHaveLength(1);
+    const clip = clips[0];
+    expect(clip.id).toBe(107); // el id menor: sus miniaturas y URLs de medios siguen valiendo
+    expect(clip.filePath).toBe('D:\\Videos\\GameClip\\clip.mp4'); // canonicalizada
+    expect(clip.durationSeconds).toBe(10.9);
+    expect(clip.thumbnailPath).toBe('C:\\thumbs\\107.jpg');
+    expect(clip.source).toBe('recording'); // 'scan' es el alta genérica: pierde
+    expect(clip.favorite).toBe(true); // el favorito estaba en la fila descartada
+    expect(clip.game).toBe('Valorant'); // el juego también
+    expect(clip.tags.sort()).toEqual(['ace', 'clutch']); // etiquetas unidas
+    // La miniatura del registro descartado queda anotada para que el manager la borre.
+    expect(migrado.takeOrphanThumbnails()).toEqual(['C:\\thumbs\\108.jpg']);
+    expect(migrado.takeOrphanThumbnails()).toEqual([]); // se consumen una sola vez
+    vieja.close();
+  });
+
+  it('sin duplicados solo canonicaliza la ruta', () => {
+    const vieja = dbV2();
+    sembrar(vieja, {
+      id: 1,
+      file_path: 'D:\\Videos\\GameClip/solo.mp4',
+      title: 'solo',
+      size_bytes: 100,
+      created_at: '2026-07-01T00:00:00.000Z',
+      source: 'replay',
+    });
+
+    const migrado = new ClipsRepository(vieja);
+
+    expect(migrado.list()).toHaveLength(1);
+    expect(migrado.list()[0].filePath).toBe('D:\\Videos\\GameClip\\solo.mp4');
+    expect(migrado.takeOrphanThumbnails()).toEqual([]);
+    vieja.close();
+  });
+});

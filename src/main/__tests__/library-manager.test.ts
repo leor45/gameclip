@@ -139,3 +139,29 @@ describe('LibraryManager — gestión', () => {
     expect(() => manager.updateClip(clip.id, { title: '  ' })).toThrow(/título/i);
   });
 });
+
+describe('LibraryManager — regresión: clips duplicados (rutas con distinto separador)', () => {
+  it('la ruta de libobs (con barra) y la del reconcile (nativa) son el MISMO clip', async () => {
+    const manager = crearManager();
+    const nombre = '2026-07-11 19-14-42.mp4';
+    video(nombre);
+    // libobs devuelve su carpeta de salida pegada al archivo con '/', no con el separador nativo.
+    const rutaLibobs = `${outputDir}/${nombre}`;
+
+    await manager.registerSavedClip(rutaLibobs, 'recording');
+    manager.reconcile(outputDir); // al arrancar, escanea la carpeta con join() → '\'
+
+    expect(manager.list()).toHaveLength(1);
+    expect(manager.list()[0].source).toBe('recording');
+  });
+
+  it('la misma ruta con otra capitalización tampoco crea un segundo registro', async () => {
+    const manager = crearManager();
+    const ruta = video('Clip.mp4');
+
+    await manager.registerSavedClip(ruta, 'replay');
+    await manager.registerSavedClip(ruta.toUpperCase(), 'replay');
+
+    expect(manager.list()).toHaveLength(1);
+  });
+});
