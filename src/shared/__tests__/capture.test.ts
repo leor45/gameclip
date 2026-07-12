@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUDIO_APPS_TRACK_MAX,
   DEFAULT_CAPTURE_SETTINGS,
   REPLAY_SECONDS_MAX,
   REPLAY_SECONDS_MIN,
   normalizeCaptureSettings,
+  orderedActiveAudioApps,
 } from '../capture';
 
 describe('normalizeCaptureSettings', () => {
@@ -72,6 +74,61 @@ describe('normalizeCaptureSettings', () => {
       { executable: 'Discord.exe', volume: 80, enabled: true },
       { executable: 'Spotify.exe', volume: 50, enabled: false },
     ]);
+  });
+
+  it('desmarca (no borra) las apps activas que exceden el tope de pistas', () => {
+    // 4 apps activas; el tope es 3 pistas de app → la 4.ª (en orden de pista) queda enabled:false.
+    const result = normalizeCaptureSettings({
+      audioApps: [
+        { executable: 'a.exe', volume: 100, enabled: true },
+        { executable: 'b.exe', volume: 100, enabled: true },
+        { executable: 'c.exe', volume: 100, enabled: true },
+        { executable: 'd.exe', volume: 100, enabled: true },
+      ],
+    });
+    // Se conservan las 4 en la lista; solo cambia el enabled de la que sobra.
+    expect(result.audioApps.map((a) => [a.executable, a.enabled])).toEqual([
+      ['a.exe', true],
+      ['b.exe', true],
+      ['c.exe', true],
+      ['d.exe', false],
+    ]);
+    expect(AUDIO_APPS_TRACK_MAX).toBe(3);
+  });
+
+  it('el tope respeta el orden de pista: las fijas (Discord) van primero', () => {
+    // Discord está al final de la lista pero es fija → cuenta como la 1.ª activa; sobra 'z.exe'.
+    const result = normalizeCaptureSettings({
+      audioApps: [
+        { executable: 'x.exe', volume: 100, enabled: true },
+        { executable: 'y.exe', volume: 100, enabled: true },
+        { executable: 'z.exe', volume: 100, enabled: true },
+        { executable: 'Discord.exe', volume: 100, enabled: true },
+      ],
+    });
+    const enabled = new Map(result.audioApps.map((a) => [a.executable, a.enabled]));
+    // Discord (fija) + x + y ocupan las 3 pistas; z queda fuera.
+    expect(enabled.get('Discord.exe')).toBe(true);
+    expect(enabled.get('x.exe')).toBe(true);
+    expect(enabled.get('y.exe')).toBe(true);
+    expect(enabled.get('z.exe')).toBe(false);
+  });
+});
+
+describe('orderedActiveAudioApps', () => {
+  it('devuelve solo las activas, fijas primero, luego de usuario en su orden', () => {
+    const apps = [
+      { executable: 'opera.exe', volume: 100, enabled: true },
+      { executable: 'Spotify.exe', volume: 100, enabled: false },
+      { executable: 'Discord.exe', volume: 100, enabled: true },
+    ];
+    expect(orderedActiveAudioApps(apps)).toEqual(['Discord.exe', 'opera.exe']);
+  });
+
+  it('lista vacía si ninguna está activa', () => {
+    expect(orderedActiveAudioApps([{ executable: 'x.exe', volume: 100, enabled: false }])).toEqual(
+      [],
+    );
   });
 
   it('normaliza PTT, supresión de ruido y aceleración por hardware', () => {

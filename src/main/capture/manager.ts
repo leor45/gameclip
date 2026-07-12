@@ -12,6 +12,7 @@ import type { ClipSource } from '@shared/library';
 import { ObsCapture } from './obs';
 import type { DisplayInfo } from './obs';
 import type { SettingsStore } from './settings-store';
+import { remuxAudioTrackNames } from './track-names';
 
 /**
  * Ejecutable del juego a partir de su nombre legible (lookup inverso en KNOWN_GAME_PROCESSES).
@@ -69,6 +70,8 @@ export interface CaptureBackend {
   saveReplay(): Promise<string>;
   startRecording(): Promise<void>;
   stopRecording(): Promise<string>;
+  /** Pistas nombradas del pipeline vigente (layout por rol), o null si no aplica el remux. */
+  namedTracks(): { index: number; name: string }[] | null;
   shutdown(): void;
 }
 
@@ -100,8 +103,21 @@ export class CaptureManager extends EventEmitter {
     private readonly store: SettingsStore,
     private readonly env: CaptureEnvironment,
     private readonly obs: CaptureBackend = new ObsCapture(),
+    private readonly ffmpegPath: string = 'ffmpeg',
+    private readonly remuxFn: typeof remuxAudioTrackNames = remuxAudioTrackNames,
   ) {
     super();
+  }
+
+  /**
+   * Escribe los nombres de pista en el MP4 recién guardado (layout por rol). Best-effort: si
+   * no hay pistas nombradas o el remux falla, el clip queda igual. Se hace en post-proceso
+   * porque libobs no embebe los nombres en el archivo.
+   */
+  private async applyTrackNames(file: string): Promise<void> {
+    const tracks = this.obs.namedTracks();
+    if (!tracks) return;
+    await this.remuxFn(this.ffmpegPath, file, tracks);
   }
 
   getStatus(): CaptureStatus {
@@ -329,6 +345,7 @@ export class CaptureManager extends EventEmitter {
   private async stopSessionRecording(game: string | null = this.status.detectedGame): Promise<void> {
     if (this.status.state !== 'recording') return;
     const file = await this.obs.stopRecording();
+    await this.applyTrackNames(file);
     await this.reconcileBuffer();
     this.setStatus({
       state: this.bufferRunning ? 'buffering' : 'idle',
@@ -356,6 +373,7 @@ export class CaptureManager extends EventEmitter {
     if (this.status.state !== 'recording') return this.getStatus();
     try {
       const file = await this.obs.stopRecording();
+      await this.applyTrackNames(file);
       await this.reconcileBuffer();
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',
@@ -379,6 +397,7 @@ export class CaptureManager extends EventEmitter {
     }
     try {
       const file = await this.obs.saveReplay();
+      await this.applyTrackNames(file);
       this.setStatus({ error: null, lastClipPath: file });
       this.emitClipSaved(file, 'replay');
     } catch (err) {

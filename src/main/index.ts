@@ -123,7 +123,10 @@ function setupCapture(): CaptureManager {
       const d = screen.getAllDisplays()[index];
       return d ? displayInfo(d) : null;
     },
-  });
+  },
+  // obs por defecto (ObsCapture); ffmpeg para el remux de nombres de pista.
+  undefined,
+  ffmpegPath ?? 'ffmpeg');
 
   manager.on('status', (status: CaptureStatus) => {
     console.log('[capture]', JSON.stringify(status));

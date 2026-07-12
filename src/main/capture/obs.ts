@@ -4,11 +4,13 @@ import { dirname } from 'node:path';
 import type {
   AspectRatioMode,
   AudioDeviceInfo,
+  AudioMode,
   CaptureSettings,
   EncoderInfo,
   OutputResolution,
   RecordingQuality,
 } from '@shared/capture';
+import { AUDIO_APPS_TRACK_MAX, orderedActiveAudioApps } from '@shared/capture';
 
 // Valores espejo de los const enum de module.d.ts (esbuild no inlinea const enums de .d.ts).
 const VIDEO_FORMAT_NV12 = 2;
@@ -266,18 +268,93 @@ export function computePipelineSizes(
   };
 }
 
-/**
- * Máscaras de pista (bitmask audioMixers) por rol. La pista 1 SIEMPRE lleva la mezcla
- * completa: los reproductores (el interno incluido) solo reproducen la primera pista del
- * MP4; con tracks separados, mic y apps van ADEMÁS aislados en las pistas 2 y 3.
- */
-export function audioTrackPlan(separateTracks: boolean): {
-  desktopMask: number;
+/** Nombre de pista para una app: ejecutable sin ruta ni extensión `.exe` (case-insensitive). */
+export function appTrackName(executable: string): string {
+  const base = executable.split(/[\\/]/).pop() ?? executable;
+  return base.replace(/\.exe$/i, '');
+}
+
+/** Reparto de pistas de audio: máscaras `audioMixers` por rol y pistas a crear. */
+export interface AudioTrackLayout {
+  /** Máscara del micrófono. */
   micMask: number;
-  appsMask: number;
-} {
-  if (!separateTracks) return { desktopMask: 0b001, micMask: 0b001, appsMask: 0b001 };
-  return { desktopMask: 0b001, micMask: 0b011, appsMask: 0b101 };
+  /** Máscara del audio del juego (modo apps). */
+  gameMask: number;
+  /** Máscara del loopback de escritorio (modo desktop) o del fallback en modo apps. */
+  desktopMask: number;
+  /** Máscara por app activa, en orden (modo apps + separadas). */
+  appMasks: number[];
+  /** Pistas a crear e incluir en `recording.mixer`, ordenadas por índice. */
+  tracks: { index: number; name: string }[];
+  /** OR de los bits de `tracks` → valor de `recording.mixer`. */
+  mixer: number;
+  /** true solo con el layout por rol (apps + separadas): habilita el remux de nombres. */
+  named: boolean;
+}
+
+const TRACK_BIT = (index: number): number => 1 << (index - 1);
+const MIX_BIT = TRACK_BIT(1); // pista 1 = mezcla completa, en TODA máscara
+
+/**
+ * Calcula el reparto de pistas según modo, "pistas separadas" y las apps activas (en orden).
+ * La pista 1 SIEMPRE lleva la mezcla completa (los reproductores solo reproducen la primera).
+ *
+ * - Sin "pistas separadas": todo a la pista 1 (una sola pista).
+ * - Modo `desktop` + separadas: pista 1 mezcla, pista 2 mic (comportamiento previo).
+ * - Modo `apps` + separadas (layout por rol): pista 1 `default`, 2 `game`, 3 `mic`, y una
+ *   por app activa (`<exe sin .exe>`) en las pistas 4/5/6 — tope `AUDIO_APPS_TRACK_MAX`.
+ */
+export function audioTrackLayout(
+  audioMode: AudioMode,
+  separateTracks: boolean,
+  activeAppExecutables: string[],
+): AudioTrackLayout {
+  const single = (n: number): AudioTrackLayout => ({
+    micMask: MIX_BIT,
+    gameMask: MIX_BIT,
+    desktopMask: MIX_BIT,
+    appMasks: Array.from({ length: n }, () => MIX_BIT),
+    tracks: [{ index: 1, name: 'default' }],
+    mixer: MIX_BIT,
+    named: false,
+  });
+
+  if (!separateTracks) return single(activeAppExecutables.length);
+
+  if (audioMode === 'desktop') {
+    return {
+      micMask: MIX_BIT | TRACK_BIT(2),
+      gameMask: MIX_BIT,
+      desktopMask: MIX_BIT,
+      appMasks: [],
+      tracks: [
+        { index: 1, name: 'default' },
+        { index: 2, name: 'mic' },
+      ],
+      mixer: MIX_BIT | TRACK_BIT(2),
+      named: false,
+    };
+  }
+
+  // Modo apps + separadas: layout por rol con slots fijos T1/T2/T3 y apps en T4+.
+  const apps = activeAppExecutables.slice(0, AUDIO_APPS_TRACK_MAX);
+  const tracks = [
+    { index: 1, name: 'default' },
+    { index: 2, name: 'game' },
+    { index: 3, name: 'mic' },
+    ...apps.map((exe, i) => ({ index: 4 + i, name: appTrackName(exe) })),
+  ];
+  const appMasks = apps.map((_, i) => MIX_BIT | TRACK_BIT(4 + i));
+  const mixer = tracks.reduce((acc, t) => acc | TRACK_BIT(t.index), 0);
+  return {
+    micMask: MIX_BIT | TRACK_BIT(3),
+    gameMask: MIX_BIT | TRACK_BIT(2),
+    desktopMask: MIX_BIT,
+    appMasks,
+    tracks,
+    mixer,
+    named: true,
+  };
 }
 
 /** Display objetivo de la captura: tamaño y origen en píxeles físicos del escritorio virtual. */
@@ -407,6 +484,8 @@ export class ObsCapture extends EventEmitter {
   private micFilters: OsnFilter[] = [];
   /** Faders de volumen (uno por fuente de audio); se sueltan en el teardown. */
   private faders: OsnFader[] = [];
+  /** Reparto de pistas del pipeline vigente (para el remux de nombres tras grabar). */
+  private currentLayout: AudioTrackLayout | null = null;
   /** Índices de pista AAC ya registrados en libobs (globales a la sesión, sin release). */
   private readonly audioTracksCreated = new Set<number>();
   private initialized = false;
@@ -672,9 +751,8 @@ export class ObsCapture extends EventEmitter {
 
   /**
    * Crea las fuentes de audio según los ajustes, las asigna a canales y a pistas
-   * (audioMixers) y devuelve el bitmask `mixer` de las pistas usadas.
-   * Sin separateAudioTracks: todo a la pista 1. Con él: escritorio/juego → 1,
-   * micrófono → 2, apps extra → 3.
+   * (audioMixers) según el reparto de `audioTrackLayout`, crea las pistas nombradas y
+   * devuelve el bitmask `mixer` de las salidas. Guarda el layout para el remux de nombres.
    */
   private buildAudioSources(
     osn: OsnModule,
@@ -682,8 +760,9 @@ export class ObsCapture extends EventEmitter {
     gameExecutable: string | null,
     setSource: (src: OsnInput) => void,
   ): number {
-    const plan = audioTrackPlan(settings.separateAudioTracks);
-    let usedMask = 0;
+    const activeApps = orderedActiveAudioApps(settings.audioApps).slice(0, AUDIO_APPS_TRACK_MAX);
+    const layout = audioTrackLayout(settings.audioMode, settings.separateAudioTracks, activeApps);
+    this.currentLayout = layout;
 
     // Micrófono: siempre existe (silenciado si está desactivado) para poder religarlo sin rebuild.
     const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic', {
@@ -692,8 +771,7 @@ export class ObsCapture extends EventEmitter {
     // Con push-to-talk el mic arranca cerrado hasta que el manager reporte la tecla pulsada.
     mic.muted = !settings.micEnabled || settings.pttEnabled;
     this.applyVolume(osn, mic, settings.micVolume);
-    mic.audioMixers = plan.micMask;
-    usedMask |= plan.micMask;
+    mic.audioMixers = layout.micMask;
     this.inputs.push(mic);
     this.micSource = mic;
     setSource(mic);
@@ -717,8 +795,7 @@ export class ObsCapture extends EventEmitter {
         DESKTOP_AUDIO_SETTINGS,
       );
       this.applyVolume(osn, desktop, settings.desktopAudioVolume);
-      desktop.audioMixers = plan.desktopMask;
-      usedMask |= plan.desktopMask;
+      desktop.audioMixers = layout.desktopMask;
       this.inputs.push(desktop);
       setSource(desktop);
     } else {
@@ -729,21 +806,23 @@ export class ObsCapture extends EventEmitter {
         const src = this.createProcessCapture(osn, executable, vol);
         if (!src) return null;
         src.audioMixers = mask;
-        usedMask |= mask;
         this.inputs.push(src);
         setSource(src);
         added++;
         return src;
       };
-      // Audio del juego: la fuente existe aunque no haya juego aún (window vacío no matchea
-      // nada) para poder religarla en caliente sin reconstruir el pipeline.
+      // Audio del juego (pista 2): la fuente existe aunque no haya juego aún (window vacío no
+      // matchea nada) para poder religarla en caliente sin reconstruir el pipeline.
       if (settings.gameAudioEnabled) {
-        this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, plan.desktopMask);
+        this.gameAudioSource = addProcess(gameExecutable, settings.gameAudioVolume, layout.gameMask);
       }
-      for (const app of settings.audioApps) {
-        if (!app.enabled) continue; // desmarcada: sigue en la lista pero no se captura
-        addProcess(app.executable, app.volume, plan.appsMask);
-      }
+      // Apps activas en orden de pista (T4+); volumen desde su entrada en la lista.
+      activeApps.forEach((exe, i) => {
+        const entry = settings.audioApps.find(
+          (a) => a.executable.toLowerCase() === exe.toLowerCase(),
+        );
+        addProcess(exe, entry?.volume ?? 100, layout.appMasks[i]);
+      });
       // Degradar a escritorio clásico SOLO si ninguna captura por proceso funcionó (la build
       // no trae el source): con una parcial, sumar el escritorio duplicaría el audio.
       if (requested > 0 && added === 0) {
@@ -752,24 +831,27 @@ export class ObsCapture extends EventEmitter {
           'gameclip-audio-fallback',
           DESKTOP_AUDIO_SETTINGS,
         );
-        desktop.audioMixers = plan.desktopMask;
-        usedMask |= plan.desktopMask;
+        desktop.audioMixers = layout.desktopMask;
         this.inputs.push(desktop);
         setSource(desktop);
       }
     }
 
-    // Registrar una pista AAC por bit usado (una sola vez por sesión: las pistas son
-    // globales en libobs y no tienen release; re-crearlas en cada rebuild las fugaría).
-    for (let index = 1; (1 << (index - 1)) <= usedMask; index++) {
-      if (!(usedMask & (1 << (index - 1)))) continue;
-      if (!this.audioTracksCreated.has(index)) {
-        const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${index}`);
-        osn.AudioTrackFactory.setAtIndex(track, index);
-        this.audioTracksCreated.add(index);
-      }
+    // Crear cada pista del layout (una sola vez por sesión: las pistas son globales en libobs
+    // y no tienen release; re-crearlas en cada rebuild las fugaría). El nombre es best-effort
+    // interno; el nombre final del MP4 lo pone el remux post-grabación.
+    for (const t of layout.tracks) {
+      if (this.audioTracksCreated.has(t.index)) continue;
+      const track = osn.AudioTrackFactory.create(AUDIO_TRACK_BITRATE, `gameclip-track-${t.index}`);
+      osn.AudioTrackFactory.setAtIndex(track, t.index);
+      this.audioTracksCreated.add(t.index);
     }
-    return usedMask;
+    return layout.mixer;
+  }
+
+  /** Pistas nombradas del layout vigente, o null si no aplica el remux (no es layout por rol). */
+  namedTracks(): { index: number; name: string }[] | null {
+    return this.currentLayout?.named ? this.currentLayout.tracks : null;
   }
 
   /**

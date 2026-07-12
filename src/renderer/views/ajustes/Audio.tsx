@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   AUDIO_APPS_MAX,
+  AUDIO_APPS_TRACK_MAX,
   DEFAULT_AUDIO_APPS,
   PTT_HOTKEY_OPTIONS,
+  orderedActiveAudioApps,
   type AudioAppCapture,
   type AudioAppInfo,
   type AudioDeviceInfo,
@@ -16,16 +18,31 @@ interface FilaAudioProps {
   onCheck: (value: boolean) => void;
   volumen: number;
   onVolumen: (value: number) => void;
+  /** Deshabilita el checkbox (p. ej. al alcanzar el tope de apps con audio). */
+  checkDisabled?: boolean;
   /** Botón de basurero rojo; ausente en las filas fijas. */
   onQuitar?: () => void;
 }
 
 /** Fila de la lista de audio: checkbox a la izquierda, slider y basurero opcional. */
-function FilaAudio({ etiqueta, checked, onCheck, volumen, onVolumen, onQuitar }: FilaAudioProps) {
+function FilaAudio({
+  etiqueta,
+  checked,
+  onCheck,
+  volumen,
+  onVolumen,
+  checkDisabled,
+  onQuitar,
+}: FilaAudioProps) {
   return (
     <li className="audio-app-row">
       <label className="settings-check audio-app-name">
-        <input type="checkbox" checked={checked} onChange={(e) => onCheck(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={checkDisabled}
+          onChange={(e) => onCheck(e.target.checked)}
+        />
         {etiqueta}
       </label>
       <label className="audio-app-volume">
@@ -102,6 +119,9 @@ export default function AjustesAudio() {
     (a) => !yaAgregadas.has(a.executable.toLowerCase()) && !esDefault(a.executable),
   );
   const limiteAlcanzado = audioApps.length >= AUDIO_APPS_MAX;
+  // Cada app activa ocupa una pista propia (T4+); solo hay 3 pistas de app.
+  const appsConAudio = orderedActiveAudioApps(audioApps).length;
+  const topeAudioAlcanzado = appsConAudio >= AUDIO_APPS_TRACK_MAX;
 
   /** Inserta o reemplaza la entrada de un ejecutable (las fijas se materializan al tocarlas). */
   function upsertApp(entrada: AudioAppCapture) {
@@ -249,6 +269,7 @@ export default function AjustesAudio() {
                   key={app.executable}
                   etiqueta={app.executable}
                   checked={app.enabled}
+                  checkDisabled={!app.enabled && topeAudioAlcanzado}
                   onCheck={(v) => upsertApp({ ...app, enabled: v })}
                   volumen={app.volume}
                   onVolumen={(v) => upsertApp({ ...app, volume: v })}
@@ -259,6 +280,7 @@ export default function AjustesAudio() {
                   key={app.executable}
                   etiqueta={app.executable}
                   checked={app.enabled}
+                  checkDisabled={!app.enabled && topeAudioAlcanzado}
                   onCheck={(v) => upsertApp({ ...app, enabled: v })}
                   volumen={app.volume}
                   onVolumen={(v) => upsertApp({ ...app, volume: v })}
@@ -292,6 +314,12 @@ export default function AjustesAudio() {
               </button>
             </div>
             {limiteAlcanzado && <p className="settings-hint">Máximo {AUDIO_APPS_MAX} apps.</p>}
+            {topeAudioAlcanzado && (
+              <p className="settings-hint">
+                Máximo {AUDIO_APPS_TRACK_MAX} apps con audio a la vez (una pista por app).
+                Desmarcá una para activar otra.
+              </p>
+            )}
             <p className="settings-hint">
               Desmarcar una app pausa su captura sin quitarla de la lista.
             </p>
