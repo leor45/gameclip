@@ -341,7 +341,7 @@ body {
    sumar grosor correría la grilla entera. */
 .clip-card:hover,
 .clip-card:focus-within {
-  border-color: #fff;
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 .clip-thumb {
