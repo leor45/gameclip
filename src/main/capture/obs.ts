@@ -494,6 +494,9 @@ export function monitorCaptureSettings(settings: CaptureSettings): Record<string
   return {
     capture_cursor: settings.showMouseCursor,
     method: MONITOR_METHOD_WGC,
+    // El WGC trae capture_audio activo: su audio no pasa por fader y su audioMixers default va a
+    // TODAS las pistas, colándose en cada pista de rol. El audio del PC sale del wasapi_output.
+    capture_audio: false,
   };
 }
 
@@ -537,6 +540,10 @@ export function gameCaptureSettings(
   const s: Record<string, unknown> = {
     capture_mode: gameWindow ? 'window' : 'any_fullscreen',
     capture_cursor: settings.showMouseCursor,
+    // game_capture trae capture_audio activo: su audio no pasa por fader y su audioMixers default
+    // va a TODAS las pistas, duplicando el juego y colándose en mic/discord/etc. El audio del juego
+    // sale de su wasapi_process_output_capture dedicado (con fader y su pista de rol).
+    capture_audio: false,
   };
   if (gameWindow) {
     s.window = gameWindow;

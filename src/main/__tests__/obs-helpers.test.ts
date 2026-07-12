@@ -87,6 +87,12 @@ describe('monitorCaptureSettings', () => {
       monitorCaptureSettings({ ...DEFAULT_CAPTURE_SETTINGS, showMouseCursor: true }),
     ).toMatchObject({ capture_cursor: true });
   });
+
+  it('regresión (bleed de audio): la fuente de vídeo NO captura audio (capture_audio false)', () => {
+    // El monitor_capture WGC trae capture_audio activo; sin apagarlo, su audio va a TODAS las
+    // pistas (audioMixers default = 0x3F) a volumen completo y se cuela en cada pista de rol.
+    expect(monitorCaptureSettings(DEFAULT_CAPTURE_SETTINGS)).toMatchObject({ capture_audio: false });
+  });
 });
 
 describe('DESKTOP_AUDIO_SETTINGS', () => {
@@ -305,6 +311,18 @@ describe('gameCaptureSettings', () => {
     const s = gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, null);
     expect(s.capture_mode).toBe('any_fullscreen');
     expect(s.window).toBeUndefined();
+  });
+
+  it('regresión (bleed de audio): la fuente de vídeo NO captura audio (capture_audio false)', () => {
+    // game_capture trae capture_audio activo; sin apagarlo, su audio va a TODAS las pistas
+    // (audioMixers default) sin fader, duplicando el juego y colándose en mic/discord/etc.
+    // Debe ser false tanto con ventana resuelta como en el fallback any_fullscreen.
+    expect(gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, ventana)).toMatchObject({
+      capture_audio: false,
+    });
+    expect(gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, null)).toMatchObject({
+      capture_audio: false,
+    });
   });
 
   it('respeta HDR y captura experimental', () => {
