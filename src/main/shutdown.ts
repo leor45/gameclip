@@ -20,6 +20,11 @@ export interface PartesDelCierre {
   overlay: { destroy(): void } | null;
   tray: { destroy(): void } | null;
   api: { close(): void } | null;
+  /**
+   * Borra las carpetas de `%TEMP%` que dejaron las ejecuciones anteriores del portable (ver
+   * `temp-cleanup.ts`). Va como callback para que este módulo no dependa del disco ni de Electron.
+   */
+  limpiarTemporales: () => void;
 }
 
 export function teardown(partes: PartesDelCierre): void {
@@ -34,6 +39,8 @@ export function teardown(partes: PartesDelCierre): void {
     ['overlay', () => partes.overlay?.destroy()],
     ['bandeja', () => partes.tray?.destroy()],
     ['api', () => partes.api?.close()],
+    // Al final: no aporta nada al cierre en sí, y así ningún fallo suyo retrasa lo que importa.
+    ['temporales', () => partes.limpiarTemporales()],
   ];
 
   // Cada paso es independiente: si uno falla, el cierre TERMINA igual. Si no, una excepción a mitad

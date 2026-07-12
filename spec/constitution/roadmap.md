@@ -336,16 +336,34 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > aunque uno falle. La bandeja además se defiende sola (`isDestroyed()`), para que el bug no vuelva
 > por otro emisor. Verificado sobre el `.exe`: sin diálogo, y el puerto 3030 queda libre.
 
-## Pendiente conocido — el portable tarda ~16 s en abrir
-
-No es un bug del código: el `.exe` pesa 190 MB comprimidos y **se autodescomprime 738 MB en `%TEMP%`
-en cada ejecución** (medido: 15,5 s y 16,6 s en dos arranques seguidos, sin diferencia entre el
-primero y el segundo). Además el extractor deja carpetas temporales huérfanas de ~930 MB.
-
-El grueso del peso es libobs con todos sus plugins (incluido el navegador embebido de OBS, que no se
-usa) más el `ffmpeg.exe` de `ffmpeg-static` (~80 MB), que **duplica** el que ya trae osn. Las vías a
-evaluar en su spec: podar plugins de libobs, reusar el ffmpeg de osn, `compression: store`, o pasar a
-un instalador NSIS (descomprime una sola vez, arranca al instante — pero deja de ser portable).
+> `feature/adelgazar-portable` (2026-07-12): el `.exe` baja de **190 a 93 MB** y el payload que
+> descomprime en cada arranque, de **738 a 418 MB**. De los 707 MB que aportaba osn, solo 90 eran
+> libobs de verdad: fuera los **336 MB de símbolos de depuración** (`.pdb`), los **265 MB del
+> navegador Chromium embebido** (las *browser sources* de OBS, que la app no expone) y los 14 MB de
+> `mediasoup`. Fuera también `ffmpeg-static` (79 MB): osn ya trae su propio `ffmpeg.exe` de 302 KB
+> —usa las DLLs de FFmpeg que ya viajan— con `libx264`, `gif`, `palettegen`, `paletteuse` y `amix`,
+> que es todo lo que la app usa. Las exclusiones van en `electron-builder.yml`, **no** podando
+> `node_modules` (se revertiría en el próximo `npm install`). Un plugin ausente no rompe libobs: lo
+> registra y sigue (ya pasaba con decklink y obs-ndi). Verificado con el `.exe` recortado: F8 → clip
+> 1080p60 con sus 5 pistas de audio nombradas.
+> **El arranque, en cambio, mejoró poco: de ~16 s a ~13,5 s, y la hipótesis inicial resultó falsa.**
+> Midiendo por fases, **10 s son la descompresión** y 3,5 s Electron + el main; al recortar el
+> payload casi a la mitad, la descompresión no bajó de forma proporcional (LZMA + el antivirus
+> escaneando cada archivo nuevo). Se probó `compression: store`: el arranque bajaba a ~11 s pero el
+> `.exe` saltaba a 419 MB — cuadruplicar la descarga por 3 segundos no compensa. **~13 s es el piso
+> del formato portable**: descomprime 418 MB cada vez que se abre y eso no se evita sin dejar de ser
+> portable. Quien arranca al instante es el instalador (descomprime una sola vez) — decisión de
+> producto, con su propio spec.
+> **Limpieza de temporales:** al cerrar, la app borra las carpetas que dejaron sus ejecuciones
+> anteriores (el owner tenía **4,15 GB** acumulados). Tres reglas, cada una tapando una forma de
+> hacer daño: solo se toca lo que contiene *nuestro* ejecutable (o `obs64.exe`, porque el launcher
+> suele dejar el payload a medio borrar, ya sin el `.exe`, y si no se volvería invisible); se ignora
+> lo de la ejecución en curso (el staging lo crea el launcher **antes** que nuestro proceso, así que
+> hace falta un margen sobre la hora de arranque, no basta con compararla); y **nunca se borra a
+> medias** — la carpeta se renombra primero, y como Windows no deja renombrar una carpeta con
+> archivos abiertos, si algo está en uso la operación falla *antes* de destruir nada. Verificado con
+> basura fabricada con la forma exacta de la real: borra las cuatro carpetas nuestras y deja intactas
+> las de otro instalador NSIS y las de otra app de Electron.
 
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 

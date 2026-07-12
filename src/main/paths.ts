@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+
 /**
  * Traduce una ruta que cae dentro de `app.asar` a su gemela en `app.asar.unpacked`.
  *
@@ -12,4 +15,20 @@
  */
 export function unpackedPath(path: string): string {
   return path.replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2');
+}
+
+/**
+ * Ruta del `ffmpeg.exe` **que ya trae osn**, no el de `ffmpeg-static`.
+ *
+ * osn incluye su propio ffmpeg (302 KB: usa las DLLs de FFmpeg que ya viajan con libobs) y tiene todo
+ * lo que la app necesita — `libx264`, `gif`, `palettegen`, `paletteuse`, `amix`. `ffmpeg-static`
+ * metía 79 MB para duplicarlo.
+ *
+ * Se resuelve igual que el directorio de osn en `obs.ts`: `require.resolve` y, en el paquete, la
+ * copia desempaquetada — ffmpeg es un ejecutable que se spawnea y no puede vivir dentro del asar.
+ */
+export function ffmpegPath(): string {
+  const require = createRequire(__filename);
+  const osnDir = dirname(require.resolve('@streamlabs/obs-studio-node/package.json'));
+  return unpackedPath(join(osnDir, 'ffmpeg.exe'));
 }

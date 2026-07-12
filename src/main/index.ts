@@ -6,10 +6,10 @@ import { SERVER_PORT } from '@shared/config';
 import type { RunningGameMatch } from '@shared/games';
 import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
-import ffmpegPath from 'ffmpeg-static';
 import { startApi, type ApiHandle } from '../../server/api';
-import { unpackedPath } from './paths';
+import { ffmpegPath } from './paths';
 import { teardown } from './shutdown';
+import { entornoReal, limpiarTemporales } from './temp-cleanup';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
 import type { DisplayInfo } from './capture/obs';
@@ -31,8 +31,8 @@ import { createTray } from './tray';
 import type { AppTray } from './tray';
 import { registerIpcHandlers } from './ipc';
 
-// ffmpeg es un ejecutable que spawneamos: dentro del asar no existe como archivo (ver paths.ts).
-const ffmpegBin = ffmpegPath ? unpackedPath(ffmpegPath) : 'ffmpeg';
+// El ffmpeg que ya trae osn (ver paths.ts): ffmpeg-static duplicaba 79 MB del mismo binario.
+const ffmpegBin = ffmpegPath();
 
 let mainWindow: BrowserWindow | null = null;
 let api: ApiHandle | null = null;
@@ -414,6 +414,12 @@ app.on('will-quit', () => {
     overlay,
     tray,
     api,
+    // Solo empaquetada: en dev el "ejecutable" es el electron.exe de node_modules y el filtro no
+    // identificaría a GameClip, sino a cualquier temporal de cualquier app de Electron.
+    limpiarTemporales: () => {
+      if (!app.isPackaged) return;
+      limpiarTemporales(entornoReal(app.getPath('temp'), app.getPath('exe')));
+    },
   });
   // Sin referencias, un evento tardío no tiene a quién pegarle.
   capture = null;
