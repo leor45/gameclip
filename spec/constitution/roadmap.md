@@ -325,6 +325,28 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > deja un MP4 de 261 bytes. Reproducido **también en dev**, así que es previo al empaquetado. Los
 > detalles y las pistas quedan en "Bugs abiertos", más abajo.
 
+> Fix post-entrega (2026-07-12, `fix/tray-destruida-al-cerrar`): al cerrar la app **siempre** saltaba
+> el diálogo *"A JavaScript error occurred in the main process — Error: Tray is destroyed"* (en dev y
+> empaquetada). Causa raíz: el `will-quit` destruía la bandeja **antes** de apagar la captura, y
+> `CaptureManager.shutdown()` no es silencioso — emite un `status` final que el handler traduce a
+> `tray.setRecording()`, y tocar un `Tray` destruido lanza en Electron. Peor: la excepción abortaba el
+> resto del cierre, así que `api.close()` nunca corría y el puerto quedaba tomado. El orden del cierre
+> sale a `src/main/shutdown.ts` (testeable) con la regla **primero se apaga lo que emite, después se
+> destruye lo que escucha**, y cada paso va en su propio `try/catch` para que el cierre termine
+> aunque uno falle. La bandeja además se defiende sola (`isDestroyed()`), para que el bug no vuelva
+> por otro emisor. Verificado sobre el `.exe`: sin diálogo, y el puerto 3030 queda libre.
+
+## Pendiente conocido — el portable tarda ~16 s en abrir
+
+No es un bug del código: el `.exe` pesa 190 MB comprimidos y **se autodescomprime 738 MB en `%TEMP%`
+en cada ejecución** (medido: 15,5 s y 16,6 s en dos arranques seguidos, sin diferencia entre el
+primero y el segundo). Además el extractor deja carpetas temporales huérfanas de ~930 MB.
+
+El grueso del peso es libobs con todos sus plugins (incluido el navegador embebido de OBS, que no se
+usa) más el `ffmpeg.exe` de `ffmpeg-static` (~80 MB), que **duplica** el que ya trae osn. Las vías a
+evaluar en su spec: podar plugins de libobs, reusar el ffmpeg de osn, `compression: store`, o pasar a
+un instalador NSIS (descomprime una sola vez, arranca al instante — pero deja de ser portable).
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🐞 La grabación manual escribe un solo frame (MP4 de 261 bytes)
