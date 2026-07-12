@@ -11,7 +11,7 @@ import { buildGameNotice } from '@shared/overlay';
 import { startApi, type ApiHandle } from '../../server/api';
 import { ffmpegPath } from './paths';
 import { teardown } from './shutdown';
-import { entornoReal, limpiarTemporales } from './temp-cleanup';
+import { entornoReal, limpiarTemporales, registroEnDisco } from './temp-cleanup';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
 import type { DisplayInfo } from './capture/obs';
@@ -366,6 +366,28 @@ function registerHotkeys(manager: CaptureManager): void {
   }
 }
 
+/**
+ * Barre los temporales que deja el portable. Corre **al arrancar y al cerrar**: al cerrar recupera el
+ * espacio en el acto, y al arrancar es la única red que atrapa un cierre sucio (apagón, cuelgue,
+ * kill), que por definición no llegó a ejecutar el `will-quit`.
+ *
+ * El registro solo entra en el arranque: ahí se anota el staging de esta ejecución —mientras todavía
+ * es reconocible— y se borra el que dejó la anterior. En el cierre no hace falta (el arranque ya
+ * limpió) y además evita que la app se ponga a borrar cientos de MB justo cuando debería estar
+ * saliendo.
+ *
+ * Solo empaquetada: en dev el "ejecutable" es el electron.exe de node_modules, y el filtro no
+ * identificaría a GameClip sino a cualquier temporal de cualquier app de Electron.
+ */
+function barrerTemporales(registrar = false): void {
+  if (!app.isPackaged) return;
+  const entorno = entornoReal(app.getPath('temp'), app.getPath('exe'));
+  const registro = registrar
+    ? registroEnDisco(join(app.getPath('userData'), 'portable-temp.json'))
+    : undefined;
+  limpiarTemporales(entorno, registro);
+}
+
 // En dev registraría electron.exe en el arranque de Windows; solo aplica empaquetada.
 function applyAutoLaunch(settings: CaptureSettings): void {
   if (!app.isPackaged) return;
@@ -374,6 +396,9 @@ function applyAutoLaunch(settings: CaptureSettings): void {
 
 app.whenReady().then(() => {
   if (!primeraInstancia) return;
+  // Lo primero: si el arranque anterior murió mal (apagón, cuelgue), su staging sigue ahí ocupando
+  // cientos de MB y nadie más va a limpiarlo. También deja anotado el de esta ejecución.
+  barrerTemporales(true);
   // Antes de la ventana: el renderer llama a /api apenas carga (sesión persistida).
   if (app.isPackaged) setupApi();
   capture = setupCapture();
@@ -467,12 +492,7 @@ app.on('will-quit', () => {
     overlay,
     tray,
     api,
-    // Solo empaquetada: en dev el "ejecutable" es el electron.exe de node_modules y el filtro no
-    // identificaría a GameClip, sino a cualquier temporal de cualquier app de Electron.
-    limpiarTemporales: () => {
-      if (!app.isPackaged) return;
-      limpiarTemporales(entornoReal(app.getPath('temp'), app.getPath('exe')));
-    },
+    limpiarTemporales: () => barrerTemporales(),
   });
   // Sin referencias, un evento tardío no tiene a quién pegarle.
   capture = null;
