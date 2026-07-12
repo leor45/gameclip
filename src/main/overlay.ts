@@ -2,33 +2,48 @@ import { join } from 'node:path';
 import { BrowserWindow, screen } from 'electron';
 import { IpcEvent } from '@shared/ipc';
 import type { OverlayState } from '@shared/ipc';
-import type { OverlayNotice } from '@shared/overlay';
+import { overlayStateFor } from '@shared/overlay';
+import type { OverlayNotice, OverlayZone } from '@shared/overlay';
 
 const TOAST_MS = 3000;
 /** Cuánto queda el aviso del juego antes de irse solo. */
 const NOTICE_MS = 6000;
 /** Margen para que la página termine su animación de salida antes de ocultar la ventana. */
 const EXIT_MS = 400;
-const WIDTH = 340;
-/** Alto para el caso más grande (aviso con sus dos hotkeys); la ventana es transparente. */
-const HEIGHT = 220;
 const MARGIN = 16;
 
+/** Dos esquinas, dos ventanas: los avisos a la izquierda, el REC a la derecha. */
+type Zona = OverlayZone;
+
+const TAMANO: Record<Zona, { width: number; height: number }> = {
+  // Alto para el caso más grande (el aviso con sus dos hotkeys); la ventana es transparente.
+  left: { width: 340, height: 220 },
+  right: { width: 160, height: 60 },
+};
+
+interface Ventana {
+  win: BrowserWindow;
+  hideTimer: NodeJS.Timeout | null;
+}
+
 /**
- * Overlay in-game: ventana transparente, siempre-encima y click-through en la esquina
- * superior derecha del monitor primario. Solo es visible cuando hay algo que mostrar
- * (grabando o toast); el resto del tiempo queda oculta y no compone nada.
+ * Overlay in-game: ventanas transparentes, siempre-encima y click-through en las esquinas superiores
+ * del monitor primario. Solo son visibles cuando hay algo que mostrar; el resto del tiempo quedan
+ * ocultas y no componen nada.
  *
- * Limitación conocida: no se ve sobre juegos en fullscreen exclusivo (haría falta
- * inyección tipo overlay de Discord); cubre borderless y ventana.
+ * Son dos porque las esquinas son dos: el aviso del juego y el toast de clip guardado van arriba a
+ * la izquierda, y el indicador REC arriba a la derecha. Cada ventana recibe **el estado filtrado**
+ * con lo suyo, así la página sigue siendo una vista tonta que pinta lo que le llega.
+ *
+ * Limitación conocida: no se ven sobre juegos en fullscreen exclusivo (haría falta inyección tipo
+ * overlay de Discord); cubren borderless y ventana.
  */
 export class OverlayController {
-  private win: BrowserWindow | null = null;
+  private ventanas = new Map<Zona, Ventana>();
   private state: OverlayState = { recording: false, toast: null, notice: null };
   private enabled: boolean;
   private toastTimer: NodeJS.Timeout | null = null;
   private noticeTimer: NodeJS.Timeout | null = null;
-  private hideTimer: NodeJS.Timeout | null = null;
 
   constructor(enabled: boolean) {
     this.enabled = enabled;
@@ -74,46 +89,62 @@ export class OverlayController {
   destroy(): void {
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.noticeTimer) clearTimeout(this.noticeTimer);
-    if (this.hideTimer) clearTimeout(this.hideTimer);
-    this.win?.destroy();
-    this.win = null;
+    for (const ventana of this.ventanas.values()) {
+      if (ventana.hideTimer) clearTimeout(ventana.hideTimer);
+      ventana.win.destroy();
+    }
+    this.ventanas.clear();
+  }
+
+  /** Lo que le toca a cada esquina; el resto va en null para que la página no lo pinte. */
+  private estadoDe(zona: Zona): OverlayState {
+    return overlayStateFor(zona, this.state);
   }
 
   private sync(): void {
+    for (const zona of ['left', 'right'] as Zona[]) {
+      this.syncZona(zona, this.estadoDe(zona));
+    }
+  }
+
+  private syncZona(zona: Zona, state: OverlayState): void {
     const visible =
-      this.enabled &&
-      (this.state.recording || this.state.toast !== null || this.state.notice !== null);
+      this.enabled && (state.recording || state.toast !== null || state.notice !== null);
 
     if (!visible) {
-      const win = this.win;
-      if (!win || !win.isVisible()) return;
+      const ventana = this.ventanas.get(zona);
+      if (!ventana || !ventana.win.isVisible()) return;
       // Se manda el estado vacío para que la página anime la salida, y la ventana se oculta un
       // instante después: esconderla ya se comería la animación.
-      win.webContents.send(IpcEvent.OverlayState, this.state);
-      if (this.hideTimer) clearTimeout(this.hideTimer);
-      this.hideTimer = setTimeout(() => {
-        this.hideTimer = null;
-        win.hide();
+      ventana.win.webContents.send(IpcEvent.OverlayState, state);
+      if (ventana.hideTimer) clearTimeout(ventana.hideTimer);
+      ventana.hideTimer = setTimeout(() => {
+        ventana.hideTimer = null;
+        ventana.win.hide();
       }, EXIT_MS);
       return;
     }
 
     // Vuelve a haber algo que mostrar antes de que la ventana llegara a ocultarse.
-    if (this.hideTimer) {
-      clearTimeout(this.hideTimer);
-      this.hideTimer = null;
+    const ventana = this.ventanas.get(zona) ?? this.createWindow(zona);
+    if (ventana.hideTimer) {
+      clearTimeout(ventana.hideTimer);
+      ventana.hideTimer = null;
     }
-    const win = this.win ?? this.createWindow();
-    win.webContents.send(IpcEvent.OverlayState, this.state);
-    if (!win.isVisible()) win.showInactive();
+    ventana.win.webContents.send(IpcEvent.OverlayState, state);
+    if (!ventana.win.isVisible()) ventana.win.showInactive();
   }
 
-  private createWindow(): BrowserWindow {
+  private createWindow(zona: Zona): Ventana {
     const workArea = screen.getPrimaryDisplay().workArea;
+    const { width, height } = TAMANO[zona];
     const win = new BrowserWindow({
-      width: WIDTH,
-      height: HEIGHT,
-      x: workArea.x + workArea.width - WIDTH - MARGIN,
+      width,
+      height,
+      x:
+        zona === 'left'
+          ? workArea.x + MARGIN
+          : workArea.x + workArea.width - width - MARGIN,
       y: workArea.y + MARGIN,
       frame: false,
       transparent: true,
@@ -135,14 +166,17 @@ export class OverlayController {
     win.setIgnoreMouseEvents(true);
     // El estado se reenvía cuando la página termina de cargar (la primera vez llega tarde).
     win.webContents.on('did-finish-load', () => {
-      win.webContents.send(IpcEvent.OverlayState, this.state);
+      win.webContents.send(IpcEvent.OverlayState, this.estadoDe(zona));
     });
+    // Misma página en las dos: cada una recibe el estado filtrado y pinta lo que le toca.
     if (process.env['ELECTRON_RENDERER_URL']) {
       void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/overlay.html`);
     } else {
       void win.loadFile(join(__dirname, '../renderer/overlay.html'));
     }
-    this.win = win;
-    return win;
+
+    const ventana: Ventana = { win, hideTimer: null };
+    this.ventanas.set(zona, ventana);
+    return ventana;
   }
 }

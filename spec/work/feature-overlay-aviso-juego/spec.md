@@ -56,3 +56,13 @@ Observables y verificables uno a uno:
 - [x] Con el modo de grabación en "apagado" no aparece.
 - [x] Una hotkey desactivada (p. ej. capturas) no aparece como fila.
 - [x] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
+
+## Ajuste pedido por el owner (2026-07-11, tras probarlo en la app)
+
+El aviso pasa a la esquina **superior izquierda**, junto con el toast de "Clip guardado" (que adopta
+el mismo diseño de tarjeta); el indicador **REC se queda a la derecha**. El overlay pasa a ser **dos
+ventanas**, una por esquina, y cada una recibe el estado ya filtrado con lo que le toca
+(`overlayStateFor`, puro): la página sigue sin saber en qué esquina está.
+
+- [x] El aviso y el toast salen arriba a la izquierda; el REC, arriba a la derecha.
+- [x] El toast usa la misma tarjeta que el aviso (mismo fondo y misma animación de entrada/salida).

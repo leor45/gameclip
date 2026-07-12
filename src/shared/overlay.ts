@@ -2,6 +2,20 @@
 // overlay es una ventana aparte y no puede leer los ajustes) y se testea sin Electron ni libobs.
 
 import type { CaptureSettings } from './capture';
+import type { OverlayState } from './ipc';
+
+/** Las dos esquinas del overlay: avisos a la izquierda, indicador de grabación a la derecha. */
+export type OverlayZone = 'left' | 'right';
+
+/**
+ * Qué le toca pintar a cada esquina. El overlay son dos ventanas (una por esquina) y cada una recibe
+ * el estado ya filtrado: así la página sigue siendo una vista tonta, sin saber dónde está.
+ */
+export function overlayStateFor(zone: OverlayZone, state: OverlayState): OverlayState {
+  return zone === 'left'
+    ? { recording: false, toast: state.toast, notice: state.notice }
+    : { recording: state.recording, toast: null, notice: null };
+}
 
 export interface OverlayHotkey {
   /** Tecla tal como está configurada (F8, Ctrl+F9…). */

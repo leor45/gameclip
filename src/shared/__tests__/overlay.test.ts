@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS, type CaptureSettings } from '../capture';
-import { buildGameNotice, describeReplayDuration } from '../overlay';
+import { buildGameNotice, describeReplayDuration, overlayStateFor } from '../overlay';
 
 function ajustes(overrides: Partial<CaptureSettings> = {}): CaptureSettings {
   return { ...DEFAULT_CAPTURE_SETTINGS, ...overrides };
@@ -61,5 +61,29 @@ describe('buildGameNotice', () => {
     expect(
       buildGameNotice(ajustes({ replayHotkey: '', screenshotsEnabled: false })),
     ).toBeNull();
+  });
+});
+
+describe('overlayStateFor', () => {
+  const completo = {
+    recording: true,
+    toast: 'Clip guardado ✓',
+    notice: { title: 'Listo para clipear', hotkeys: [{ key: 'F8', label: 'Guardar' }] },
+  };
+
+  it('la esquina izquierda pinta los avisos, no el REC', () => {
+    expect(overlayStateFor('left', completo)).toEqual({
+      recording: false,
+      toast: 'Clip guardado ✓',
+      notice: completo.notice,
+    });
+  });
+
+  it('la esquina derecha pinta el REC, no los avisos', () => {
+    expect(overlayStateFor('right', completo)).toEqual({
+      recording: true,
+      toast: null,
+      notice: null,
+    });
   });
 });

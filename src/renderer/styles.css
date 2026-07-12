@@ -1015,10 +1015,6 @@ body {
   animation: overlay-blink 1.2s ease-in-out infinite;
 }
 
-.overlay-toast {
-  color: #7ee787;
-}
-
 @keyframes overlay-blink {
   0%,
   100% {
@@ -1029,9 +1025,10 @@ body {
   }
 }
 
-/* Aviso al detectarse el juego: entra deslizándose desde arriba y sale hacia arriba. */
+/* Tarjeta del overlay (aviso del juego y toast de clip guardado): entra deslizándose desde arriba
+   y sale hacia arriba. Las dos usan el mismo diseño: el overlay habla con una sola voz. */
 
-.overlay-notice {
+.overlay-card {
   width: 100%;
   box-sizing: border-box;
   background: rgba(17, 19, 24, 0.92);
@@ -1039,20 +1036,29 @@ body {
   border-radius: 12px;
   padding: 12px 14px;
   color: #fff;
-  animation: overlay-notice-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: overlay-card-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.overlay-notice.is-leaving {
-  animation: overlay-notice-out 280ms ease-in both;
+.overlay-card.is-leaving {
+  animation: overlay-card-out 280ms ease-in both;
 }
 
-.overlay-notice-title {
-  margin: 0 0 10px;
+.overlay-card-title {
+  margin: 0;
   font-size: 14px;
   font-weight: 700;
 }
 
-.overlay-notice-keys {
+/* Solo separa del título si hay hotkeys debajo. */
+.overlay-card-title:not(:last-child) {
+  margin-bottom: 10px;
+}
+
+.overlay-toast .overlay-card-title {
+  color: #7ee787;
+}
+
+.overlay-card-keys {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1062,14 +1068,14 @@ body {
   font-size: 13px;
 }
 
-.overlay-notice-keys li {
+.overlay-card-keys li {
   display: flex;
   align-items: center;
   gap: 10px;
   color: rgba(255, 255, 255, 0.85);
 }
 
-.overlay-notice-keys kbd {
+.overlay-card-keys kbd {
   min-width: 34px;
   text-align: center;
   padding: 3px 6px;
@@ -1081,7 +1087,7 @@ body {
   font-weight: 700;
 }
 
-@keyframes overlay-notice-in {
+@keyframes overlay-card-in {
   from {
     opacity: 0;
     transform: translateY(-110%);
@@ -1092,7 +1098,7 @@ body {
   }
 }
 
-@keyframes overlay-notice-out {
+@keyframes overlay-card-out {
   from {
     opacity: 1;
     transform: translateY(0);

@@ -46,17 +46,26 @@ describe('Overlay in-game', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('muestra el toast de clip guardado, también junto al indicador REC', () => {
+  it('el toast de clip guardado usa la misma tarjeta que el aviso', () => {
     render(<Overlay />);
 
     act(() => emitir(estado({ toast: 'Clip guardado ✓' })));
-    expect(screen.getByRole('status')).toHaveTextContent('Clip guardado ✓');
 
-    act(() => emitir(estado({ recording: true, toast: 'Clip guardado ✓' })));
-    const pills = screen.getAllByRole('status');
-    expect(pills).toHaveLength(2);
-    expect(pills[0]).toHaveTextContent('REC');
-    expect(pills[1]).toHaveTextContent('Clip guardado ✓');
+    const toast = screen.getByRole('status');
+    expect(toast).toHaveTextContent('Clip guardado ✓');
+    expect(toast.className).toContain('overlay-card');
+  });
+
+  it('al quitar el toast, se anima la salida y recién ahí se desmonta', () => {
+    render(<Overlay />);
+    act(() => emitir(estado({ toast: 'Clip guardado ✓' })));
+
+    act(() => emitir(estado({ toast: null })));
+    const toast = screen.getByRole('status');
+    expect(toast.className).toContain('is-leaving');
+
+    fireEvent.animationEnd(toast);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
 
