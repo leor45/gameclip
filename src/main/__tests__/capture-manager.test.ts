@@ -147,6 +147,88 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     expect(remuxCalls).toEqual([]);
   });
 
+  describe('perfil de captura (escritorio ↔ juego)', () => {
+    it('lanzar un juego cambia el perfil y reconstruye el pipeline apuntando al juego', async () => {
+      const manager = crear({ bufferMode: 'always' }); // escritorio + auto-switch (defaults)
+      await manager.initialize();
+      const buildsEnEscritorio = obs.buildCount;
+      expect(obs.ultimoGameExe).toBeNull(); // se construyó para escritorio
+
+      await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+      expect(obs.buildCount).toBe(buildsEnEscritorio + 1);
+      expect(obs.ultimoGameExe).toBe('cs2.exe');
+
+      // Al cerrarse el juego se vuelve al escritorio: otro rebuild, ya sin ejecutable.
+      await manager.setGameDetected(null);
+      expect(obs.buildCount).toBe(buildsEnEscritorio + 2);
+      expect(obs.ultimoGameExe).toBeNull();
+    });
+
+    it('sin auto-switch, lanzar un juego NO cambia el perfil (se sigue grabando el escritorio)', async () => {
+      const manager = crear({ bufferMode: 'always', desktopAutoSwitchToGame: false });
+      await manager.initialize();
+      const builds = obs.buildCount;
+
+      await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+      expect(obs.buildCount).toBe(builds); // mismo perfil 'desktop': nada que reconstruir
+      expect(obs.ultimoGameExe).toBeNull();
+    });
+
+    it('sin grabación de escritorio y sin juego: no se bufferiza ni se puede grabar', async () => {
+      const manager = crear({ bufferMode: 'always', desktopRecordingEnabled: false });
+      await manager.initialize();
+      expect(manager.getStatus().state).toBe('idle');
+      expect(obs.bufferActivo).toBe(false);
+
+      const trasGrabar = await manager.startRecording();
+      expect(trasGrabar.state).toBe('idle');
+      expect(trasGrabar.error).toContain('no hay nada que capturar');
+      expect(obs.llamadas).not.toContain('startRecording');
+
+      const trasReplay = await manager.saveReplay();
+      expect(trasReplay.error).toContain('no hay nada que capturar');
+      expect(obs.llamadas).not.toContain('saveReplay');
+    });
+
+    it('sin grabación de escritorio, el juego despierta la captura y su cierre la duerme', async () => {
+      const manager = crear({ bufferMode: 'always', desktopRecordingEnabled: false });
+      await manager.initialize();
+
+      await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+      expect(manager.getStatus().state).toBe('buffering');
+      expect(obs.ultimoGameExe).toBe('cs2.exe');
+
+      await manager.setGameDetected(null);
+      expect(manager.getStatus().state).toBe('idle');
+      expect(obs.bufferActivo).toBe(false);
+    });
+
+    it('un juego lanzado durante una grabación no la corta: el rebuild espera al final', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.startRecording();
+      const builds = obs.buildCount;
+
+      await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+      expect(manager.getStatus().state).toBe('recording'); // el clip sigue vivo
+      expect(obs.buildCount).toBe(builds); // rebuild aplazado
+
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(builds + 1); // ahora sí, ya en perfil de juego
+      expect(obs.ultimoGameExe).toBe('cs2.exe');
+    });
+
+    it('desactivar la grabación de escritorio en caliente detiene el buffer', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      expect(obs.bufferActivo).toBe(true);
+
+      await manager.setSettings({ desktopRecordingEnabled: false });
+      expect(manager.getStatus().state).toBe('idle');
+      expect(obs.bufferActivo).toBe(false);
+    });
+  });
+
   it("modo 'always': el buffer arranca en la init (comportamiento previo)", async () => {
     const manager = crear({ bufferMode: 'always' });
     await manager.initialize();
@@ -239,51 +321,61 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     expect(manager.getStatus()).toMatchObject({ state: 'buffering', error: null });
   });
 
-  it("modo 'apps' con audio de juego: el cambio de juego religa la fuente SIN reconstruir (el buffer sobrevive)", async () => {
+  it("modo 'apps' con audio de juego: rotar de juego religa la fuente SIN reconstruir (el buffer sobrevive)", async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
     await manager.initialize();
-    const buildsTrasInit = obs.buildCount;
 
-    // El detector emite el ejecutable real; se religa en caliente sin perder el buffer.
+    // Entrar al primer juego cambia el perfil (escritorio → juego): eso SÍ reconstruye.
     await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
-    expect(obs.buildCount).toBe(buildsTrasInit); // sin rebuild: el buffer conserva su contenido
-    expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
+    expect(obs.ultimoGameExe).toBe('cs2.exe');
+    const buildsEnJuego = obs.buildCount;
+
+    // Rotar a otro juego se queda en el mismo perfil: religado en caliente, sin rebuild.
+    await manager.setRunningGames([{ name: 'Valorant', executable: 'valorant.exe' }]);
+    expect(obs.buildCount).toBe(buildsEnJuego); // el buffer conserva su contenido
+    expect(obs.ultimoGameAudioTarget).toBe('valorant.exe');
     expect(manager.getStatus().state).toBe('buffering');
     expect(obs.bufferActivo).toBe(true);
-
-    await manager.setGameDetected(null);
-    expect(obs.ultimoGameAudioTarget).toBeNull();
   });
 
   it('sin ejecutable del detector cae al lookup inverso por nombre', async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
     await manager.initialize();
 
+    // Entrar al perfil de juego reconstruye: el pipeline recibe el ejecutable del lookup.
     await manager.setGameDetected('Valorant');
-    expect(obs.ultimoGameAudioTarget).toBe('valorant.exe');
+    expect(obs.ultimoGameExe).toBe('valorant.exe');
 
-    // Un rebuild posterior (guardar ajustes) recibe el ejecutable vigente.
+    // Y un rebuild posterior (guardar ajustes) sigue recibiendo el ejecutable vigente.
     await manager.setSettings({ fps: 30 });
     expect(obs.ultimoGameExe).toBe('valorant.exe');
+
+    // La rotación dentro del perfil de juego religa el audio con el exe del lookup.
+    await manager.setRunningGames([{ name: 'Counter-Strike 2', executable: 'cs2.exe' }]);
+    expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
   });
 
-  it("modo 'desktop': cambiar el juego NO religa audio ni reconstruye", async () => {
+  it("modo 'desktop': rotar de juego no religa audio (no hay fuente por proceso)", async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'desktop' });
     await manager.initialize();
-    const buildsTrasInit = obs.buildCount;
 
     await manager.setGameDetected('Valorant');
-    expect(obs.buildCount).toBe(buildsTrasInit);
+    const buildsEnJuego = obs.buildCount;
+
+    await manager.setRunningGames([{ name: 'Counter-Strike 2', executable: 'cs2.exe' }]);
+    expect(obs.buildCount).toBe(buildsEnJuego);
     expect(obs.updateGameAudioCount).toBe(0);
   });
 
-  it("modo 'apps' pero sin audio de juego: cambiar el juego no toca el pipeline", async () => {
+  it("modo 'apps' pero sin audio de juego: rotar de juego no religa audio", async () => {
     const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: false });
     await manager.initialize();
-    const buildsTrasInit = obs.buildCount;
 
     await manager.setGameDetected('Valorant');
-    expect(obs.buildCount).toBe(buildsTrasInit);
+    const buildsEnJuego = obs.buildCount;
+
+    await manager.setRunningGames([{ name: 'Counter-Strike 2', executable: 'cs2.exe' }]);
+    expect(obs.buildCount).toBe(buildsEnJuego);
     expect(obs.updateGameAudioCount).toBe(0);
   });
 
@@ -474,11 +566,12 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     it('rota el juego activo y religa el audio (modo apps) sin reconstruir', async () => {
       const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
       await manager.initialize();
-      const buildsTrasInit = obs.buildCount;
 
+      // Entrar al perfil de juego reconstruye una vez; el pipeline nuevo ya apunta al juego.
       await manager.setRunningGames([cs2, rl]);
       expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
-      expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
+      expect(obs.ultimoGameExe).toBe('cs2.exe');
+      const buildsEnJuego = obs.buildCount;
 
       await manager.switchGame();
       expect(manager.getStatus().detectedGame).toBe('Rocket League');
@@ -488,7 +581,8 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
       expect(obs.ultimoGameAudioTarget).toBe('cs2.exe');
 
-      expect(obs.buildCount).toBe(buildsTrasInit); // ningún rebuild: el buffer sobrevive
+      // Las rotaciones se quedan en el perfil de juego: ningún rebuild, el buffer sobrevive.
+      expect(obs.buildCount).toBe(buildsEnJuego);
     });
 
     it('con 0 o 1 juegos es no-op', async () => {

@@ -130,4 +130,39 @@ describe('Ajustes — Grabación', () => {
       expect.objectContaining({ desktopAutoSwitchToGame: false }),
     );
   });
+
+  it('desactivar la grabación de escritorio la guarda y deshabilita sus opciones', async () => {
+    const user = await irAGrabacion();
+
+    await user.click(screen.getByLabelText('Grabar el escritorio cuando no hay ningún juego'));
+
+    // El interruptor maestro apagado: sus controles hijos no tienen efecto y se deshabilitan.
+    expect(screen.getByLabelText('Monitor')).toBeDisabled();
+    expect(
+      screen.getByLabelText('Cambiar automáticamente a captura de juego al lanzarse un juego'),
+    ).toBeDisabled();
+    expect(screen.getByLabelText('Audio del clip de escritorio')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Grabar escritorio…' })).toBeDisabled();
+    expect(
+      screen.getByText('Solo se capturan juegos: sin un juego detectado no se graba nada.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ desktopRecordingEnabled: false }),
+    );
+  });
+
+  it('guarda las pistas de audio del clip de escritorio', async () => {
+    const user = await irAGrabacion();
+
+    await user.selectOptions(screen.getByLabelText('Audio del clip de escritorio'), 'separate');
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ desktopAudioTracks: 'separate' }),
+    );
+  });
 });

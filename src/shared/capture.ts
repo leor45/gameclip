@@ -19,6 +19,16 @@ export type RecordingQuality = 'high' | 'higher' | 'lossless';
 export type CaptureFps = 24 | 30 | 60 | 120 | 144;
 /** 'desktop': todo el audio del escritorio · 'apps': solo las apps elegidas (+ juego). */
 export type AudioMode = 'desktop' | 'apps';
+/** Pistas de una captura de escritorio: todo mezclado, o PC y micrófono por separado. */
+export type DesktopAudioTracks = 'mixed' | 'separate';
+/**
+ * Perfil de captura: qué se está grabando ahora mismo. Lo derivan los ajustes + la detección de
+ * juego, y de él salen la fuente de vídeo y las fuentes de audio.
+ * - 'game': solo el juego (game capture; el audio respeta los ajustes del usuario).
+ * - 'desktop': el monitor elegido, con TODO el audio del PC.
+ * - 'none': nada que capturar (escritorio desactivado y sin juego).
+ */
+export type CaptureProfile = 'game' | 'desktop' | 'none';
 /** Buffer de repetición. Hoy libobs siempre bufferiza en RAM; 'disk' queda preparado. */
 export type RecordingBufferKind = 'disk' | 'memory';
 /** 'game': ratio del monitor · resto: salida 16:9 (estirada, con barras o recortada). */
@@ -119,8 +129,12 @@ export interface CaptureSettings {
   customGames: string[];
   /** Monitor a grabar (índice de display; 0 = primario). */
   screenMonitorIndex: number;
-  /** Grabando escritorio: dejar que el game capture tome el control al lanzarse un juego. */
+  /** Grabar el escritorio cuando no hay juego. Apagado: sin juego no se captura nada. */
+  desktopRecordingEnabled: boolean;
+  /** Grabando escritorio: al lanzarse un juego, capturar solo el juego. */
   desktopAutoSwitchToGame: boolean;
+  /** Pistas de audio de una captura de escritorio (el audio siempre es el del PC entero). */
+  desktopAudioTracks: DesktopAudioTracks;
   /** Carpeta de salida; '' = default (Videos/GameClip). */
   outputDir: string;
   /** Límite de almacenamiento de clips en GB; 0 = sin límite. */
@@ -197,7 +211,9 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   screenshotHotkey: 'F6',
   customGames: [],
   screenMonitorIndex: 0,
+  desktopRecordingEnabled: true,
   desktopAutoSwitchToGame: true,
+  desktopAudioTracks: 'mixed',
   outputDir: '',
   storageLimitGb: 0,
   autoDeleteOldest: false,
@@ -305,6 +321,19 @@ function normalizeAudioApps(value: unknown): AudioAppCapture[] {
   return capActiveAudioApps(out);
 }
 
+/**
+ * Perfil de captura a partir de los ajustes y de si hay un juego detectado.
+ *
+ * - Sin grabación de escritorio: se captura el juego, y sin juego no se captura nada.
+ * - Con grabación de escritorio: el auto-switch decide si un juego detectado toma el control;
+ *   desmarcado, se sigue grabando el monitor aunque haya un juego corriendo.
+ */
+export function captureProfile(settings: CaptureSettings, gameDetected: boolean): CaptureProfile {
+  if (!settings.desktopRecordingEnabled) return gameDetected ? 'game' : 'none';
+  if (gameDetected && settings.desktopAutoSwitchToGame) return 'game';
+  return 'desktop';
+}
+
 // Acepta un parcial de origen no confiable (disco/IPC) y devuelve settings válidos,
 // cayendo al default campo a campo.
 export function normalizeCaptureSettings(input: unknown): CaptureSettings {
@@ -377,7 +406,9 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     screenshotHotkey,
     customGames: normalizeCustomGames(raw.customGames),
     screenMonitorIndex,
+    desktopRecordingEnabled: bool(raw.desktopRecordingEnabled, d.desktopRecordingEnabled),
     desktopAutoSwitchToGame: bool(raw.desktopAutoSwitchToGame, d.desktopAutoSwitchToGame),
+    desktopAudioTracks: oneOf(raw.desktopAudioTracks, ['mixed', 'separate'], d.desktopAudioTracks),
     outputDir: typeof raw.outputDir === 'string' ? raw.outputDir : d.outputDir,
     storageLimitGb,
     autoDeleteOldest: bool(raw.autoDeleteOldest, d.autoDeleteOldest),

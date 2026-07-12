@@ -4,9 +4,28 @@ import {
   DEFAULT_CAPTURE_SETTINGS,
   REPLAY_SECONDS_MAX,
   REPLAY_SECONDS_MIN,
+  captureProfile,
   normalizeCaptureSettings,
   orderedActiveAudioApps,
 } from '../capture';
+
+describe('captureProfile', () => {
+  const s = DEFAULT_CAPTURE_SETTINGS; // escritorio activo + auto-switch activo
+
+  it('con grabación de escritorio: el juego manda solo si el auto-switch está activo', () => {
+    expect(captureProfile(s, false)).toBe('desktop');
+    expect(captureProfile(s, true)).toBe('game');
+    expect(captureProfile({ ...s, desktopAutoSwitchToGame: false }, true)).toBe('desktop');
+  });
+
+  it('sin grabación de escritorio: se captura el juego, y sin juego no se captura nada', () => {
+    const soloJuego = { ...s, desktopRecordingEnabled: false };
+    expect(captureProfile(soloJuego, true)).toBe('game');
+    expect(captureProfile(soloJuego, false)).toBe('none');
+    // El auto-switch es irrelevante sin grabación de escritorio.
+    expect(captureProfile({ ...soloJuego, desktopAutoSwitchToGame: false }, true)).toBe('game');
+  });
+});
 
 describe('normalizeCaptureSettings', () => {
   it('devuelve defaults ante entrada nula o basura', () => {

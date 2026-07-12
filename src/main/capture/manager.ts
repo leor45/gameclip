@@ -2,10 +2,12 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync } from 'node:fs';
 import type {
   AudioDeviceInfo,
+  CaptureProfile,
   CaptureSettings,
   CaptureStatus,
   EncoderInfo,
 } from '@shared/capture';
+import { captureProfile } from '@shared/capture';
 import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
@@ -27,6 +29,10 @@ export function gameExecutableForName(game: string | null): string | null {
   }
   return null;
 }
+
+/** Motivo visible cuando el perfil es 'none' (escritorio desactivado y sin juego detectado). */
+export const NOTHING_TO_CAPTURE =
+  'Sin juego detectado y con la grabación de escritorio desactivada no hay nada que capturar.';
 
 export interface CaptureEnvironment {
   /** Carpeta de datos para libobs (config interna). */
@@ -101,6 +107,10 @@ export class CaptureManager extends EventEmitter {
   private activeGame: RunningGameMatch | null = null;
   /** Push-to-talk: ¿está pulsado el hotkey ahora mismo? */
   private micHeld = false;
+  /** Perfil con el que se construyó el pipeline vigente (null: aún no hay pipeline). */
+  private builtProfile: CaptureProfile | null = null;
+  /** Rebuild pendiente porque el perfil cambió durante una grabación (se hace al terminarla). */
+  private pendingRebuild = false;
 
   constructor(
     private readonly store: SettingsStore,
@@ -279,9 +289,10 @@ export class CaptureManager extends EventEmitter {
   }
 
   /**
-   * Aplica el juego activo: actualiza el estado, religa el audio en caliente (modo apps) y,
-   * según el modo de grabación, arranca/detiene la sesión (auto) o reconcilia el buffer
-   * (manual). Una grabación manual en curso nunca se interrumpe.
+   * Aplica el juego activo: actualiza el estado, reconstruye el pipeline si el perfil de captura
+   * cambió (escritorio ↔ juego), religa el audio en caliente (modo apps) y, según el modo de
+   * grabación, arranca/detiene la sesión (auto) o reconcilia el buffer (manual). Una grabación
+   * en curso nunca se interrumpe: el rebuild queda pendiente hasta que termine.
    */
   private async applyActiveGame(next: RunningGameMatch | null): Promise<void> {
     const prevName = this.activeGame?.name ?? null;
@@ -295,18 +306,36 @@ export class CaptureManager extends EventEmitter {
     if (!this.obs.isInitialized) return;
     const settings = this.getSettings();
 
-    // El audio del juego por proceso se religa en caliente (update de la fuente), sin
-    // reconstruir el pipeline: un rebuild destruiría el replay buffer y su contenido.
-    if (changed && settings.audioMode === 'apps' && settings.gameAudioEnabled) {
+    // Cambio de perfil (p. ej. escritorio → juego al lanzarse uno): la escena y las fuentes de
+    // audio son otras, así que hay que reconstruir. Con una grabación en curso se aplaza:
+    // cortar el clip a medias sería peor que grabarlo entero con el perfil anterior.
+    let rebuilt = false;
+    if (this.profileChanged()) {
+      if (this.status.state === 'recording') {
+        this.pendingRebuild = true;
+      } else {
+        try {
+          await this.rebuildPipeline();
+          rebuilt = true;
+        } catch (err) {
+          this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+    }
+
+    // Rotación DENTRO del perfil de juego (juego A → juego B): las fuentes se religan en caliente,
+    // sin reconstruir — un rebuild destruiría el replay buffer y su contenido. Si acabamos de
+    // reconstruir, el pipeline nuevo ya apunta al juego; y fuera del perfil de juego no hay a qué
+    // apuntar: en escritorio se captura el PC entero.
+    const rotacionDeJuego = changed && !rebuilt && this.builtProfile === 'game';
+    if (rotacionDeJuego && settings.audioMode === 'apps' && settings.gameAudioEnabled) {
       try {
         this.obs.updateGameAudioTarget(this.detectedGameExe);
       } catch (err) {
         this.setStatus({ error: err instanceof Error ? err.message : String(err) });
       }
     }
-    // Con captura de ventana forzada, el VIDEO también debe seguir al juego activo; si no,
-    // quedaría clavado en la ventana del juego anterior.
-    if (changed && settings.forceWindowCapture) {
+    if (rotacionDeJuego) {
       try {
         this.obs.updateGameCaptureTarget(this.detectedGameExe);
       } catch (err) {
@@ -381,7 +410,7 @@ export class CaptureManager extends EventEmitter {
     const exe = this.sessionGameExe ?? gameExecutableForName(game);
     const file = await this.finishSavedClip(raw, exe);
     this.sessionGameExe = null;
-    await this.reconcileBuffer();
+    await this.settleAfterRecording();
     this.setStatus({
       state: this.bufferRunning ? 'buffering' : 'idle',
       error: null,
@@ -392,6 +421,10 @@ export class CaptureManager extends EventEmitter {
 
   async startRecording(): Promise<CaptureStatus> {
     if (this.getSettings().recordingMode === 'off') return this.getStatus();
+    if (this.currentProfile() === 'none') {
+      this.setStatus({ error: NOTHING_TO_CAPTURE });
+      return this.getStatus();
+    }
     if (this.status.state !== 'buffering' && this.status.state !== 'idle') {
       return this.getStatus();
     }
@@ -410,7 +443,7 @@ export class CaptureManager extends EventEmitter {
       const raw = await this.obs.stopRecording();
       const file = await this.finishSavedClip(raw, this.detectedGameExe);
       this.sessionGameExe = null;
-      await this.reconcileBuffer();
+      await this.settleAfterRecording();
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',
         error: null,
@@ -428,6 +461,10 @@ export class CaptureManager extends EventEmitter {
 
   async saveReplay(): Promise<CaptureStatus> {
     if (this.getSettings().recordingMode === 'off') return this.getStatus();
+    if (this.currentProfile() === 'none') {
+      this.setStatus({ error: NOTHING_TO_CAPTURE });
+      return this.getStatus();
+    }
     if (this.status.state !== 'buffering' && this.status.state !== 'recording') {
       return this.getStatus();
     }
@@ -453,11 +490,23 @@ export class CaptureManager extends EventEmitter {
     return settings.outputDir || this.env.defaultOutputDir;
   }
 
+  /** Perfil de captura que toca ahora mismo (ajustes + juego detectado). */
+  private currentProfile(): CaptureProfile {
+    return captureProfile(this.getSettings(), this.detectedGameExe !== null);
+  }
+
+  /** ¿El perfil que toca difiere del que se construyó? (pipeline desactualizado) */
+  private profileChanged(): boolean {
+    return this.builtProfile !== null && this.builtProfile !== this.currentProfile();
+  }
+
   /** ¿Debería estar corriendo el buffer con los ajustes y el juego actuales? */
   private shouldBuffer(): boolean {
     const s = this.getSettings();
     // Modo off: nunca se bufferiza (las salidas quedan bloqueadas aunque libobs esté vivo).
     if (s.recordingMode === 'off') return false;
+    // Perfil 'none': no hay fuente de vídeo, no hay nada que bufferizar.
+    if (this.currentProfile() === 'none') return false;
     return s.bufferMode === 'always' || this.status.detectedGame !== null;
   }
 
@@ -469,6 +518,18 @@ export class CaptureManager extends EventEmitter {
   private async stopBuffer(): Promise<void> {
     await this.obs.stopReplayBuffer();
     this.bufferRunning = false;
+  }
+
+  /**
+   * Cierre de una grabación: si el perfil cambió mientras se grababa (un juego se lanzó o se
+   * cerró), ahora sí se reconstruye el pipeline; si no, basta con alinear el buffer.
+   */
+  private async settleAfterRecording(): Promise<void> {
+    if (this.pendingRebuild || this.profileChanged()) {
+      await this.rebuildPipeline();
+      return;
+    }
+    await this.reconcileBuffer();
   }
 
   /** Alinea el buffer con lo esperado (el juego pudo abrirse/cerrarse durante la grabación). */
@@ -485,6 +546,8 @@ export class CaptureManager extends EventEmitter {
     const screen =
       this.env.displayByIndex?.(settings.screenMonitorIndex) ?? this.env.primaryDisplay;
     this.obs.buildPipeline(settings, screen, outputDir, this.detectedGameExe);
+    this.builtProfile = captureProfile(settings, this.detectedGameExe !== null);
+    this.pendingRebuild = false;
     this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
     this.applyMicMute(); // el rebuild resetea el mute; re-aplicar el estado del PTT
     if (this.shouldBuffer()) {
