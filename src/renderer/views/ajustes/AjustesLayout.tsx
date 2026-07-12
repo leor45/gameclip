@@ -5,6 +5,7 @@ const SECCIONES = [
   { to: 'general', label: 'General' },
   { to: 'calidad', label: 'Calidad' },
   { to: 'audio', label: 'Audio' },
+  { to: 'atajos', label: 'Atajos' },
   { to: 'almacenamiento', label: 'Almacenamiento' },
   { to: 'avanzado', label: 'Avanzado' },
   { to: 'desarrollo', label: 'Desarrollo' },

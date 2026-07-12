@@ -7,6 +7,7 @@ import CaptureBar from './components/CaptureBar';
 import Sidebar from './components/Sidebar';
 import AjustesLayout from './views/ajustes/AjustesLayout';
 import AjustesAlmacenamiento from './views/ajustes/Almacenamiento';
+import AjustesAtajos from './views/ajustes/Atajos';
 import AjustesAudio from './views/ajustes/Audio';
 import AjustesAvanzado from './views/ajustes/Avanzado';
 import AjustesCalidad from './views/ajustes/Calidad';
@@ -43,6 +44,7 @@ function Shell() {
               <Route path="general" element={<AjustesGeneral />} />
               <Route path="calidad" element={<AjustesCalidad />} />
               <Route path="audio" element={<AjustesAudio />} />
+              <Route path="atajos" element={<AjustesAtajos />} />
               <Route path="almacenamiento" element={<AjustesAlmacenamiento />} />
               <Route path="avanzado" element={<AjustesAvanzado />} />
               <Route path="desarrollo" element={<AjustesDesarrollo />} />
