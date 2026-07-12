@@ -66,6 +66,19 @@ export function buildAudioEditArgs(job: AudioEditJob): string[] {
   ];
 }
 
+/** Reintentos del rename y espera entre ellos; inyectables en tests. */
+export interface AudioEditDeps {
+  rename?: (from: string, to: string) => void;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Cuántas veces se reintenta el rename y cuánto se espera entre intentos (backoff lineal). */
+const RENAME_ATTEMPTS = 6;
+const RENAME_DELAY_MS = 150;
+
+/** Códigos con los que Windows avisa de que el archivo está tomado por alguien. */
+const BLOQUEADO = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
 /**
  * Reescribe la mezcla del clip **en su sitio**: ffmpeg escribe un temporal y solo si termina bien
  * se renombra sobre el original (mismo volumen → atómico). Si algo falla, el clip queda intacto.
@@ -76,6 +89,7 @@ export async function runAudioEdit(
   file: string,
   tracks: ClipAudioTrack[],
   activeTracks: number[],
+  deps: AudioEditDeps = {},
 ): Promise<void> {
   const tmp = join(dirname(file), `.gameclip-edit-${process.pid}-${Date.now()}.mp4`);
   try {
@@ -85,10 +99,40 @@ export async function runAudioEdit(
       buildAudioEditArgs({ inputPath: file, outputPath: tmp, tracks, activeTracks }),
     );
     if (code !== 0) throw new Error(lastLine(stderr) || `ffmpeg terminó con código ${code}.`);
-    renameSync(tmp, file);
+    await renameWithRetry(tmp, file, deps);
   } catch (err) {
     rmSync(tmp, { force: true });
     throw err instanceof Error ? err : new Error(String(err));
+  }
+}
+
+/**
+ * Renombra reintentando mientras el destino esté tomado. Windows **no deja renombrar sobre un
+ * archivo abierto**, y el clip lo tiene abierto la propia app mientras el reproductor del editor lo
+ * está leyendo (protocolo de medios con `stream`). El editor lo suelta antes de guardar, pero cerrar
+ * el handle es asíncrono; los reintentos cubren esa ventana — y de paso los bloqueos ajenos y
+ * transitorios (indexador de Windows, antivirus).
+ */
+async function renameWithRetry(from: string, to: string, deps: AudioEditDeps): Promise<void> {
+  const rename = deps.rename ?? renameSync;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+
+  for (let intento = 1; intento <= RENAME_ATTEMPTS; intento++) {
+    try {
+      rename(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (!BLOQUEADO.has(code)) throw err;
+      if (intento === RENAME_ATTEMPTS) {
+        // El EPERM crudo no le dice nada al usuario; el motivo real sí.
+        throw new Error(
+          'El archivo del clip está en uso y no se pudo reemplazar. Cerrá el clip en otro ' +
+            'reproductor (o esperá unos segundos) y volvé a intentar.',
+        );
+      }
+      await sleep(RENAME_DELAY_MS * intento);
+    }
   }
 }
 

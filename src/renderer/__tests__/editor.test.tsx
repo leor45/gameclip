@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Editor from '../views/Editor';
 import { crearClip } from './helpers';
 import { crearGameclipMock } from './setup';
@@ -14,6 +14,10 @@ function mock(): GameclipMock {
 
 beforeEach(() => {
   Object.defineProperty(window, 'gameclip', { writable: true, value: crearGameclipMock() });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 function renderEditor(ruta: string) {
@@ -189,6 +193,44 @@ describe('Editor — pistas de audio', () => {
     expect(await screen.findByText('Edit guardado ✓')).toBeInTheDocument();
     // el archivo se reescribió: la URL cambia para que Chromium no sirva el video cacheado
     expect(src()).not.toBe(antes);
+  });
+
+  // Regresión: Windows no deja renombrar sobre un archivo abierto. Mientras el <video> tenga el clip
+  // cargado, la app misma lo mantiene tomado y el guardado moría con EPERM.
+  it('regresión: suelta el <video> ANTES de pedir el guardado, y lo recarga después', async () => {
+    const user = userEvent.setup();
+    await prepararConPistas();
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+
+    let srcAlGuardar: string | null | undefined;
+    mock().editor.saveAudioEdit.mockImplementation(() => {
+      srcAlGuardar = document.querySelector('video')?.getAttribute('src') ?? null;
+      return Promise.resolve({ status: 'done', mutedTracks: [] });
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Guardar edit' }));
+
+    expect(srcAlGuardar).toBeNull(); // el archivo ya no estaba abierto por el reproductor
+    expect(HTMLMediaElement.prototype.load).toHaveBeenCalled();
+    // y al terminar, el clip vuelve a estar cargado
+    expect(document.querySelector('video')?.getAttribute('src')).toContain('gameclip-media://clip/7');
+  });
+
+  it('tras un error al guardar, el reproductor vuelve a cargar el clip (no queda en negro)', async () => {
+    const user = userEvent.setup();
+    await prepararConPistas();
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    mock().editor.saveAudioEdit.mockResolvedValue({
+      status: 'error',
+      message: 'El archivo del clip está en uso y no se pudo reemplazar.',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Guardar edit' }));
+
+    expect(await screen.findByText(/está en uso/)).toBeInTheDocument();
+    expect(document.querySelector('video')?.getAttribute('src')).toContain('gameclip-media://clip/7');
   });
 
   it('un fallo de ffmpeg al guardar el edit se muestra', async () => {
