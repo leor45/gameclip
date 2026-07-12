@@ -4,6 +4,7 @@ import {
   findRunningGame,
   findRunningGamesMatch,
   isManualGame,
+  resolveGameName,
 } from '../games';
 
 describe('findRunningGame', () => {
@@ -50,29 +51,44 @@ describe('findRunningGamesMatch (multi-juego)', () => {
 
   it('combina la lista curada con los ejecutables manuales', () => {
     const procesos = ['MiJuego.exe', 'cs2.exe'];
-    expect(findRunningGamesMatch(procesos, ['MiJuego.exe'])).toEqual([
+    const customGames = [{ executable: 'MiJuego.exe' }];
+    expect(findRunningGamesMatch(procesos, { customGames })).toEqual([
       { name: 'MiJuego', executable: 'mijuego.exe' },
       { name: 'Counter-Strike 2', executable: 'cs2.exe' },
     ]);
   });
 
-  it('el nombre visible de un juego manual sale de su entrada en customGames (sin extensión)', () => {
-    // El nombre conserva la capitalización de lo escrito por el usuario, no la del proceso.
-    expect(findRunningGamesMatch(['Otro.exe'], ['Otro'])).toEqual([
+  it('un juego manual con nombre propio se muestra con ese nombre', () => {
+    const customGames = [{ executable: 'MilesMorales.exe', name: 'Spiderman' }];
+    expect(findRunningGamesMatch(['MilesMorales.exe'], { customGames })).toEqual([
+      { name: 'Spiderman', executable: 'milesmorales.exe' },
+    ]);
+  });
+
+  it('un juego manual SIN nombre se sigue llamando como su ejecutable (sin regresión)', () => {
+    // El nombre conserva la capitalización de lo escrito por el owner, no la del proceso.
+    expect(findRunningGamesMatch(['Otro.exe'], { customGames: [{ executable: 'Otro' }] })).toEqual([
       { name: 'Otro', executable: 'otro.exe' },
     ]);
-    expect(findRunningGamesMatch(['Otro.exe'], ['otro'])).toEqual([
+    expect(findRunningGamesMatch(['Otro.exe'], { customGames: [{ executable: 'otro' }] })).toEqual([
       { name: 'otro', executable: 'otro.exe' },
     ]);
   });
 
   it('acepta procesos y manuales sin .exe y en cualquier capitalización', () => {
-    expect(findRunningGamesMatch(['CS2'], [])).toEqual([
+    expect(findRunningGamesMatch(['CS2'])).toEqual([
       { name: 'Counter-Strike 2', executable: 'cs2.exe' },
     ]);
     // Matchea sin importar la capitalización; el nombre visible es el de customGames.
-    expect(findRunningGamesMatch(['JUEGO'], ['Juego.EXE'])).toEqual([
-      { name: 'Juego', executable: 'juego.exe' },
+    expect(findRunningGamesMatch(['JUEGO'], { customGames: [{ executable: 'Juego.EXE' }] })).toEqual(
+      [{ name: 'Juego', executable: 'juego.exe' }],
+    );
+  });
+
+  it('un juego manual dado de alta con la ruta completa también matchea (basename)', () => {
+    const customGames = [{ executable: "F:\\SteamLibrary\\common\\Spidey\\MilesMorales.exe" }];
+    expect(findRunningGamesMatch(['MilesMorales.exe'], { customGames })).toEqual([
+      { name: 'MilesMorales', executable: 'milesmorales.exe' },
     ]);
   });
 
@@ -88,18 +104,75 @@ describe('findRunningGamesMatch (multi-juego)', () => {
   });
 });
 
+describe('juegos del índice de launchers (regresión: solo se detectaba la lista curada)', () => {
+  // El bug: la ÚNICA fuente de juegos era KNOWN_GAME_PROCESSES, así que cualquier juego instalado
+  // que no estuviera en esa tabla no se detectaba nunca y había que añadirlo a mano.
+  const index = {
+    pioneergame: 'ARC Raiders',
+    milesmorales: "Marvel's Spider-Man: Miles Morales",
+  };
+
+  it('detecta un juego que solo conoce el índice, y lo nombra con el nombre del catálogo', () => {
+    const procesos = ['explorer.exe', 'PioneerGame.exe', 'chrome.exe'];
+    expect(findRunningGamesMatch(procesos, { index })).toEqual([
+      { name: 'ARC Raiders', executable: 'pioneergame.exe' },
+    ]);
+  });
+
+  it('el ejecutable sigue siendo la identidad interna, aunque no se parezca al nombre', () => {
+    const [juego] = findRunningGamesMatch(['MilesMorales.exe'], { index });
+    expect(juego.executable).toBe('milesmorales.exe');
+    expect(juego.name).toBe("Marvel's Spider-Man: Miles Morales");
+  });
+});
+
+describe('resolveGameName (prioridad de nombres)', () => {
+  const index = { milesmorales: "Marvel's Spider-Man: Miles Morales", cs2: 'CS2 (del índice)' };
+
+  it('el nombre manual del owner gana a todo', () => {
+    const customGames = [{ executable: 'MilesMorales.exe', name: 'Spiderman' }];
+    expect(resolveGameName('milesmorales.exe', { customGames, index })).toBe('Spiderman');
+  });
+
+  it('sin nombre manual, gana el índice de launchers', () => {
+    const customGames = [{ executable: 'MilesMorales.exe' }];
+    expect(resolveGameName('milesmorales.exe', { customGames, index })).toBe(
+      "Marvel's Spider-Man: Miles Morales",
+    );
+  });
+
+  it('el índice gana a la lista curada (es el juego realmente instalado)', () => {
+    expect(resolveGameName('cs2.exe', { index })).toBe('CS2 (del índice)');
+    expect(resolveGameName('cs2.exe')).toBe('Counter-Strike 2'); // sin índice, la curada
+  });
+
+  it('sin nada que lo identifique, el nombre es el ejecutable sin extensión', () => {
+    expect(resolveGameName('MiJuego.exe')).toBe('MiJuego');
+  });
+});
+
 describe('isManualGame', () => {
-  it('es manual si su nombre coincide con un ejecutable de la lista del usuario', () => {
-    expect(isManualGame('MiJuego', ['MiJuego.exe'])).toBe(true);
-    expect(isManualGame('mijuego', ['MIJUEGO.EXE'])).toBe(true); // NTFS ignora la capitalización
+  it('es manual si su nombre coincide con un ejecutable de la lista del owner', () => {
+    expect(isManualGame('MiJuego', { customGames: [{ executable: 'MiJuego.exe' }] })).toBe(true);
+    // NTFS ignora la capitalización.
+    expect(isManualGame('mijuego', { customGames: [{ executable: 'MIJUEGO.EXE' }] })).toBe(true);
+  });
+
+  it('sigue siendo manual aunque su nombre venga del índice o lo pusiera el owner', () => {
+    const index = { milesmorales: "Marvel's Spider-Man: Miles Morales" };
+    const customGames = [{ executable: 'MilesMorales.exe' }];
+    expect(isManualGame("Marvel's Spider-Man: Miles Morales", { customGames, index })).toBe(true);
+
+    const conNombre = [{ executable: 'MilesMorales.exe', name: 'Spiderman' }];
+    expect(isManualGame('Spiderman', { customGames: conNombre, index })).toBe(true);
   });
 
   it('un juego de la lista curada no es manual', () => {
-    expect(isManualGame('Terraria', ['MiJuego.exe'])).toBe(false);
-    expect(isManualGame('Terraria', [])).toBe(false);
+    expect(isManualGame('Terraria', { customGames: [{ executable: 'MiJuego.exe' }] })).toBe(false);
+    expect(isManualGame('Terraria', {})).toBe(false);
   });
 
   it('sin juego activo no hay nada que marcar', () => {
-    expect(isManualGame(null, ['MiJuego.exe'])).toBe(false);
+    expect(isManualGame(null, { customGames: [{ executable: 'MiJuego.exe' }] })).toBe(false);
   });
 });

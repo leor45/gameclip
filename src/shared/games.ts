@@ -70,6 +70,40 @@ export const KNOWN_GAME_PROCESSES: Record<string, string> = {
 /** Intervalo de sondeo de procesos por defecto. */
 export const GAME_POLL_INTERVAL_MS = 5000;
 
+/** Juego añadido a mano: el ejecutable es la identidad; el nombre, opcional, es solo presentación. */
+export interface CustomGame {
+  /** Ejecutable del juego (p. ej. `MilesMorales.exe`). */
+  executable: string;
+  /** Nombre elegido por el owner. Vacío/ausente: se deduce (índice → lista curada → ejecutable). */
+  name?: string;
+}
+
+/**
+ * Juegos instalados que la app encontró en los launchers del PC (Steam, Epic, …).
+ * Clave: el ejecutable normalizado (`exeKey`). Valor: el nombre del catálogo.
+ * Es lo que permite detectar un juego que no está en la lista curada, y nombrarlo bien:
+ * `pioneergame` → `ARC Raiders`.
+ */
+export type GameIndex = Record<string, string>;
+
+/** De dónde salen los nombres de los juegos. Todo opcional: sin nada, se cae a la lista curada. */
+export interface GameNameContext {
+  customGames?: CustomGame[];
+  index?: GameIndex;
+}
+
+/** Clave de un ejecutable: sin carpeta, sin extensión, en minúsculas. `D:\X\CS2.EXE` → `cs2`. */
+export function exeKey(executable: string): string {
+  const base = executable.trim().split(/[\\/]/).pop() ?? '';
+  return base.toLowerCase().replace(/\.exe$/, '');
+}
+
+/** El ejecutable sin carpeta ni extensión, conservando la capitalización: `D:\X\CS2.exe` → `CS2`. */
+function exeBaseName(executable: string): string {
+  const base = executable.trim().split(/[\\/]/).pop() ?? '';
+  return base.replace(/\.exe$/i, '');
+}
+
 export interface RunningGameMatch {
   /** Nombre para mostrar y catalogar. */
   name: string;
@@ -78,54 +112,80 @@ export interface RunningGameMatch {
 }
 
 /**
- * Devuelve TODOS los juegos conocidos en ejecución (lista curada + ejecutables manuales),
- * sin duplicados por nombre y en el orden de aparición en la lista de procesos. Acepta
- * nombres con o sin `.exe` y en cualquier capitalización. El nombre visible de un juego
- * manual es su ejecutable sin extensión.
+ * Nombre visible de un juego a partir de su ejecutable. **Única fuente de verdad del nombre**:
+ * lo usan la detección, la barra de captura, los ajustes y el naming de los clips.
+ *
+ *   nombre manual del owner → índice de launchers → lista curada → ejecutable sin extensión
+ *
+ * El `FileDescription` del `.exe` no entra aquí: leerlo toca el disco, así que se consulta solo
+ * al dar de alta un juego a mano (para pre-rellenar el nombre), nunca en el sondeo.
+ */
+export function resolveGameName(executable: string, ctx: GameNameContext = {}): string {
+  const key = exeKey(executable);
+  const manual = (ctx.customGames ?? []).find((g) => exeKey(g.executable) === key);
+  const manualName = manual?.name?.trim();
+  if (manualName) return manualName;
+  return ctx.index?.[key] ?? KNOWN_GAME_PROCESSES[key] ?? exeBaseName(manual?.executable ?? executable);
+}
+
+/**
+ * Devuelve TODOS los juegos en ejecución —los que conoce el índice de launchers, la lista curada
+ * o la lista de juegos manuales—, sin duplicados por nombre y en el orden de aparición en la lista
+ * de procesos. Acepta nombres con o sin `.exe` y en cualquier capitalización.
  */
 export function findRunningGamesMatch(
   processNames: string[],
-  customGames: string[] = [],
+  ctx: GameNameContext = {},
 ): RunningGameMatch[] {
-  const custom = new Map<string, string>();
-  for (const exe of customGames) {
-    const key = exe.trim().toLowerCase().replace(/\.exe$/, '');
-    if (key) custom.set(key, exe.trim().replace(/\.exe$/i, ''));
+  const custom = new Map<string, CustomGame>();
+  for (const juego of ctx.customGames ?? []) {
+    const key = exeKey(juego.executable);
+    if (key) custom.set(key, juego);
   }
 
   const out: RunningGameMatch[] = [];
   const seen = new Set<string>();
   for (const raw of processNames) {
-    const name = raw.trim().toLowerCase().replace(/\.exe$/, '');
-    if (!name) continue;
-    const game = KNOWN_GAME_PROCESSES[name] ?? custom.get(name);
-    if (!game || seen.has(game)) continue;
-    seen.add(game);
-    out.push({ name: game, executable: `${name}.exe` });
+    const key = exeKey(raw);
+    if (!key) continue;
+    const manual = custom.get(key);
+    const esJuego = manual !== undefined || key in (ctx.index ?? {}) || key in KNOWN_GAME_PROCESSES;
+    if (!esJuego) continue;
+    // El nombre de un juego manual se resuelve desde SU entrada, que conserva la capitalización
+    // que escribió el owner; la del proceso la impone tasklist.
+    const name = resolveGameName(manual?.executable ?? raw, ctx);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ name, executable: `${key}.exe` });
   }
   return out;
 }
 
 /**
- * ¿El juego activo lo añadió el usuario a mano, o lo reconoció la lista curada? No hace falta un
- * campo nuevo en el estado: el nombre visible de un juego manual **es su ejecutable sin `.exe`**
- * (ver `findRunningGamesMatch`), así que basta cruzarlo con la lista de ejecutables de los ajustes.
+ * ¿El juego activo lo añadió el owner a mano, o lo reconoció la app sola? Se cruza el nombre visible
+ * con el que resolvería cada juego manual: así funciona igual lleve nombre propio, venga del índice
+ * o se llame como su ejecutable.
  */
-export function isManualGame(name: string | null, customGames: string[]): boolean {
+export function isManualGame(name: string | null, ctx: GameNameContext = {}): boolean {
   if (!name) return false;
   const key = name.trim().toLowerCase();
-  return customGames.some((exe) => exe.trim().toLowerCase().replace(/\.exe$/, '') === key);
+  return (ctx.customGames ?? []).some(
+    (juego) => resolveGameName(juego.executable, ctx).trim().toLowerCase() === key,
+  );
 }
 
 /**
- * Busca un juego conocido en una lista de nombres de proceso. Acepta nombres con o sin
- * `.exe` y en cualquier capitalización; devuelve el match (nombre + ejecutable) o null.
+ * Busca un juego en una lista de nombres de proceso. Acepta nombres con o sin `.exe` y en
+ * cualquier capitalización; devuelve el match (nombre + ejecutable) o null.
  */
-export function findRunningGameMatch(processNames: string[]): RunningGameMatch | null {
-  return findRunningGamesMatch(processNames)[0] ?? null;
+export function findRunningGameMatch(
+  processNames: string[],
+  ctx: GameNameContext = {},
+): RunningGameMatch | null {
+  return findRunningGamesMatch(processNames, ctx)[0] ?? null;
 }
 
 /** Compat: solo el nombre para mostrar. */
-export function findRunningGame(processNames: string[]): string | null {
-  return findRunningGameMatch(processNames)?.name ?? null;
+export function findRunningGame(processNames: string[], ctx: GameNameContext = {}): string | null {
+  return findRunningGameMatch(processNames, ctx)?.name ?? null;
 }

@@ -35,6 +35,82 @@ function video(nombre: string): string {
   return ruta;
 }
 
+describe('LibraryManager — re-etiquetado de juegos', () => {
+  const index = { acblackflag: "Assassin's Creed Black Flag Resynced" };
+
+  /** Un clip dentro de la carpeta `<juego>/`, tal como lo guarda la captura. */
+  function clipEnCarpeta(carpeta: string, nombre: string): string {
+    mkdirSync(join(outputDir, carpeta), { recursive: true });
+    const ruta = join(outputDir, carpeta, nombre);
+    writeFileSync(ruta, 'contenido-de-video');
+    return ruta;
+  }
+
+  function conIndice() {
+    return new LibraryManager(repo, {
+      thumbnailsDir: join(dir, 'thumbs'),
+      gameNames: () => ({ index }),
+    });
+  }
+
+  it('un clip viejo guardado bajo el ejecutable pasa a llevar el nombre real del juego', () => {
+    // Catalogado antes de existir el índice: su carpeta es el ejecutable, y así se etiquetó.
+    clipEnCarpeta('acblackflag', 'acblackflag 2026.07.01 - 21.30.00.00.mp4');
+    const sinIndice = crearManager();
+    sinIndice.reconcile(outputDir);
+    expect(sinIndice.games()).toEqual(['acblackflag']);
+
+    // Con el índice ya construido: mismo fichero, mismo sitio, nombre bueno.
+    const cambiados = conIndice().relabelGames(outputDir);
+
+    expect(cambiados).toBe(1);
+    expect(repo.list()[0].game).toBe("Assassin's Creed Black Flag Resynced");
+    expect(existsSync(join(outputDir, 'acblackflag'))).toBe(true); // no se movió nada del disco
+  });
+
+  it('los clips viejos y los nuevos quedan bajo la MISMA entrada de la biblioteca', () => {
+    // La carpeta vieja lleva el ejecutable; la nueva, el nombre saneado. Las dos son el mismo juego.
+    clipEnCarpeta('acblackflag', 'viejo.mp4');
+    clipEnCarpeta("Assassin's Creed Black Flag Resynced", 'nuevo.mp4');
+
+    const manager = conIndice();
+    manager.reconcile(outputDir);
+    manager.relabelGames(outputDir);
+
+    expect(manager.games()).toEqual(["Assassin's Creed Black Flag Resynced"]);
+  });
+
+  it('es idempotente: la segunda pasada no cambia nada', () => {
+    clipEnCarpeta('acblackflag', 'clip.mp4');
+    crearManager().reconcile(outputDir); // catálogo viejo: se etiquetó sin índice
+
+    const manager = conIndice();
+    expect(manager.relabelGames(outputDir)).toBe(1);
+    expect(manager.relabelGames(outputDir)).toBe(0);
+  });
+
+  it('el nombre que puso el owner a mano gana al del catálogo', () => {
+    clipEnCarpeta('acblackflag', 'clip.mp4');
+    const manager = new LibraryManager(repo, {
+      thumbnailsDir: join(dir, 'thumbs'),
+      gameNames: () => ({ index, customGames: [{ executable: 'ACBlackFlag.exe', name: 'AC4' }] }),
+    });
+    manager.reconcile(outputDir);
+    manager.relabelGames(outputDir);
+
+    expect(manager.games()).toEqual(['AC4']);
+  });
+
+  it('los clips de escritorio siguen sin juego', () => {
+    clipEnCarpeta('Desktop', 'escritorio.mp4');
+    const manager = conIndice();
+    manager.reconcile(outputDir);
+
+    expect(manager.relabelGames(outputDir)).toBe(0);
+    expect(repo.list()[0].game).toBeNull();
+  });
+});
+
 describe('LibraryManager — ingesta', () => {
   it('registra un clip guardado con juego detectado y emite changed', async () => {
     const manager = crearManager('Valorant');

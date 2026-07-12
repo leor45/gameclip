@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { isManualGame } from '@shared/games';
+import type { GameIndex } from '@shared/games';
 
 const STATE_LABEL: Record<CaptureStatus['state'], string> = {
   unavailable: 'Captura no disponible',
@@ -25,6 +26,7 @@ const DURACIONES: { seconds: number; label: string }[] = [
 export default function CaptureBar() {
   const [status, setStatus] = useState<CaptureStatus | null>(null);
   const [settings, setSettings] = useState<CaptureSettings | null>(null);
+  const [index, setIndex] = useState<GameIndex>({});
   const [ocupado, setOcupado] = useState(false);
 
   useEffect(() => {
@@ -34,6 +36,10 @@ export default function CaptureBar() {
     });
     window.gameclip.capture.getSettings().then((s) => {
       if (vivo) setSettings(s);
+    });
+    // El índice hace falta para saber si el juego activo es manual: su nombre puede venir de ahí.
+    window.gameclip.games.getIndex().then((i) => {
+      if (vivo) setIndex(i);
     });
     const offStatus = window.gameclip.capture.onStatusChanged(setStatus);
     // Cambiar la duración (o los juegos manuales) desde Ajustes se refleja aquí en el acto.
@@ -50,7 +56,7 @@ export default function CaptureBar() {
   const grabando = status.state === 'recording';
   const activo = status.state === 'buffering' || grabando;
   const juego = status.detectedGame;
-  const manual = isManualGame(juego, settings?.customGames ?? []);
+  const manual = isManualGame(juego, { customGames: settings?.customGames ?? [], index });
 
   async function accion(fn: () => Promise<CaptureStatus>) {
     setOcupado(true);

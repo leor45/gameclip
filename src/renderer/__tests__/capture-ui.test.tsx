@@ -97,7 +97,7 @@ describe('CaptureBar — indicador de juego', () => {
 
   it('un juego de la lista curada no se marca como manual', async () => {
     conJuego('Valorant');
-    conAjustes({ customGames: ['MiJuego.exe'] });
+    conAjustes({ customGames: [{ executable: 'MiJuego.exe' }] });
     render(<CaptureBar />);
 
     await screen.findByText('Valorant');
@@ -105,9 +105,17 @@ describe('CaptureBar — indicador de juego', () => {
   });
 
   it('un juego añadido a mano se marca como manual', async () => {
-    // El nombre visible de un juego manual es su ejecutable sin .exe.
+    // Sin nombre propio, un juego manual se llama como su ejecutable sin .exe.
     conJuego('MiJuego');
-    conAjustes({ customGames: ['MiJuego.exe'] });
+    conAjustes({ customGames: [{ executable: 'MiJuego.exe' }] });
+    render(<CaptureBar />);
+
+    expect(await screen.findByText('manual')).toBeInTheDocument();
+  });
+
+  it('un juego manual con nombre propio se sigue marcando como manual', async () => {
+    conJuego('Spiderman');
+    conAjustes({ customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }] });
     render(<CaptureBar />);
 
     expect(await screen.findByText('manual')).toBeInTheDocument();

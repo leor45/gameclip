@@ -134,6 +134,52 @@ describe('normalizeCaptureSettings', () => {
   });
 });
 
+describe('normalizeCaptureSettings — juegos manuales', () => {
+  it('migra la forma vieja (array de strings) sin perder los juegos ya dados de alta', () => {
+    const { customGames } = normalizeCaptureSettings({
+      customGames: ['ACBlackFlag.exe', 'MilesMorales.exe'],
+    });
+    expect(customGames).toEqual([
+      { executable: 'ACBlackFlag.exe' },
+      { executable: 'MilesMorales.exe' },
+    ]);
+  });
+
+  it('acepta la forma nueva, con nombre opcional', () => {
+    const { customGames } = normalizeCaptureSettings({
+      customGames: [
+        { executable: 'MilesMorales.exe', name: 'Spiderman' },
+        { executable: 'MiJuego.exe' },
+      ],
+    });
+    expect(customGames).toEqual([
+      { executable: 'MilesMorales.exe', name: 'Spiderman' },
+      { executable: 'MiJuego.exe' },
+    ]);
+  });
+
+  it('un nombre vacío o en blanco es como no tener nombre', () => {
+    const { customGames } = normalizeCaptureSettings({
+      customGames: [{ executable: 'MiJuego.exe', name: '   ' }],
+    });
+    expect(customGames).toEqual([{ executable: 'MiJuego.exe' }]);
+  });
+
+  it('deduplica por ejecutable (ignorando ruta, extensión y capitalización) y descarta basura', () => {
+    const { customGames } = normalizeCaptureSettings({
+      customGames: [
+        { executable: 'MiJuego.exe', name: 'Bueno' },
+        'MIJUEGO.EXE',
+        'D:\\Games\\MiJuego\\MiJuego.exe',
+        { executable: '   ' },
+        42,
+        null,
+      ],
+    });
+    expect(customGames).toEqual([{ executable: 'MiJuego.exe', name: 'Bueno' }]);
+  });
+});
+
 describe('orderedActiveAudioApps', () => {
   it('devuelve solo las activas, fijas primero, luego de usuario en su orden', () => {
     const apps = [

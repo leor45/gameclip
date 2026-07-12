@@ -3,7 +3,7 @@ import { BrowserWindow, app, dialog, globalShortcut, protocol, shell } from 'ele
 import Database from 'better-sqlite3-electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { SERVER_PORT } from '@shared/config';
-import type { RunningGameMatch } from '@shared/games';
+import type { GameNameContext, RunningGameMatch } from '@shared/games';
 import type { HotkeyKey } from '@shared/hotkeys';
 import { HOTKEY_ACTIONS, hotkeyCollisions, isHotkeyActive } from '@shared/hotkeys';
 import { IpcEvent } from '@shared/ipc';
@@ -21,6 +21,8 @@ import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
+import { GameIndexService } from './games';
+import { suggestGameName } from './games/suggest';
 import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
@@ -61,6 +63,23 @@ if (!settingsStore.load().hardwareAcceleration) {
   console.log('[app] aceleración por hardware desactivada por ajustes');
 }
 const pushToTalk = new PushToTalk();
+
+/**
+ * Juegos instalados en el PC (Steam, Epic, …). Se carga del caché al instante y se refresca en
+ * background al arrancar: es lo que hace que un juego se detecte solo, sin darlo de alta a mano.
+ */
+const gamesIndex = new GameIndexService({
+  cachePath: join(app.getPath('userData'), 'games-index.json'),
+  log: (msg) => console.log(msg),
+});
+
+/** De dónde salen los nombres de los juegos: el índice y lo que el owner haya puesto a mano. */
+function gameNames(): GameNameContext {
+  return {
+    customGames: settingsStore.load().customGames,
+    index: gamesIndex.current(),
+  };
+}
 
 // Una sola instancia viva: la segunda ejecución enfoca la ventana de la primera y se cierra. Sin
 // esto, dos copias pelearían por el puerto fijo de la API (EADDRINUSE) y por el mismo encoder.
@@ -220,6 +239,7 @@ function setupLibrary(
     const lib = new LibraryManager(repo, {
       thumbnailsDir: join(app.getPath('userData'), 'thumbnails'),
       getForegroundTitle: getForegroundWindowTitle,
+      gameNames,
     });
     const stor = new StorageManager(lib, { trashItem: (path) => shell.trashItem(path) });
 
@@ -236,9 +256,11 @@ function setupLibrary(
         .then(() => aplicarLimite(info.filePath))
         .catch((err) => console.error('[storage] auto-borrado falló:', err));
     });
-    // Bajar el límite o activar el auto-borrado desde Ajustes limpia de inmediato.
+    // Bajar el límite o activar el auto-borrado desde Ajustes limpia de inmediato. Y si el owner
+    // acaba de renombrar un juego, sus clips ya grabados se re-etiquetan con el nombre nuevo.
     manager.on('settings', () => {
       lib.reconcile(manager.outputDir());
+      lib.relabelGames(manager.outputDir());
       aplicarLimite();
     });
     lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
@@ -260,13 +282,31 @@ function setupLibrary(
 }
 
 function setupGameDetection(manager: CaptureManager): GameDetector {
-  const d = new GameDetector({ customGames: manager.getSettings().customGames });
+  const d = new GameDetector({
+    customGames: manager.getSettings().customGames,
+    index: gamesIndex.current(), // el del arranque anterior; el refresco lo actualiza enseguida
+  });
   d.on('games-changed', (list: RunningGameMatch[]) => {
     console.log('[games] en ejecución:', list.map((g) => g.name).join(', ') || '(ninguno)');
     void manager.setRunningGames(list);
   });
   d.start();
   return d;
+}
+
+/**
+ * Relee los launchers y propaga el índice nuevo: el detector pasa a reconocer los juegos recién
+ * instalados, y la biblioteca re-etiqueta sus clips (una carpeta `acblackflag/` que ahora se sabe
+ * que es `Assassin's Creed Black Flag Resynced`). No mueve ficheros: solo la columna `game`.
+ */
+async function refreshGameIndex(): Promise<Record<string, string>> {
+  const index = await gamesIndex.refresh();
+  detector?.setIndex(index);
+  if (library && capture) {
+    const reetiquetados = library.relabelGames(capture.outputDir());
+    if (reetiquetados) console.log(`[games] ${reetiquetados} clips re-etiquetados`);
+  }
+  return index;
 }
 
 // gameclip-media://clip/<id> y gameclip-media://thumb/<id>: el renderer nunca maneja rutas.
@@ -352,7 +392,15 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
   registerMediaProtocol();
-  registerIpcHandlers(capture, library, exporter, storage, () => pushToTalk.available);
+  registerIpcHandlers(capture, library, exporter, storage, () => pushToTalk.available, {
+    index: () => gamesIndex.current(),
+    rescan: () => refreshGameIndex(),
+    suggestName: (executable) => suggestGameName(executable, gameNames()),
+  });
+
+  // Los launchers, en background: no bloquea la ventana, y hasta que termine la detección funciona
+  // con el índice del arranque anterior (o solo con la lista curada, el primerísimo arranque).
+  void refreshGameIndex().catch((err) => console.error('[games] el índice falló:', err));
 
   // Push-to-talk: el hook global reporta el estado de la tecla al manager.
   pushToTalk.on('held', (held: boolean) => capture?.setMicHeld(held));

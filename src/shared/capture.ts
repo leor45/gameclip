@@ -1,5 +1,8 @@
 // Dominio de captura: ajustes, estado y validación pura (sin dependencias de Electron).
 
+import type { CustomGame } from './games';
+import { exeKey } from './games';
+
 export type CaptureState = 'unavailable' | 'initializing' | 'idle' | 'buffering' | 'recording';
 
 export interface CaptureStatus {
@@ -127,8 +130,8 @@ export interface CaptureSettings {
   autoGameSwitching: boolean;
   screenshotsEnabled: boolean;
   screenshotHotkey: string;
-  /** Ejecutables añadidos a mano como juegos (la detección los trata como conocidos). */
-  customGames: string[];
+  /** Juegos añadidos a mano (la detección los trata como conocidos), con nombre opcional. */
+  customGames: CustomGame[];
   /** Monitor a grabar (índice de display; 0 = primario). */
   screenMonitorIndex: number;
   /** Grabar el escritorio cuando no hay juego. Apagado: sin juego no se captura nada. */
@@ -249,19 +252,31 @@ function volume(value: unknown, fallback: number): number {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
-/** Ejecutables manuales: strings recortados, sin vacíos ni duplicados (case-insensitive). */
-function normalizeCustomGames(value: unknown): string[] {
+/**
+ * Juegos manuales: sin vacíos ni duplicados (por ejecutable, case-insensitive). Acepta la forma
+ * vieja —un array de strings— y la migra a `{ executable }` sin nombre, que se comporta igual que
+ * antes: los juegos ya dados de alta sobreviven a la actualización.
+ */
+function normalizeCustomGames(value: unknown): CustomGame[] {
   if (!Array.isArray(value)) return [];
-  const out: string[] = [];
+  const out: CustomGame[] = [];
   const seen = new Set<string>();
   for (const item of value) {
-    if (typeof item !== 'string') continue;
-    const exe = item.trim();
-    if (!exe) continue;
-    const key = exe.toLowerCase().replace(/\.exe$/, '');
-    if (seen.has(key)) continue;
+    const raw =
+      typeof item === 'string'
+        ? { executable: item }
+        : typeof item === 'object' && item !== null
+          ? (item as Record<string, unknown>)
+          : null;
+    if (!raw || typeof raw.executable !== 'string') continue;
+
+    const executable = raw.executable.trim();
+    const key = exeKey(executable);
+    if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push(exe);
+
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    out.push(name ? { executable, name } : { executable });
     if (out.length >= CUSTOM_GAMES_MAX) break;
   }
   return out;

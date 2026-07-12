@@ -20,7 +20,7 @@ describe('targetPathFor', () => {
   it('el clip va a la carpeta del juego', () => {
     const ruta = targetPathFor({
       outputDir: 'D:\\Clips',
-      gameExecutable: 'Terraria.exe',
+      gameName: 'Terraria',
       date: FECHA,
       kind: 'video',
       extension: 'mp4',
@@ -28,11 +28,38 @@ describe('targetPathFor', () => {
     expect(ruta).toBe('D:\\Clips\\Terraria\\Terraria 2026.07.02 - 10.02.01.01.mp4');
   });
 
+  it('la carpeta lleva el NOMBRE del juego, no su ejecutable', () => {
+    // Arc Raiders arranca `pioneergame.exe`: sus clips ya no acaban en una carpeta `pioneergame/`.
+    const ruta = targetPathFor({
+      outputDir: 'D:\\Clips',
+      gameName: 'ARC Raiders',
+      date: FECHA,
+      kind: 'video',
+      extension: 'mp4',
+    });
+    expect(ruta).toBe('D:\\Clips\\ARC Raiders\\ARC Raiders 2026.07.02 - 10.02.01.01.mp4');
+  });
+
+  it('un nombre con caracteres que Windows prohíbe se sanea', () => {
+    const ruta = targetPathFor({
+      outputDir: 'D:\\Clips',
+      gameName: "Marvel's Spider-Man: Miles Morales",
+      date: FECHA,
+      kind: 'video',
+      extension: 'mp4',
+    });
+    // Los ':' fuera (Windows los rechaza); el apóstrofo y el guion se quedan.
+    expect(ruta).toBe(
+      "D:\\Clips\\Marvel's Spider-Man Miles Morales\\" +
+        "Marvel's Spider-Man Miles Morales 2026.07.02 - 10.02.01.01.mp4",
+    );
+  });
+
   it('sin juego va a Desktop, y la captura a su subcarpeta Capturas', () => {
     expect(
       targetPathFor({
         outputDir: 'D:\\Clips',
-        gameExecutable: null,
+        gameName: null,
         date: FECHA,
         kind: 'screenshot',
         extension: 'png',

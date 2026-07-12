@@ -13,6 +13,7 @@ import {
   normalizeSaveAudioEditRequest,
   type SaveAudioEditResult,
 } from '@shared/tracks';
+import type { GameIndex } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import type { CaptureManager } from './capture/manager';
@@ -20,12 +21,23 @@ import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
 import type { StorageManager } from './library/storage-manager';
 
+/**
+ * Lo que el main sabe de los juegos instalados. El re-escaneo lo envuelve `main/index.ts`, que es
+ * quien tiene que re-inyectar el índice nuevo en el detector y re-etiquetar la biblioteca.
+ */
+export interface GamesIpcDeps {
+  index: () => GameIndex;
+  rescan: () => Promise<GameIndex>;
+  suggestName: (executable: string) => Promise<string | null>;
+}
+
 export function registerIpcHandlers(
   capture: CaptureManager,
   library: LibraryManager | null,
   exporter: ExportManager | null,
   storage: StorageManager | null = null,
   pttAvailable: () => boolean = () => false,
+  games: GamesIpcDeps | null = null,
 ): void {
   ipcMain.handle(
     IpcChannel.AppVersion,
@@ -86,6 +98,16 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.CaptureStartRecording, () => capture.startRecording());
   ipcMain.handle(IpcChannel.CaptureStopRecording, () => capture.stopRecording());
   ipcMain.handle(IpcChannel.CaptureSaveReplay, () => capture.saveReplay());
+
+  // El índice de juegos instalados: lo consulta la UI de ajustes para mostrar los nombres reales y
+  // para proponer uno al dar de alta un juego a mano.
+  if (games) {
+    ipcMain.handle(IpcChannel.GamesGetIndex, () => games.index());
+    ipcMain.handle(IpcChannel.GamesRescan, () => games.rescan());
+    ipcMain.handle(IpcChannel.GamesSuggestName, (_event, req: { executable?: unknown }) =>
+      typeof req?.executable === 'string' ? games.suggestName(req.executable) : null,
+    );
+  }
 
   // Sin biblioteca (DB no disponible): los invoke fallan con mensaje claro en el renderer.
   if (!library) return;

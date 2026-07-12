@@ -10,6 +10,7 @@ import type {
   EncoderInfo,
 } from './capture';
 import type { ExportProgress, ExportRequest, ExportResult } from './export';
+import type { GameIndex } from './games';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
 import type { OverlayNotice } from './overlay';
 import type { ClipAudioTrack, SaveAudioEditResult } from './tracks';
@@ -30,6 +31,9 @@ export const IpcChannel = {
   CaptureStartRecording: 'capture:start-recording',
   CaptureStopRecording: 'capture:stop-recording',
   CaptureSaveReplay: 'capture:save-replay',
+  GamesGetIndex: 'games:get-index',
+  GamesRescan: 'games:rescan',
+  GamesSuggestName: 'games:suggest-name',
   LibraryList: 'library:list',
   LibraryGet: 'library:get',
   LibraryGames: 'library:games',
@@ -96,6 +100,12 @@ export interface IpcContract {
   [IpcChannel.CaptureStartRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureStopRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
+  /** Juegos instalados que la app conoce (`pioneergame` → `ARC Raiders`). */
+  [IpcChannel.GamesGetIndex]: { request: void; response: GameIndex };
+  /** Relee los launchers y re-escanea; devuelve el índice nuevo. */
+  [IpcChannel.GamesRescan]: { request: void; response: GameIndex };
+  /** Nombre propuesto para un ejecutable al darlo de alta a mano; null si no se deduce nada. */
+  [IpcChannel.GamesSuggestName]: { request: { executable: string }; response: string | null };
   [IpcChannel.LibraryList]: { request: ClipsQuery; response: Clip[] };
   [IpcChannel.LibraryGet]: { request: { id: number }; response: Clip | null };
   [IpcChannel.LibraryGames]: { request: void; response: string[] };
@@ -142,6 +152,18 @@ export interface CaptureApi {
   onStatusChanged(listener: (status: CaptureStatus) => void): () => void;
   /** Suscribe a los ajustes guardados; devuelve la función para desuscribirse. */
   onSettingsChanged(listener: (settings: CaptureSettings) => void): () => void;
+}
+
+export interface GamesApi {
+  /** Juegos instalados que la app encontró en los launchers: `ejecutable → nombre`. */
+  getIndex(): Promise<GameIndex>;
+  /** Vuelve a leer los launchers (el owner acaba de instalar un juego). */
+  rescan(): Promise<GameIndex>;
+  /**
+   * Nombre que la app propone para un ejecutable al darlo de alta a mano: lo saca del índice, de la
+   * lista curada o de los metadatos del propio `.exe`. Null si no logra deducir nada decente.
+   */
+  suggestName(executable: string): Promise<string | null>;
 }
 
 export interface LibraryApi {
@@ -191,6 +213,7 @@ export interface OverlayApi {
 export interface GameclipApi {
   getAppVersion(): Promise<AppVersionInfo>;
   capture: CaptureApi;
+  games: GamesApi;
   library: LibraryApi;
   exporter: ExporterApi;
   editor: EditorApi;

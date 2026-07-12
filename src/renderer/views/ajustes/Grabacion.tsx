@@ -6,6 +6,7 @@ import {
   type DisplayInfo,
   type RecordingMode,
 } from '@shared/capture';
+import { exeKey, resolveGameName, type CustomGame, type GameIndex } from '@shared/games';
 import DisplayPicker from '../../components/DisplayPicker';
 import { HotkeyInfo } from './HotkeyInfo';
 import { SeccionForm } from './SeccionForm';
@@ -35,33 +36,48 @@ const MODOS: ModoOpcion[] = [
   },
 ];
 
-/** Quita la extensión y normaliza a minúsculas, para comparar ejecutables sin duplicar. */
-function claveExe(exe: string): string {
-  return exe.trim().toLowerCase().replace(/\.exe$/, '');
-}
-
 export default function AjustesGrabacion() {
   const { settings, set, save, saving, saved } = useCaptureSettings();
   const [procesos, setProcesos] = useState<AudioAppInfo[]>([]);
   const [procesoSeleccionado, setProcesoSeleccionado] = useState('');
   const [juegoLibre, setJuegoLibre] = useState('');
+  const [nombreNuevo, setNombreNuevo] = useState('');
+  const [index, setIndex] = useState<GameIndex>({});
+  const [rescaneando, setRescaneando] = useState(false);
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [mostrarModal, setMostrarModal] = useState(false);
   const [avisoEscritorio, setAvisoEscritorio] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
-    Promise.all([window.gameclip.capture.getAudioApps(), window.gameclip.capture.getDisplays()]).then(
-      ([apps, disp]) => {
-        if (!vivo) return;
-        setProcesos(apps);
-        setDisplays(disp);
-      },
-    );
+    Promise.all([
+      window.gameclip.capture.getAudioApps(),
+      window.gameclip.capture.getDisplays(),
+      window.gameclip.games.getIndex(),
+    ]).then(([apps, disp, idx]) => {
+      if (!vivo) return;
+      setProcesos(apps);
+      setDisplays(disp);
+      setIndex(idx);
+    });
     return () => {
       vivo = false;
     };
   }, []);
+
+  // El ejecutable elegido manda: al cambiarlo, se propone el nombre que la app deduzca (del índice
+  // de launchers, de la lista curada o de los metadatos del .exe). El owner puede pisarlo o vaciarlo.
+  const exeElegido = (procesoSeleccionado || juegoLibre).trim();
+  useEffect(() => {
+    if (!exeElegido) return setNombreNuevo('');
+    let vivo = true;
+    void window.gameclip.games.suggestName(exeElegido).then((nombre) => {
+      if (vivo) setNombreNuevo(nombre ?? '');
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [exeElegido]);
 
   if (!settings) return <p className="placeholder">Cargando…</p>;
 
@@ -70,23 +86,55 @@ export default function AjustesGrabacion() {
   // Interruptor maestro de la sección: sin grabación de escritorio, sus opciones no pintan nada.
   const escritorio = settings.desktopRecordingEnabled;
   const limiteAlcanzado = customGames.length >= CUSTOM_GAMES_MAX;
-  const agregados = new Set(customGames.map(claveExe));
-  const procesosDisponibles = procesos.filter((p) => !agregados.has(claveExe(p.executable)));
+  const agregados = new Set(customGames.map((g) => exeKey(g.executable)));
+  const procesosDisponibles = procesos.filter((p) => !agregados.has(exeKey(p.executable)));
 
   function agregarJuego() {
-    const exe = (procesoSeleccionado || juegoLibre).trim();
-    if (!exe || limiteAlcanzado) return;
-    if (agregados.has(claveExe(exe))) return;
-    set('customGames', [...customGames, exe]);
+    const executable = exeElegido;
+    if (!executable || limiteAlcanzado) return;
+    if (agregados.has(exeKey(executable))) return;
+    const name = nombreNuevo.trim();
+    set('customGames', [...customGames, name ? { executable, name } : { executable }]);
     setProcesoSeleccionado('');
     setJuegoLibre('');
+    setNombreNuevo('');
   }
 
-  function quitarJuego(exe: string) {
+  function renombrarJuego(executable: string, name: string) {
+    const limpio = name.trim();
     set(
       'customGames',
-      customGames.filter((g) => g !== exe),
+      customGames.map((g) =>
+        g.executable === executable
+          ? limpio
+            ? { executable, name: limpio }
+            : { executable } // vaciar el nombre = volver al que deduzca la app
+          : g,
+      ),
     );
+  }
+
+  function quitarJuego(executable: string) {
+    set(
+      'customGames',
+      customGames.filter((g) => g.executable !== executable),
+    );
+  }
+
+  async function reescanear() {
+    setRescaneando(true);
+    try {
+      setIndex(await window.gameclip.games.rescan());
+    } finally {
+      setRescaneando(false);
+    }
+  }
+
+  /** Lo que se ve en el listado: el nombre del juego, con su ejecutable al lado para no perderlo. */
+  function etiqueta(juego: CustomGame): string {
+    const nombre = resolveGameName(juego.executable, { customGames, index });
+    const exe = juego.executable.trim().replace(/\.exe$/i, '');
+    return nombre.toLowerCase() === exe.toLowerCase() ? juego.executable : `${nombre} (${exe}.exe)`;
   }
 
   async function grabarEscritorio(index: number) {
@@ -160,7 +208,10 @@ export default function AjustesGrabacion() {
 
         <fieldset>
           <legend>Detección de juegos</legend>
-          <p className="settings-hint">¿Un juego que no detectamos? Añádelo aquí.</p>
+          <p className="settings-hint">
+            Los juegos instalados (Steam, Epic…) se detectan solos: {Object.keys(index).length}{' '}
+            ejecutables reconocidos. ¿Falta alguno? Añádelo aquí.
+          </p>
           <div className="audio-app-add">
             <label>
               Proceso en ejecución
@@ -187,28 +238,45 @@ export default function AjustesGrabacion() {
                 onChange={(e) => setJuegoLibre(e.target.value)}
               />
             </label>
-            <button
-              type="button"
-              onClick={agregarJuego}
-              disabled={(!procesoSeleccionado && !juegoLibre.trim()) || limiteAlcanzado}
-            >
+            <label>
+              Nombre (opcional)
+              <input
+                type="text"
+                placeholder="El del ejecutable"
+                value={nombreNuevo}
+                disabled={limiteAlcanzado || !exeElegido}
+                onChange={(e) => setNombreNuevo(e.target.value)}
+              />
+            </label>
+            <button type="button" onClick={agregarJuego} disabled={!exeElegido || limiteAlcanzado}>
               Añadir juego
             </button>
           </div>
+          <p className="settings-hint">
+            El nombre es solo para verlo: por dentro el juego sigue siendo su ejecutable.
+          </p>
           {limiteAlcanzado && (
             <p className="settings-hint">Máximo {CUSTOM_GAMES_MAX} juegos añadidos a mano.</p>
           )}
           {customGames.length > 0 && (
             <ul className="audio-app-list">
-              {customGames.map((exe) => (
-                <li key={exe} className="audio-app-row">
-                  <span className="audio-app-name">{exe}</span>
+              {customGames.map((juego) => (
+                <li key={juego.executable} className="audio-app-row">
+                  <span className="audio-app-name">{etiqueta(juego)}</span>
+                  <input
+                    type="text"
+                    className="audio-app-rename"
+                    placeholder="Renombrar…"
+                    aria-label={`Nombre de ${juego.executable}`}
+                    defaultValue={juego.name ?? ''}
+                    onBlur={(e) => renombrarJuego(juego.executable, e.target.value)}
+                  />
                   <button
                     type="button"
                     className="audio-app-trash"
-                    aria-label={`Quitar ${exe}`}
-                    title={`Quitar ${exe}`}
-                    onClick={() => quitarJuego(exe)}
+                    aria-label={`Quitar ${juego.executable}`}
+                    title={`Quitar ${juego.executable}`}
+                    onClick={() => quitarJuego(juego.executable)}
                   >
                     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
                       <path
@@ -221,6 +289,9 @@ export default function AjustesGrabacion() {
               ))}
             </ul>
           )}
+          <button type="button" onClick={() => void reescanear()} disabled={rescaneando}>
+            {rescaneando ? 'Escaneando…' : 'Volver a escanear los juegos instalados'}
+          </button>
         </fieldset>
 
         <fieldset>

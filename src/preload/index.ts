@@ -6,6 +6,7 @@ import type {
   EditorApi,
   ExporterApi,
   GameclipApi,
+  GamesApi,
   LibraryApi,
   OverlayApi,
   OverlayState,
@@ -40,6 +41,13 @@ const capture: CaptureApi = {
     ipcRenderer.on(IpcEvent.SettingsChanged, wrapped);
     return () => ipcRenderer.removeListener(IpcEvent.SettingsChanged, wrapped);
   },
+};
+
+const games: GamesApi = {
+  getIndex: () => ipcRenderer.invoke(IpcChannel.GamesGetIndex),
+  rescan: () => ipcRenderer.invoke(IpcChannel.GamesRescan),
+  suggestName: (executable: string) =>
+    ipcRenderer.invoke(IpcChannel.GamesSuggestName, { executable }),
 };
 
 const library: LibraryApi = {
@@ -89,6 +97,7 @@ const overlay: OverlayApi = {
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
   capture,
+  games,
   library,
   exporter,
   editor,

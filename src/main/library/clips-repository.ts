@@ -129,6 +129,27 @@ export class ClipsRepository {
     return rows.map((r) => ({ id: r.id, filePath: r.file_path }));
   }
 
+  /** Ruta y juego de cada clip: lo que necesita el re-etiquetado para re-resolver los nombres. */
+  allGames(): { id: number; filePath: string; game: string | null }[] {
+    const rows = this.db.prepare('SELECT id, file_path, game FROM clips').all() as Pick<
+      ClipRow,
+      'id' | 'file_path' | 'game'
+    >[];
+    return rows.map((r) => ({ id: r.id, filePath: r.file_path, game: r.game }));
+  }
+
+  /**
+   * Re-etiqueta clips en bloque (transaccional). Lo usa el re-etiquetado del arranque, cuando el
+   * índice de launchers descubre que la carpeta `acblackflag/` era en realidad
+   * `Assassin's Creed Black Flag Resynced`. **No toca el disco**: solo la columna `game`.
+   */
+  setGames(cambios: { id: number; game: string | null }[]): void {
+    const stmt = this.db.prepare('UPDATE clips SET game = ? WHERE id = ?');
+    this.db.transaction((filas: { id: number; game: string | null }[]) => {
+      for (const fila of filas) stmt.run(fila.game, fila.id);
+    })(cambios);
+  }
+
   /** Juegos distintos presentes, para el filtro de la UI. */
   games(): string[] {
     const rows = this.db
