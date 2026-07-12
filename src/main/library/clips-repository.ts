@@ -83,7 +83,10 @@ export class ClipsRepository {
       params.push(like, like, like);
     }
     if (query.favoritesOnly) where.push('favorite = 1');
-    if (query.game) {
+    // "Sin juego" (escritorio) tiene precedencia: no es un nombre de juego, es la ausencia de uno.
+    if (query.withoutGame) {
+      where.push('game IS NULL');
+    } else if (query.game) {
       where.push('game = ?');
       params.push(query.game);
     }

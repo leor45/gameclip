@@ -250,5 +250,6 @@ function sanitizeQuery(query: unknown): ClipsQuery {
     search: typeof raw.search === 'string' ? raw.search : undefined,
     favoritesOnly: raw.favoritesOnly === true,
     game: typeof raw.game === 'string' && raw.game ? raw.game : undefined,
+    withoutGame: raw.withoutGame === true,
   };
 }

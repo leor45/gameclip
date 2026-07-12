@@ -170,6 +170,56 @@ describe('ClipsRepository — migración', () => {
   });
 });
 
+describe('ClipsRepository — filtro escritorio (clips sin juego)', () => {
+  it('withoutGame devuelve solo los clips sin juego', () => {
+    const escritorio = repo.insert(nuevo({ game: null }));
+    repo.insert(nuevo({ game: 'Terraria' }));
+
+    const lista = repo.list({ withoutGame: true });
+
+    expect(lista).toHaveLength(1);
+    expect(lista[0].id).toBe(escritorio.id);
+  });
+
+  it('un juego llamado "Escritorio" NO se confunde con el filtro sin juego', () => {
+    const sinJuego = repo.insert(nuevo({ game: null }));
+    const juegoRaro = repo.insert(nuevo({ game: 'Escritorio' }));
+
+    expect(repo.list({ withoutGame: true }).map((c) => c.id)).toEqual([sinJuego.id]);
+    expect(repo.list({ game: 'Escritorio' }).map((c) => c.id)).toEqual([juegoRaro.id]);
+  });
+
+  it('withoutGame tiene precedencia sobre game (no se pisan)', () => {
+    const sinJuego = repo.insert(nuevo({ game: null }));
+    repo.insert(nuevo({ game: 'Terraria' }));
+
+    const lista = repo.list({ withoutGame: true, game: 'Terraria' });
+
+    expect(lista.map((c) => c.id)).toEqual([sinJuego.id]);
+  });
+
+  it('se combina con favoritos y con la búsqueda', () => {
+    const favorito = repo.insert(nuevo({ game: null, title: 'Escritorio con clutch' }));
+    repo.update(favorito.id, { favorite: true });
+    repo.insert(nuevo({ game: null, title: 'otro de escritorio' }));
+    repo.insert(nuevo({ game: 'Terraria', title: 'clutch en Terraria' }));
+
+    expect(repo.list({ withoutGame: true, favoritesOnly: true }).map((c) => c.id)).toEqual([
+      favorito.id,
+    ]);
+    expect(repo.list({ withoutGame: true, search: 'clutch' }).map((c) => c.id)).toEqual([
+      favorito.id,
+    ]);
+  });
+
+  it('sin el criterio, se listan todos', () => {
+    repo.insert(nuevo({ game: null }));
+    repo.insert(nuevo({ game: 'Terraria' }));
+
+    expect(repo.list()).toHaveLength(2);
+  });
+});
+
 describe('ClipsRepository — rutas canónicas y duplicados', () => {
   it('guarda la ruta canónica aunque llegue con separadores mezclados (la de libobs)', () => {
     const clip = repo.insert(nuevo({ filePath: 'D:\\Videos\\GameClip/clip.mp4' }));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Clip } from '@shared/library';
+import { DESKTOP_FILTER_VALUE } from '@shared/library';
 import ClipCard from '../components/ClipCard';
 import ClipPlayer from '../components/ClipPlayer';
 import { useThumbnailer } from '../lib/useThumbnailer';
@@ -13,13 +14,17 @@ export default function Biblioteca() {
   const [juego, setJuego] = useState('');
   const [reproduciendo, setReproduciendo] = useState<Clip | null>(null);
 
+  // El desplegable mezcla juegos con un criterio que NO es un juego (escritorio = sin juego): el
+  // centinela se traduce aquí y al catálogo le cruza `withoutGame`, no la cadena.
   const cargar = useCallback(async () => {
     try {
+      const esEscritorio = juego === DESKTOP_FILTER_VALUE;
       const [lista, listaJuegos] = await Promise.all([
         window.gameclip.library.list({
           search: busqueda || undefined,
           favoritesOnly: soloFavoritos,
-          game: juego || undefined,
+          game: esEscritorio ? undefined : juego || undefined,
+          withoutGame: esEscritorio,
         }),
         window.gameclip.library.games(),
       ]);
@@ -69,6 +74,7 @@ export default function Biblioteca() {
             onChange={(e) => setJuego(e.target.value)}
           >
             <option value="">Todos los juegos</option>
+            <option value={DESKTOP_FILTER_VALUE}>Escritorio</option>
             {juegos.map((j) => (
               <option key={j} value={j}>
                 {j}
