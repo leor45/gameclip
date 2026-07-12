@@ -312,10 +312,49 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > por el puerto fijo de la API). Verificado sobre el `.exe`: API embebida OK, registro/login,
 > `obs64.exe` corriendo desde `app.asar.unpacked`, F8 → clip de 36 MB con las 5 pistas nombradas
 > (el remux con ffmpeg desempaquetado también corre), y la sesión sobrevive a cerrar y reabrir.
-> **Bug encontrado, fuera de alcance:** la **grabación manual** (start/stop) escribe `Total frames
-> output: 1` y deja un MP4 de 261 bytes — reproducido **también en dev**, así que es previo al
-> empaquetado y no lo causa esta tarea. El clip retroactivo (replay buffer) no está afectado. Va con
-> su propio spec en una rama `fix/`.
+> **Bug encontrado durante la verificación, fuera del alcance de esta tarea:** la grabación manual
+> deja un MP4 de 261 bytes. Reproducido **también en dev**, así que es previo al empaquetado. Los
+> detalles y las pistas quedan en "Bugs abiertos", más abajo.
+
+## Bugs abiertos (pendientes de su propia rama `fix/`)
+
+### 🐞 La grabación manual escribe un solo frame (MP4 de 261 bytes)
+
+**Síntoma:** `startRecording()` → `stopRecording()` deja un MP4 de ~261 bytes (la cabecera, sin
+vídeo). El log de libobs lo dice sin ambigüedad:
+
+```
+Output 'recording': Total frames output: 1
+Output 'recording': Total drawn frames: 263
+```
+
+**Alcance del daño:** solo la grabación manual (hotkey de start/stop, modo escritorio y el corte de
+sesión del modo `auto`, que usa la misma salida). **El clip retroactivo NO está afectado**: la
+salida `replay-buffer` saca sus ~300 frames y produce clips correctos — por eso la app parece
+funcionar en el uso normal.
+
+**Descartado ya:** *no* lo causa el empaquetado (`feature/build-portable`). Se reprodujo idéntico en
+`npm run dev`, así que es previo. Tampoco es de ffmpeg: el archivo ya sale vacío de libobs, antes
+del remux de nombres de pista.
+
+**Pista fuerte para el spec:** en el mismo log, justo antes, aparece
+
+```
+encoder 'gameclip-venc': Cannot apply a new video_t object while the encoder is active
+```
+
+El encoder de vídeo (`gameclip-venc`) es **uno solo y está compartido** entre la salida
+`replay-buffer` (activa siempre, por `bufferMode: always`) y la salida `recording`. La hipótesis a
+verificar primero es que libobs no admite el mismo encoder alimentando dos salidas activas y la
+segunda se queda sin frames. Mirar `src/main/capture/obs.ts` (creación de las Advanced*Output y el
+encoder) y `src/main/capture/manager.ts` (arranque de la grabación con el buffer ya corriendo).
+
+**Cómo reproducirlo (sin UI):** `GAMECLIP_SELFTEST=recording npm run dev` — graba 4 s y sale; el
+clip queda en la carpeta de salida configurada. Comprobar el tamaño del MP4 y `Total frames output`
+en el log de libobs (`userData/obs-data/node-obs/logs/`).
+
+**Recordatorio del flujo:** es un Fix, así que va con **test de regresión primero** (rojo → verde) y
+la causa raíz en el `spec.md`.
 
 ## Futuro (fuera de alcance por ahora)
 
