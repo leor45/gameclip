@@ -19,6 +19,9 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] 7. UI: sección Escritorio con interruptor maestro, selector de pistas de audio y controles hijos
       deshabilitados; nota en la sección Audio aclarando que solo aplica a capturas de juego.
 - [x] 8. Versión de la app a `0.2.0`.
+- [x] 9. (Salido de la verificación E2E) `startRecording` / `stopRecording` / `saveReplay` pasan por la
+      MISMA cola que los rebuilds: un juego lanzado justo al pulsar grabar reconstruía el pipeline con
+      la salida a medio arrancar y libobs nunca emitía la señal `start` (grabación muerta).
 
 ## Tests unitarios (obligatorios)
 
@@ -32,15 +35,22 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Manager: desactivar la grabación de escritorio en caliente detiene el buffer.
 - [x] Manager (regresión): la rotación juego A → juego B sigue religando en caliente, sin rebuild.
 - [x] UI: el interruptor maestro guarda y deshabilita sus hijos; `desktopAudioTracks` se guarda.
+- [x] Manager (regresión de la carrera): pulsar grabar a la vez que se detecta un juego deja la
+      grabación viva y aplaza el rebuild.
 
 ## Verificación (gates)
 
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
-- [x] Tests verdes (`npm run test`) — 433 pasando
-- [ ] Comprobación manual: clip de escritorio con Spotify sonando y audio configurado por apps →
-      el clip trae TODO el audio del PC; lanzar un juego en ventana sin bordes → el clip muestra
-      solo el juego; desactivar la grabación de escritorio → sin juego no se graba nada.
+- [x] Tests verdes (`npm run test`) — 434 pasando
+- [x] E2E en máquina real (ajustes reales del owner: audio por apps Discord+opera, pistas separadas):
+      - Escritorio con un tono sonando desde un proceso suelto (ni Discord ni opera): el clip trae
+        **1 pista** con el audio del PC dentro (`mean_volume` −28,7 dB; el silencio daría `-inf`).
+      - Con juego detectado (falso, vía `tasklist`): el clip se graba en perfil de juego con las
+        **pistas por rol** (`default` · `game` · `mic` · `Discord` · `opera`).
+      - Grabación en curso + juego lanzado: el clip se guarda entero, el rebuild espera al final.
+- [ ] Pendiente del owner (no verificable con un juego falso): que un juego real en ventana sin
+      bordes se vea **solo el juego** en el clip.
 
 ## Cierre
 

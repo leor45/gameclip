@@ -305,6 +305,15 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > bitmask de pistas de las salidas son otros, y eso no se reasigna en caliente), así que el replay
 > buffer se reinicia al aparecer/desaparecer un juego. Una grabación en curso **nunca** se corta: el
 > rebuild queda pendiente y se aplica al terminarla. Versión de la app → `0.2.0`.
+>
+> La E2E destapó una carrera que ya existía y que esta fase volvía probable: `startRecording` /
+> `stopRecording` / `saveReplay` **no pasaban por la cola** de mutaciones del pipeline. Un juego
+> detectado justo al pulsar grabar reconstruía el pipeline con la salida a medio arrancar y la señal
+> `start` de libobs no llegaba nunca ("timeout esperando señal 'start' de recording", grabación
+> muerta). Encoladas, el rebuild ve el estado `recording` ya asentado y se aplaza. Verificado en
+> máquina real con los ajustes del owner (audio por apps + pistas separadas): clip de escritorio con
+> 1 pista y el audio del PC dentro; clip de juego con las pistas por rol; y grabación en curso +
+> juego lanzado → clip entero.
 
 ## Fase 11 · Distribución — 🚧 en curso
 

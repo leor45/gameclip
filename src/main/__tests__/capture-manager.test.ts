@@ -218,6 +218,30 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       expect(obs.ultimoGameExe).toBe('cs2.exe');
     });
 
+    it('regresión: un juego detectado a la vez que se pulsa grabar no mata la grabación', async () => {
+      // El rebuild por cambio de perfil corría en paralelo al arranque de la grabación y destruía
+      // la salida a medio arrancar: libobs nunca emitía 'start' ("timeout esperando señal").
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+
+      const builds = obs.buildCount;
+
+      // Sin await entre medias: ambas entradas compiten por el pipeline.
+      const grabando = manager.startRecording();
+      const juego = manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+      await Promise.all([grabando, juego]);
+
+      // La cola serializa: la grabación queda arrancada y el rebuild se aplaza (no la tumba).
+      expect(manager.getStatus()).toMatchObject({ state: 'recording', error: null });
+      expect(obs.buildCount).toBe(builds);
+      expect(obs.grabando).toBe(true);
+
+      // Y al parar, el pipeline se reconstruye ya en perfil de juego.
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(builds + 1);
+      expect(obs.ultimoGameExe).toBe('cs2.exe');
+    });
+
     it('desactivar la grabación de escritorio en caliente detiene el buffer', async () => {
       const manager = crear({ bufferMode: 'always' });
       await manager.initialize();

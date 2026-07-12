@@ -419,26 +419,39 @@ export class CaptureManager extends EventEmitter {
     this.emitClipSaved(file, 'recording', game);
   }
 
+  /**
+   * Grabar/parar/guardar replay van por la MISMA cola que los rebuilds: si no, un juego que se
+   * lanza justo al pulsar grabar reconstruiría el pipeline con la salida a medio arrancar y la
+   * señal 'start' de libobs no llegaría nunca (grabación muerta con "timeout esperando señal").
+   * Encoladas, el rebuild ve el estado 'recording' ya asentado y se aplaza.
+   */
   async startRecording(): Promise<CaptureStatus> {
-    if (this.getSettings().recordingMode === 'off') return this.getStatus();
+    await this.queueTask(() => this.doStartRecording());
+    return this.getStatus();
+  }
+
+  private async doStartRecording(): Promise<void> {
+    if (this.getSettings().recordingMode === 'off') return;
     if (this.currentProfile() === 'none') {
       this.setStatus({ error: NOTHING_TO_CAPTURE });
-      return this.getStatus();
+      return;
     }
-    if (this.status.state !== 'buffering' && this.status.state !== 'idle') {
-      return this.getStatus();
-    }
+    if (this.status.state !== 'buffering' && this.status.state !== 'idle') return;
     try {
       await this.obs.startRecording();
       this.setStatus({ state: 'recording', error: null });
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
     }
-    return this.getStatus();
   }
 
   async stopRecording(): Promise<CaptureStatus> {
-    if (this.status.state !== 'recording') return this.getStatus();
+    await this.queueTask(() => this.doStopRecording());
+    return this.getStatus();
+  }
+
+  private async doStopRecording(): Promise<void> {
+    if (this.status.state !== 'recording') return;
     try {
       const raw = await this.obs.stopRecording();
       const file = await this.finishSavedClip(raw, this.detectedGameExe);
@@ -456,18 +469,20 @@ export class CaptureManager extends EventEmitter {
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    return this.getStatus();
   }
 
   async saveReplay(): Promise<CaptureStatus> {
-    if (this.getSettings().recordingMode === 'off') return this.getStatus();
+    await this.queueTask(() => this.doSaveReplay());
+    return this.getStatus();
+  }
+
+  private async doSaveReplay(): Promise<void> {
+    if (this.getSettings().recordingMode === 'off') return;
     if (this.currentProfile() === 'none') {
       this.setStatus({ error: NOTHING_TO_CAPTURE });
-      return this.getStatus();
+      return;
     }
-    if (this.status.state !== 'buffering' && this.status.state !== 'recording') {
-      return this.getStatus();
-    }
+    if (this.status.state !== 'buffering' && this.status.state !== 'recording') return;
     try {
       const raw = await this.obs.saveReplay();
       const file = await this.finishSavedClip(raw, this.detectedGameExe);
@@ -476,7 +491,6 @@ export class CaptureManager extends EventEmitter {
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
     }
-    return this.getStatus();
   }
 
   shutdown(): void {
