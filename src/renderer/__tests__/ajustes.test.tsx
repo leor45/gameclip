@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import App from '../App';
 import { sesionFalsa } from './helpers';
 import { crearGameclipMock } from './setup';
@@ -186,6 +187,28 @@ describe('Ajustes — Audio', () => {
     // El basurero sí la quita.
     await user.click(screen.getByRole('button', { name: 'Quitar Spotify.exe' }));
     expect(screen.queryByLabelText('Spotify.exe')).not.toBeInTheDocument();
+  });
+
+  it('con 3 apps de audio activas bloquea marcar una 4.ª y avisa del tope de pistas', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      audioMode: 'apps',
+      audioApps: [
+        { executable: 'Spotify.exe', volume: 100, enabled: true },
+        { executable: 'opera.exe', volume: 100, enabled: true },
+        { executable: 'chrome.exe', volume: 100, enabled: true },
+        { executable: 'firefox.exe', volume: 100, enabled: false },
+      ],
+    });
+    await irAAudio();
+
+    expect(screen.getByText(/Máximo 3 apps con audio/)).toBeInTheDocument();
+    // La 4.ª (desmarcada) no se puede activar con el tope alcanzado.
+    expect(screen.getByLabelText('firefox.exe')).toBeDisabled();
+    // Discord (fija, desmarcada) tampoco.
+    expect(screen.getByLabelText('Discord.exe')).toBeDisabled();
+    // Una activa sí se puede desmarcar para liberar su pista.
+    expect(screen.getByLabelText('Spotify.exe')).not.toBeDisabled();
   });
 
   it('guarda push to talk con su tecla y la supresión de ruido', async () => {

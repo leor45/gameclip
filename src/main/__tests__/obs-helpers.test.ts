@@ -3,7 +3,8 @@ import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import {
   DESKTOP_AUDIO_SETTINGS,
   ObsCapture,
-  audioTrackPlan,
+  appTrackName,
+  audioTrackLayout,
   computePipelineSizes,
   encoderFamily,
   encoderRateControlSettings,
@@ -181,24 +182,71 @@ describe('volumen por fader', () => {
   });
 });
 
-describe('audioTrackPlan', () => {
-  it('sin tracks separados: todo a la pista 1', () => {
-    expect(audioTrackPlan(false)).toEqual({
-      desktopMask: 0b001,
-      micMask: 0b001,
-      appsMask: 0b001,
-    });
+describe('appTrackName', () => {
+  it('quita la ruta y la extensión .exe, respetando el nombre', () => {
+    expect(appTrackName('Discord.exe')).toBe('Discord');
+    expect(appTrackName('opera.exe')).toBe('opera');
+    expect(appTrackName('C:\\Program Files\\Foo\\Bar.EXE')).toBe('Bar');
+    expect(appTrackName('sin-extension')).toBe('sin-extension');
+  });
+});
+
+describe('audioTrackLayout', () => {
+  it('modo apps + separadas: T1 default, T2 game, T3 mic, T4+ apps en orden', () => {
+    const layout = audioTrackLayout('apps', true, ['Discord.exe', 'opera.exe']);
+    // Cada fuente OR el bit de la pista 1 (mezcla) + su pista de rol.
+    expect(layout.gameMask).toBe(0b000011); // T1 + T2
+    expect(layout.micMask).toBe(0b000101); // T1 + T3
+    expect(layout.appMasks).toEqual([0b001001, 0b010001]); // T1+T4, T1+T5
+    expect(layout.tracks).toEqual([
+      { index: 1, name: 'default' },
+      { index: 2, name: 'game' },
+      { index: 3, name: 'mic' },
+      { index: 4, name: 'Discord' },
+      { index: 5, name: 'opera' },
+    ]);
+    expect(layout.mixer).toBe(0b011111); // OR de las 5 pistas
+    expect(layout.named).toBe(true);
   });
 
-  it('con tracks separados la pista 1 SIEMPRE lleva la mezcla completa (regresión: los reproductores solo reproducen la primera pista)', () => {
-    const plan = audioTrackPlan(true);
-    // mic → pistas 1+2 · apps → pistas 1+3 · juego/escritorio → pista 1.
-    expect(plan.desktopMask).toBe(0b001);
-    expect(plan.micMask).toBe(0b011);
-    expect(plan.appsMask).toBe(0b101);
-    // Invariante de la regresión: toda máscara incluye el bit de la pista 1.
-    expect(plan.micMask & 0b001).toBe(0b001);
-    expect(plan.appsMask & 0b001).toBe(0b001);
+  it('reserva T2/T3 aunque no haya apps activas (slots fijos)', () => {
+    const layout = audioTrackLayout('apps', true, []);
+    expect(layout.tracks).toEqual([
+      { index: 1, name: 'default' },
+      { index: 2, name: 'game' },
+      { index: 3, name: 'mic' },
+    ]);
+    expect(layout.mixer).toBe(0b000111);
+  });
+
+  it('toda máscara incluye el bit de la pista 1 (la mezcla nunca se rompe)', () => {
+    const layout = audioTrackLayout('apps', true, ['a.exe', 'b.exe', 'c.exe']);
+    expect(layout.gameMask & 0b1).toBe(0b1);
+    expect(layout.micMask & 0b1).toBe(0b1);
+    for (const m of layout.appMasks) expect(m & 0b1).toBe(0b1);
+    // Tope de 3 pistas de app: no se asignan más de 3 aunque lleguen más.
+    expect(layout.appMasks).toHaveLength(3);
+    expect(layout.mixer).toBe(0b111111); // las 6 pistas
+  });
+
+  it('modo desktop + separadas: plan actual (T1 mezcla + T2 mic), sin nombres', () => {
+    const layout = audioTrackLayout('desktop', true, []);
+    expect(layout.desktopMask).toBe(0b001);
+    expect(layout.micMask).toBe(0b011);
+    expect(layout.mixer).toBe(0b011);
+    expect(layout.named).toBe(false);
+  });
+
+  it('sin pistas separadas: todo a la pista 1 en cualquier modo (regresión)', () => {
+    for (const mode of ['desktop', 'apps'] as const) {
+      const layout = audioTrackLayout(mode, false, ['a.exe']);
+      expect(layout.desktopMask).toBe(0b001);
+      expect(layout.micMask).toBe(0b001);
+      expect(layout.gameMask).toBe(0b001);
+      expect(layout.appMasks).toEqual([0b001]);
+      expect(layout.mixer).toBe(0b001);
+      expect(layout.named).toBe(false);
+    }
   });
 });
 

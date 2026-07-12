@@ -162,6 +162,9 @@ export const BITRATE_MBPS_MIN = 3;
 export const BITRATE_MBPS_MAX = 100;
 export const STORAGE_LIMIT_GB_MAX = 2000;
 export const AUDIO_APPS_MAX = 8;
+// Máximo de apps con captura de audio simultánea (modo 'apps'): libobs soporta 6 pistas y
+// tres están fijas (1 mezcla, 2 juego, 3 mic), así que quedan 3 pistas para apps.
+export const AUDIO_APPS_TRACK_MAX = 3;
 export const CUSTOM_GAMES_MAX = 50;
 export const SCREEN_MONITOR_INDEX_MAX = 7;
 export const CAPTURE_FPS_VALUES: readonly CaptureFps[] = [24, 30, 60, 120, 144];
@@ -245,6 +248,39 @@ function normalizeCustomGames(value: unknown): string[] {
   return out;
 }
 
+/** ¿El ejecutable es una de las apps fijas (Discord)? Case-insensitive. */
+function esAppFija(executable: string): boolean {
+  return DEFAULT_AUDIO_APPS.some((d) => d.toLowerCase() === executable.toLowerCase());
+}
+
+/**
+ * Ejecutables de las apps activas en el ORDEN de pista: las fijas (Discord) primero y luego
+ * las de usuario en su orden de lista. Es el orden que ve el usuario en los ajustes y con el
+ * que se asignan las pistas T4+.
+ */
+export function orderedActiveAudioApps(apps: AudioAppCapture[]): string[] {
+  const activas = apps.filter((a) => a.enabled);
+  const fijas = activas.filter((a) => esAppFija(a.executable));
+  const usuario = activas.filter((a) => !esAppFija(a.executable));
+  return [...fijas, ...usuario].map((a) => a.executable);
+}
+
+/**
+ * Desmarca (sin borrar) las apps activas que exceden `AUDIO_APPS_TRACK_MAX`, en el orden de
+ * pista. Las primeras 3 activas conservan su captura; el resto queda `enabled: false` en la
+ * lista para poder reactivarlas si se desactiva otra.
+ */
+function capActiveAudioApps(apps: AudioAppCapture[]): AudioAppCapture[] {
+  const ordenadas = orderedActiveAudioApps(apps);
+  if (ordenadas.length <= AUDIO_APPS_TRACK_MAX) return apps;
+  const permitidas = new Set(
+    ordenadas.slice(0, AUDIO_APPS_TRACK_MAX).map((e) => e.toLowerCase()),
+  );
+  return apps.map((a) =>
+    a.enabled && !permitidas.has(a.executable.toLowerCase()) ? { ...a, enabled: false } : a,
+  );
+}
+
 function normalizeAudioApps(value: unknown): AudioAppCapture[] {
   if (!Array.isArray(value)) return [];
   const out: AudioAppCapture[] = [];
@@ -266,7 +302,7 @@ function normalizeAudioApps(value: unknown): AudioAppCapture[] {
     });
     if (out.length >= AUDIO_APPS_MAX) break;
   }
-  return out;
+  return capActiveAudioApps(out);
 }
 
 // Acepta un parcial de origen no confiable (disco/IPC) y devuelve settings válidos,

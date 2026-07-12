@@ -79,6 +79,11 @@ class FakeObs implements CaptureBackend {
     this.grabando = false;
     return Promise.resolve('C:\\v\\clip.mp4');
   }
+  /** Pistas nombradas que el manager remuxará; null = no aplica (por defecto). */
+  tracks: { index: number; name: string }[] | null = null;
+  namedTracks(): { index: number; name: string }[] | null {
+    return this.tracks;
+  }
   shutdown(): void {
     this.llamadas.push('shutdown');
   }
@@ -87,10 +92,12 @@ class FakeObs implements CaptureBackend {
 describe('CaptureManager (modos de buffer y detección de juegos)', () => {
   let dir: string;
   let obs: FakeObs;
+  let remuxCalls: { file: string; tracks: { index: number; name: string }[] }[];
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'gameclip-capture-'));
     obs = new FakeObs();
+    remuxCalls = [];
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -108,8 +115,34 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
         primaryDisplay: { width: 1920, height: 1080, x: 0, y: 0 },
       },
       obs,
+      'ffmpeg-test',
+      (_ffmpeg, file, tracks) => {
+        remuxCalls.push({ file, tracks });
+        return Promise.resolve(true);
+      },
     );
   }
+
+  it('nombra las pistas del clip (remux) cuando el pipeline es layout por rol', async () => {
+    obs.tracks = [
+      { index: 1, name: 'default' },
+      { index: 2, name: 'game' },
+      { index: 3, name: 'mic' },
+    ];
+    const manager = crear({ bufferMode: 'always' });
+    await manager.initialize();
+    await manager.startRecording();
+    await manager.stopRecording();
+    expect(remuxCalls).toEqual([{ file: 'C:\\v\\clip.mp4', tracks: obs.tracks }]);
+  });
+
+  it('no remuxa nombres si el pipeline no es layout por rol (namedTracks null)', async () => {
+    const manager = crear({ bufferMode: 'always' });
+    await manager.initialize();
+    await manager.startRecording();
+    await manager.stopRecording();
+    expect(remuxCalls).toEqual([]);
+  });
 
   it("modo 'always': el buffer arranca en la init (comportamiento previo)", async () => {
     const manager = crear({ bufferMode: 'always' });

@@ -137,6 +137,15 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > Verificado en máquina real: MP4 con 3 pistas AAC (juego/mic/apps) respetando apps
 > deshabilitadas, y arranque con la aceleración desactivada. PTT emite `held` desde el hook
 > de bajo nivel y el manager recalcula el mute tras cada rebuild.
+> Mejora post-entrega (2026-07-11, `feature/pistas-audio-por-rol`): el reparto de pistas en
+> modo apps pasa a ser **por rol y nombrado**: T1 `default` (mezcla completa), T2 `game`
+> (juego aislado), T3 `mic`, y una pista por app activa (T4/T5/T6, con el ejecutable sin
+> `.exe`) en el orden de la UI. Antes las apps compartían una única pista y el juego no
+> tenía pista propia. Tope de 3 apps con audio (libobs solo da 6 pistas y 3 son fijas): la
+> normalización desmarca las que sobran y la UI bloquea marcar una 4.ª. Los nombres no los
+> escribe libobs, así que se embeben con un remux `ffmpeg -c copy` (atómico, best-effort)
+> al cerrar el clip. El modo escritorio queda igual. Verificado E2E: 5 pistas
+> `default/game/mic/opera/chrome` en orden, mezcla en la 1 y cada rol aislado.
 
 ## Fase 9 · Configuración de grabación y escritorio — ✅ entregado
 
