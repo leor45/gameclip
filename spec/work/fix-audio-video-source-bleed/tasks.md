@@ -17,11 +17,12 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`) — 552 pass
-- [ ] Comprobación manual: clip de juego con pistas separadas → cada pista solo su fuente; bajar el
-      volumen del juego lo baja en el clip (requiere captura real; pendiente del owner)
+- [x] Comprobación manual: clip de juego con pistas separadas → cada pista solo su fuente; bajar el
+      volumen del juego lo baja en el clip (verificado por el owner en captura real)
 
 ## Cierre
 
-- [ ] Aprobación del owner
+- [x] Aprobación del owner
 - [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] `spec/constitution/roadmap.md` actualizado
+- [x] Versión de la app → `0.4.3`

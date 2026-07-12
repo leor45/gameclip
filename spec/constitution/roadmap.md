@@ -314,6 +314,15 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > máquina real con los ajustes del owner (audio por apps + pistas separadas): clip de escritorio con
 > 1 pista y el audio del PC dentro; clip de juego con las pistas por rol; y grabación en curso +
 > juego lanzado → clip entero.
+>
+> Fix (2026-07-12, `fix/audio-video-source-bleed`): al pasar el perfil `game` a usar `game_capture`
+> como única fuente de vídeo, esta fase introdujo un **bleed de audio**: `game_capture` (y el
+> `monitor_capture` WGC) traen `capture_audio` activo y nunca se les asignaba `audioMixers`, así que
+> su audio iba a **todas las pistas** (default `0x3F`) **sin fader**. Resultado: el juego duplicado en
+> la mezcla y en la pista `game` (con phasing), colado en `mic`/`discord`/etc., y a volumen completo
+> aunque se bajara en Ajustes (el fader solo toca la fuente wasapi). Arreglo: `capture_audio: false`
+> en ambos helpers; el audio fluye solo por las fuentes wasapi dedicadas, con su reparto por rol y su
+> fader. Verificado por el owner en captura real. Versión de la app → `0.4.3`.
 
 ## Fase 13 · Pistas del escritorio editables — ✅ entregado
 

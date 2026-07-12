@@ -1,6 +1,6 @@
 {
   "name": "gameclip",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Captura de clips de juegos y grabación de escritorio, 100% local",
   "private": true,
   "main": "out/main/index.js",
