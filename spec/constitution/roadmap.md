@@ -368,7 +368,7 @@ Arreglo: `resolveGameWindow()` resuelve la ventana contra la propiedad-lista del
 con la cadena completa; sin ventana que resolver, `any_fullscreen` — nunca apuntando a una ventana
 inexistente. Verificado con el juego real: el clip muestra el juego, sin nada del escritorio.
 
-## Fase 11 · Distribución — 🚧 en curso
+## Fase 11 · Distribución — ✅ entregado
 
 - [x] Build `.exe` **portable** (sin instalador) con la API embebida en el proceso main:
       `npm run build:portable` → `release/GameClip-<version>-portable.exe` (~190 MB).
@@ -377,7 +377,7 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
       Mismo encuadre que Streamlabs Desktop.
 - [x] Ícono propio: mando oscuro sobre baldosa amarilla (`#f5c518`, el acento de la app).
       `build/icon.svg` es la fuente y `npm run icon` genera `build/icon.ico` (7 capas, 16→256 px).
-- [ ] Publicar el release en GitHub.
+- [x] Publicar el release en GitHub (`v0.3.1`, portable): https://github.com/leor45/gameclip/releases
 
 > `feature/build-portable` (2026-07-11): la API va **embebida en el main**, no como proceso hijo —
 > un hijo con `ELECTRON_RUN_AS_NODE` corre el runtime de Electron igual, así que necesitaría la
