@@ -1,10 +1,24 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OverlayState } from '@shared/ipc';
+import type { OverlayNotice } from '@shared/overlay';
 import Overlay from '../overlay/Overlay';
 import { crearGameclipMock } from './setup';
 
 let emitir: (state: OverlayState) => void = () => undefined;
+
+/** Estado del overlay; lo que no se diga, apagado. */
+function estado(parcial: Partial<OverlayState>): OverlayState {
+  return { recording: false, toast: null, notice: null, ...parcial };
+}
+
+const AVISO: OverlayNotice = {
+  title: 'Listo para clipear',
+  hotkeys: [
+    { key: 'F8', label: 'Guardar el último minuto' },
+    { key: 'F6', label: 'Guardar una captura' },
+  ],
+};
 
 beforeEach(() => {
   const mock = crearGameclipMock();
@@ -25,23 +39,62 @@ describe('Overlay in-game', () => {
   it('muestra el indicador REC mientras se graba y lo quita al parar', () => {
     render(<Overlay />);
 
-    act(() => emitir({ recording: true, toast: null }));
+    act(() => emitir(estado({ recording: true })));
     expect(screen.getByRole('status')).toHaveTextContent('REC');
 
-    act(() => emitir({ recording: false, toast: null }));
+    act(() => emitir(estado({ recording: false })));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('muestra el toast de clip guardado, también junto al indicador REC', () => {
     render(<Overlay />);
 
-    act(() => emitir({ recording: false, toast: 'Clip guardado ✓' }));
+    act(() => emitir(estado({ toast: 'Clip guardado ✓' })));
     expect(screen.getByRole('status')).toHaveTextContent('Clip guardado ✓');
 
-    act(() => emitir({ recording: true, toast: 'Clip guardado ✓' }));
+    act(() => emitir(estado({ recording: true, toast: 'Clip guardado ✓' })));
     const pills = screen.getAllByRole('status');
     expect(pills).toHaveLength(2);
     expect(pills[0]).toHaveTextContent('REC');
     expect(pills[1]).toHaveTextContent('Clip guardado ✓');
+  });
+});
+
+describe('Overlay — aviso al detectarse el juego', () => {
+  it('pinta el título y una fila por hotkey, con la tecla configurada', () => {
+    render(<Overlay />);
+
+    act(() => emitir(estado({ notice: AVISO })));
+
+    const aviso = screen.getByTestId('overlay-notice');
+    expect(aviso).toHaveTextContent('Listo para clipear');
+    expect(aviso).toHaveTextContent('F8');
+    expect(aviso).toHaveTextContent('Guardar el último minuto');
+    expect(aviso).toHaveTextContent('F6');
+    expect(aviso.className).not.toContain('is-leaving');
+  });
+
+  it('al quitarlo el main, se anima la salida y recién ahí se desmonta', () => {
+    render(<Overlay />);
+    act(() => emitir(estado({ notice: AVISO })));
+
+    // El main dice "quitalo": el aviso sigue en el DOM, ahora saliendo.
+    act(() => emitir(estado({ notice: null })));
+    const aviso = screen.getByTestId('overlay-notice');
+    expect(aviso.className).toContain('is-leaving');
+
+    // jsdom no corre animaciones: se dispara el final a mano.
+    fireEvent.animationEnd(aviso);
+    expect(screen.queryByTestId('overlay-notice')).not.toBeInTheDocument();
+  });
+
+  it('un aviso nuevo mientras el anterior sale cancela la salida', () => {
+    render(<Overlay />);
+    act(() => emitir(estado({ notice: AVISO })));
+    act(() => emitir(estado({ notice: null })));
+
+    act(() => emitir(estado({ notice: { title: 'Listo para clipear', hotkeys: [] } })));
+
+    expect(screen.getByTestId('overlay-notice').className).not.toContain('is-leaving');
   });
 });

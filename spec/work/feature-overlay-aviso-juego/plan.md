@@ -79,4 +79,4 @@ transparente y click-through, así que el área extra es invisible y no molesta.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado por el owner (2026-07-11) e implementado

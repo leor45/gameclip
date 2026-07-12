@@ -2,10 +2,16 @@ import { join } from 'node:path';
 import { BrowserWindow, screen } from 'electron';
 import { IpcEvent } from '@shared/ipc';
 import type { OverlayState } from '@shared/ipc';
+import type { OverlayNotice } from '@shared/overlay';
 
 const TOAST_MS = 3000;
-const WIDTH = 300;
-const HEIGHT = 96;
+/** Cuánto queda el aviso del juego antes de irse solo. */
+const NOTICE_MS = 6000;
+/** Margen para que la página termine su animación de salida antes de ocultar la ventana. */
+const EXIT_MS = 400;
+const WIDTH = 340;
+/** Alto para el caso más grande (aviso con sus dos hotkeys); la ventana es transparente. */
+const HEIGHT = 220;
 const MARGIN = 16;
 
 /**
@@ -18,9 +24,11 @@ const MARGIN = 16;
  */
 export class OverlayController {
   private win: BrowserWindow | null = null;
-  private state: OverlayState = { recording: false, toast: null };
+  private state: OverlayState = { recording: false, toast: null, notice: null };
   private enabled: boolean;
   private toastTimer: NodeJS.Timeout | null = null;
+  private noticeTimer: NodeJS.Timeout | null = null;
+  private hideTimer: NodeJS.Timeout | null = null;
 
   constructor(enabled: boolean) {
     this.enabled = enabled;
@@ -48,17 +56,52 @@ export class OverlayController {
     this.sync();
   }
 
+  /**
+   * Aviso al detectarse un juego. Se retira solo a los pocos segundos; la animación de salida la
+   * hace la página (el main no sabe cuánto dura una transición CSS: manda "quitalo" y listo).
+   */
+  showNotice(notice: OverlayNotice): void {
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.state = { ...this.state, notice };
+    this.noticeTimer = setTimeout(() => {
+      this.noticeTimer = null;
+      this.state = { ...this.state, notice: null };
+      this.sync();
+    }, NOTICE_MS);
+    this.sync();
+  }
+
   destroy(): void {
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    if (this.hideTimer) clearTimeout(this.hideTimer);
     this.win?.destroy();
     this.win = null;
   }
 
   private sync(): void {
-    const visible = this.enabled && (this.state.recording || this.state.toast !== null);
+    const visible =
+      this.enabled &&
+      (this.state.recording || this.state.toast !== null || this.state.notice !== null);
+
     if (!visible) {
-      this.win?.hide();
+      const win = this.win;
+      if (!win || !win.isVisible()) return;
+      // Se manda el estado vacío para que la página anime la salida, y la ventana se oculta un
+      // instante después: esconderla ya se comería la animación.
+      win.webContents.send(IpcEvent.OverlayState, this.state);
+      if (this.hideTimer) clearTimeout(this.hideTimer);
+      this.hideTimer = setTimeout(() => {
+        this.hideTimer = null;
+        win.hide();
+      }, EXIT_MS);
       return;
+    }
+
+    // Vuelve a haber algo que mostrar antes de que la ventana llegara a ocultarse.
+    if (this.hideTimer) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
     }
     const win = this.win ?? this.createWindow();
     win.webContents.send(IpcEvent.OverlayState, this.state);

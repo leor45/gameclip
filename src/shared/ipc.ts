@@ -11,6 +11,7 @@ import type {
 } from './capture';
 import type { ExportProgress, ExportRequest, ExportResult } from './export';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
+import type { OverlayNotice } from './overlay';
 import type { ClipAudioTrack, SaveAudioEditResult } from './tracks';
 
 export const IpcChannel = {
@@ -60,6 +61,8 @@ export interface OverlayState {
   recording: boolean;
   /** Texto del toast (p. ej. «Clip guardado ✓») o null si no hay. */
   toast: string | null;
+  /** Aviso al detectarse un juego (título + hotkeys reales); null cuando no hay ninguno. */
+  notice: OverlayNotice | null;
 }
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];

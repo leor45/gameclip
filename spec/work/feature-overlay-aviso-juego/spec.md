@@ -48,11 +48,11 @@ F6   Guardar una captura
 
 Observables y verificables uno a uno:
 
-- [ ] Al detectarse un juego, el overlay muestra el aviso con "Listo para clipear" y las hotkeys.
-- [ ] Las teclas mostradas son las configuradas (si el replay es F9, dice F9).
-- [ ] La fila del clip refleja la duración del buffer configurada.
-- [ ] El aviso entra deslizándose desde arriba y, a los pocos segundos, se va hacia arriba.
-- [ ] Con el overlay desactivado en Ajustes no aparece.
-- [ ] Con el modo de grabación en "apagado" no aparece.
-- [ ] Una hotkey desactivada (p. ej. capturas) no aparece como fila.
-- [ ] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
+- [x] Al detectarse un juego, el overlay muestra el aviso con "Listo para clipear" y las hotkeys.
+- [x] Las teclas mostradas son las configuradas (si el replay es F9, dice F9).
+- [x] La fila del clip refleja la duración del buffer configurada.
+- [x] El aviso entra deslizándose desde arriba y, a los pocos segundos, se va hacia arriba.
+- [x] Con el overlay desactivado en Ajustes no aparece.
+- [x] Con el modo de grabación en "apagado" no aparece.
+- [x] Una hotkey desactivada (p. ej. capturas) no aparece como fila.
+- [x] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
