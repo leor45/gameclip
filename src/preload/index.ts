@@ -3,6 +3,7 @@ import { IpcChannel, IpcEvent } from '@shared/ipc';
 import type {
   AppVersionInfo,
   CaptureApi,
+  EditorApi,
   ExporterApi,
   GameclipApi,
   LibraryApi,
@@ -66,6 +67,12 @@ const exporter: ExporterApi = {
   },
 };
 
+const editor: EditorApi = {
+  getAudioTracks: (id: number) => ipcRenderer.invoke(IpcChannel.ClipGetAudioTracks, { id }),
+  saveAudioEdit: (clipId: number, mutedTracks: string[]) =>
+    ipcRenderer.invoke(IpcChannel.ClipSaveAudioEdit, { clipId, mutedTracks }),
+};
+
 const overlay: OverlayApi = {
   onState: (listener: (state: OverlayState) => void) => {
     const wrapped = (_event: unknown, state: OverlayState) => listener(state);
@@ -79,6 +86,7 @@ const api: GameclipApi = {
   capture,
   library,
   exporter,
+  editor,
   overlay,
 };
 

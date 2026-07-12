@@ -7,6 +7,11 @@ export interface FfmpegJob {
   endSeconds: number;
   format: ExportFormat;
   quality: ExportQuality;
+  /**
+   * Ordinales (`0:a:N`) de las pistas a mezclar en el audio de la salida. Lista vacía → sin
+   * audio. Sin definir → ffmpeg elige la pista por su cuenta (clips sin sondeo).
+   */
+  audioTracks?: number[];
 }
 
 // CRF de libx264 por preset (menor = mejor calidad).
@@ -37,6 +42,7 @@ export function buildFfmpegArgs(job: FfmpegJob): string[] {
   if (job.format === 'mp4') {
     return [
       ...base,
+      ...audioArgs(job.audioTracks),
       '-c:v',
       'libx264',
       '-preset',
@@ -45,10 +51,6 @@ export function buildFfmpegArgs(job: FfmpegJob): string[] {
       String(MP4_CRF[job.quality]),
       '-pix_fmt',
       'yuv420p',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '160k',
       '-movflags',
       '+faststart',
       '-progress',
@@ -57,11 +59,52 @@ export function buildFfmpegArgs(job: FfmpegJob): string[] {
     ];
   }
 
-  // GIF con paleta optimizada en un solo paso (palettegen + paletteuse).
+  // GIF: no lleva audio, las pistas marcadas no aplican.
   const fps = GIF_FPS[job.quality];
   const width = GIF_WIDTH[job.quality];
   const filtro =
     `fps=${fps},scale=${width}:-1:flags=lanczos,` +
     'split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse';
   return [...base, '-filter_complex', filtro, '-loop', '0', '-progress', 'pipe:1', job.outputPath];
+}
+
+/** Bitrate del AAC de salida (export y mezcla de "guardar edit"). */
+export const AUDIO_BITRATE = '160k';
+
+/**
+ * Filtro que suma varias pistas en una. `normalize=0` (suma cruda, sin dividir por el número de
+ * entradas) es lo que hace el mixer de libobs al armar la pista `default`: con todas las pistas
+ * marcadas, el resultado suena como el original. Con una sola entrada, `amix` no aporta nada:
+ * pasa `anull`.
+ */
+export function amixFilter(audioTracks: number[], label: string): string {
+  const entradas = audioTracks.map((i) => `[0:a:${i}]`).join('');
+  const mezcla =
+    audioTracks.length === 1
+      ? 'anull'
+      : `amix=inputs=${audioTracks.length}:normalize=0:duration=longest`;
+  return `${entradas}${mezcla}[${label}]`;
+}
+
+/**
+ * Mapeo del audio del MP4 exportado: sin pistas marcadas no hay audio; con una se mapea directo
+ * y con varias se mezclan. Sin selección (undefined) se conserva el comportamiento previo:
+ * ffmpeg elige la pista por su cuenta.
+ */
+function audioArgs(audioTracks: number[] | undefined): string[] {
+  if (audioTracks === undefined) return ['-c:a', 'aac', '-b:a', AUDIO_BITRATE];
+  if (audioTracks.length === 0) return ['-an'];
+  const codec = ['-c:a', 'aac', '-b:a', AUDIO_BITRATE];
+  if (audioTracks.length === 1) {
+    return ['-map', '0:v:0', '-map', `0:a:${audioTracks[0]}`, ...codec];
+  }
+  return [
+    '-filter_complex',
+    amixFilter(audioTracks, 'aout'),
+    '-map',
+    '0:v:0',
+    '-map',
+    '[aout]',
+    ...codec,
+  ];
 }

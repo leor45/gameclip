@@ -1,30 +1,23 @@
 import { EventEmitter } from 'node:events';
-import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import type { ExportResult } from '@shared/export';
+import type { ClipAudioTrack } from '@shared/tracks';
+import { runAudioEdit } from './audio-edit';
 import { buildFfmpegArgs, type FfmpegJob } from './ffmpeg-args';
+import { probeAudioTracks } from './probe';
+import { defaultSpawn, type FfmpegProcess, type SpawnFfmpeg } from './spawn';
 
-// Superficie mínima del proceso hijo, para inyectar uno falso en tests.
-export interface FfmpegProcess {
-  stdout: NodeJS.EventEmitter;
-  stderr: NodeJS.EventEmitter;
-  on(event: 'error', listener: (err: Error) => void): unknown;
-  on(event: 'close', listener: (code: number | null) => void): unknown;
-  kill(signal?: NodeJS.Signals): unknown;
-}
-
-export type SpawnFfmpeg = (command: string, args: string[]) => FfmpegProcess;
-
-const defaultSpawn: SpawnFfmpeg = (command, args) =>
-  spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+export type { FfmpegProcess, SpawnFfmpeg } from './spawn';
 
 /**
- * Corre ffmpeg para exportar recortes: una exportación a la vez, progreso por evento
- * ('progress', 0–1), cancelación con limpieza del archivo parcial.
+ * Corre ffmpeg sobre los clips: exportar recortes (una exportación a la vez, progreso por evento
+ * 'progress' 0–1, cancelación con limpieza del parcial), sondear las pistas de audio y reescribir
+ * la mezcla de un clip (guardar edit).
  */
 export class ExportManager extends EventEmitter {
   private current: FfmpegProcess | null = null;
   private canceled = false;
+  private editing = false;
 
   constructor(
     private readonly ffmpegPath: string,
@@ -34,7 +27,29 @@ export class ExportManager extends EventEmitter {
   }
 
   get isBusy(): boolean {
-    return this.current !== null;
+    return this.current !== null || this.editing;
+  }
+
+  /** Pistas de audio de un clip (índice + nombre embebido). */
+  probeTracks(file: string): Promise<ClipAudioTrack[]> {
+    return probeAudioTracks(this.spawnFn, this.ffmpegPath, file);
+  }
+
+  /**
+   * Reescribe la mezcla del clip in-place con las pistas marcadas. Lanza si ffmpeg falla (el
+   * archivo original queda intacto).
+   */
+  async saveAudioEdit(
+    file: string,
+    tracks: ClipAudioTrack[],
+    activeTracks: number[],
+  ): Promise<void> {
+    this.editing = true;
+    try {
+      await runAudioEdit(this.spawnFn, this.ffmpegPath, file, tracks, activeTracks);
+    } finally {
+      this.editing = false;
+    }
   }
 
   run(job: FfmpegJob): Promise<ExportResult> {

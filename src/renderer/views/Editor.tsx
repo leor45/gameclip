@@ -3,9 +3,12 @@ import { Link, useParams } from 'react-router-dom';
 import type { ExportFormat, ExportQuality } from '@shared/export';
 import type { Clip } from '@shared/library';
 import { formatDuration } from '@shared/library';
+import type { ClipAudioTrack } from '@shared/tracks';
+import { hasRoleTracks, selectableTracks, trackKey, trackLabel } from '@shared/tracks';
 import { clipMediaUrl } from '../lib/media';
 
 type Estado = 'listo' | 'exportando' | 'hecho' | 'error';
+type EstadoEdit = 'listo' | 'guardando' | 'guardado' | 'error';
 
 const PASO = 0.1;
 const MIN_RECORTE = 0.5;
@@ -25,6 +28,12 @@ export default function Editor() {
   const [progreso, setProgreso] = useState(0);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [pistas, setPistas] = useState<ClipAudioTrack[]>([]);
+  const [muteadas, setMuteadas] = useState<string[]>([]);
+  const [estadoEdit, setEstadoEdit] = useState<EstadoEdit>('listo');
+  const [mensajeEdit, setMensajeEdit] = useState<string | null>(null);
+  // Sube al guardar el edit: el archivo cambió y hay que sacar al reproductor de su caché.
+  const [version, setVersion] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const finRef = useRef(0);
   finRef.current = fin;
@@ -38,12 +47,19 @@ export default function Editor() {
         if (!vivo) return;
         setClip(c);
         setNoEncontrado(c === null);
+        setMuteadas(c?.mutedTracks ?? []);
         const dur = c?.durationSeconds ?? 0;
         setDuracion(dur);
         setInicio(0);
         setFin(dur);
       })
       .catch(() => setNoEncontrado(true));
+    window.gameclip.editor
+      .getAudioTracks(id)
+      .then((t) => {
+        if (vivo) setPistas(t);
+      })
+      .catch(() => setPistas([]));
     return () => {
       vivo = false;
     };
@@ -104,6 +120,11 @@ export default function Editor() {
     }
   }
 
+  function togglePista(key: string) {
+    setEstadoEdit('listo');
+    setMuteadas((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
   async function exportar() {
     setEstado('exportando');
     setProgreso(0);
@@ -115,6 +136,7 @@ export default function Editor() {
       endSeconds: fin,
       format: formato,
       quality: calidad,
+      mutedTracks: muteadas,
     });
     if (resultado.status === 'done') {
       setEstado('hecho');
@@ -126,12 +148,30 @@ export default function Editor() {
     }
   }
 
+  /** Reescribe la mezcla del clip guardado; las pistas muteadas siguen en el archivo. */
+  async function guardarEdit() {
+    setEstadoEdit('guardando');
+    setMensajeEdit(null);
+    const resultado = await window.gameclip.editor.saveAudioEdit(clip!.id, muteadas);
+    if (resultado.status === 'done') {
+      setEstadoEdit('guardado');
+      setVersion((v) => v + 1);
+    } else {
+      setEstadoEdit('error');
+      setMensajeEdit(resultado.message ?? 'No se pudo guardar el edit.');
+    }
+  }
+
   async function copiar() {
     const ok = await window.gameclip.exporter.copyLast();
     setCopiado(ok);
   }
 
   const exportando = estado === 'exportando';
+  const guardandoEdit = estadoEdit === 'guardando';
+  const ocupado = exportando || guardandoEdit;
+  const seleccionables = selectableTracks(pistas);
+  const puedeGuardarEdit = hasRoleTracks(pistas);
 
   return (
     <section className="editor">
@@ -143,13 +183,13 @@ export default function Editor() {
       <video
         ref={videoRef}
         className="editor-video"
-        src={clipMediaUrl(clip.id)}
+        src={clipMediaUrl(clip.id, version)}
         controls
         onLoadedMetadata={onMetadata}
         onTimeUpdate={onTimeUpdate}
       />
 
-      <fieldset className="editor-trim" disabled={exportando}>
+      <fieldset className="editor-trim" disabled={ocupado}>
         <legend>Recorte</legend>
         <label>
           Inicio del recorte ({formatDuration(inicio)})
@@ -187,7 +227,42 @@ export default function Editor() {
         </div>
       </fieldset>
 
-      <fieldset className="editor-export" disabled={exportando}>
+      {seleccionables.length > 0 && (
+        <fieldset className="editor-tracks" disabled={ocupado}>
+          <legend>Pistas de audio</legend>
+          <ul className="editor-tracks-list">
+            {seleccionables.map((pista) => {
+              const key = trackKey(pista);
+              return (
+                <li key={key}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={!muteadas.includes(key)}
+                      onChange={() => togglePista(key)}
+                    />
+                    <span>{trackLabel(pista)}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="editor-tracks-hint">
+            {formato === 'gif'
+              ? 'El GIF no lleva audio: las pistas solo afectan a "Guardar edit".'
+              : 'El MP4 exportado lleva la mezcla de las pistas marcadas.'}
+          </p>
+          {!puedeGuardarEdit && (
+            <p className="editor-tracks-hint">
+              Este clip no tiene pistas por rol (se grabó en modo escritorio o antes de que
+              existieran), así que su mezcla no se puede rehacer: solo se puede exportar con o sin
+              audio.
+            </p>
+          )}
+        </fieldset>
+      )}
+
+      <fieldset className="editor-export" disabled={ocupado}>
         <legend>Exportar</legend>
         <label>
           Formato
@@ -216,10 +291,30 @@ export default function Editor() {
 
       <div className="editor-actions">
         {!exportando && (
-          <button type="button" className="primary" onClick={() => void exportar()}>
+          <button
+            type="button"
+            className="primary"
+            disabled={guardandoEdit}
+            onClick={() => void exportar()}
+          >
             Exportar…
           </button>
         )}
+        {!exportando && seleccionables.length > 0 && (
+          <button
+            type="button"
+            disabled={!puedeGuardarEdit || guardandoEdit}
+            title={
+              puedeGuardarEdit
+                ? 'Aplica el mute al clip guardado (sin borrar pistas)'
+                : 'Este clip no tiene pistas por rol'
+            }
+            onClick={() => void guardarEdit()}
+          >
+            {guardandoEdit ? 'Guardando…' : 'Guardar edit'}
+          </button>
+        )}
+        {estadoEdit === 'guardado' && <span className="editor-copied">Edit guardado ✓</span>}
         {exportando && (
           <>
             <progress aria-label="Progreso de exportación" max={1} value={progreso} />
@@ -244,6 +339,7 @@ export default function Editor() {
         </div>
       )}
       {estado === 'error' && mensaje && <p className="editor-error">{mensaje}</p>}
+      {estadoEdit === 'error' && mensajeEdit && <p className="editor-error">{mensajeEdit}</p>}
     </section>
   );
 }

@@ -127,3 +127,45 @@ describe('ClipsRepository — búsqueda y filtros', () => {
     expect(repo.games()).toEqual(['CS2', 'Valorant']);
   });
 });
+
+describe('ClipsRepository — edit de audio', () => {
+  it('un clip nuevo no tiene pistas muteadas', () => {
+    expect(repo.insert(nuevo()).mutedTracks).toEqual([]);
+  });
+
+  it('setAudioEdit guarda las pistas muteadas y el tamaño del archivo reescrito', () => {
+    const clip = repo.insert(nuevo({ sizeBytes: 5000 }));
+
+    const editado = repo.setAudioEdit(clip.id, ['mic', 'mic', ' opera '], 4800);
+
+    expect(editado.mutedTracks).toEqual(['mic', 'opera']); // normalizado: sin duplicados ni espacios
+    expect(editado.sizeBytes).toBe(4800);
+    expect(repo.get(clip.id)?.mutedTracks).toEqual(['mic', 'opera']);
+  });
+
+  it('desmutear todo deja la selección vacía', () => {
+    const clip = repo.insert(nuevo());
+    repo.setAudioEdit(clip.id, ['mic'], 100);
+
+    expect(repo.setAudioEdit(clip.id, [], 120).mutedTracks).toEqual([]);
+  });
+});
+
+describe('ClipsRepository — migración', () => {
+  it('añade muted_tracks a una DB con el esquema viejo (v1)', () => {
+    const vieja = new Database(':memory:');
+    vieja.exec(`CREATE TABLE clips (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       file_path TEXT NOT NULL UNIQUE, title TEXT NOT NULL, game TEXT,
+       duration_seconds REAL, size_bytes INTEGER NOT NULL DEFAULT 0,
+       favorite INTEGER NOT NULL DEFAULT 0, tags TEXT NOT NULL DEFAULT '[]',
+       thumbnail_path TEXT, created_at TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'scan');
+     INSERT INTO clips (file_path, title, created_at) VALUES ('C:\viejo.mp4', 'Viejo', '2026-01-01T00:00:00.000Z');
+     PRAGMA user_version = 1;`);
+
+    const migrado = new ClipsRepository(vieja);
+
+    expect(migrado.getByPath('C:\viejo.mp4')?.mutedTracks).toEqual([]);
+    vieja.close();
+  });
+});

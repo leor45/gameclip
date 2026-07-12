@@ -1,5 +1,7 @@
 // Dominio de exportación de clips: tipos y validación pura (sin Electron ni ffmpeg).
 
+import { normalizeMutedTracks } from './tracks';
+
 export type ExportFormat = 'mp4' | 'gif';
 export type ExportQuality = 'alta' | 'media' | 'baja';
 
@@ -9,6 +11,11 @@ export interface ExportRequest {
   endSeconds: number;
   format: ExportFormat;
   quality: ExportQuality;
+  /**
+   * Pistas de audio muteadas (claves de `trackKey`): el MP4 exportado lleva solo la mezcla de
+   * las marcadas. Sin definir → el audio del clip tal cual.
+   */
+  mutedTracks?: string[];
 }
 
 export type ExportStatus = 'done' | 'canceled' | 'error';
@@ -69,5 +76,6 @@ export function normalizeExportRequest(input: unknown): ExportRequest {
     endSeconds: Math.round(end * 100) / 100,
     format,
     quality,
+    ...('mutedTracks' in raw ? { mutedTracks: normalizeMutedTracks(raw.mutedTracks) } : {}),
   };
 }

@@ -20,6 +20,8 @@ export interface Clip {
   /** ISO 8601. */
   createdAt: string;
   source: ClipSource;
+  /** Pistas de audio muteadas en la mezcla del clip (claves de `trackKey`); ver `@shared/tracks`. */
+  mutedTracks: string[];
 }
 
 /** Campos editables por el usuario desde la UI. */

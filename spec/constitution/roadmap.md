@@ -79,12 +79,29 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 
 - [x] Recorte (trim) con vista previa.
 - [x] Exportación (calidad/formato/GIF) y compartir a portapapeles/archivo.
+- [x] Pistas de audio por nombre: mostrar, mutear, exportar solo las marcadas y **guardar edit**
+      sobre el clip de la biblioteca.
 - [ ] Resto de herramientas del editor de las apps de clips, de forma incremental (specs propios).
 
 > Exportación con ffmpeg (`ffmpeg-static`) en el main: MP4 (libx264, CRF 18/23/28) y GIF
 > (palettegen/paletteuse), `-ss` antes de `-i` (corte exacto al reencodear), progreso por
 > `out_time_ms`, cancelable. Portapapeles de archivos vía PowerShell `Set-Clipboard`
 > (Electron no expone CF_HDROP). Verificado con recorte real: MP4 2.50 s exactos y GIF.
+> Mejora post-entrega (2026-07-11, `feature/editor-pistas-audio`): el editor sondea las pistas
+> del MP4 con `ffmpeg -i` (sin añadir ffprobe) y lista las de rol por su nombre (`game`, `mic`,
+> `<app>`; la pista 1 `default` es la mezcla derivada y no se lista). **Exportar** mapea las
+> marcadas y las suma con `amix=normalize=0` (la misma suma que hace el mixer de libobs) → MP4
+> con una sola pista; sin marcadas, `-an`. **Guardar edit** reescribe el clip in-place: la pista
+> 1 se re-codifica como mezcla de las marcadas y el video y TODAS las pistas de rol se copian
+> (`-c copy`) — nada se borra, así que el edit es reversible y re-guardar no degrada (la mezcla
+> siempre se rehace desde fuentes intactas). Temporal + rename atómico; la selección se persiste
+> en `clips.muted_tracks` (migración #2) y el reproductor recarga con cache-busting. Los clips
+> sin pistas por rol (modo escritorio o previos) muestran una fila "Audio" y no admiten edit.
+> Limitación conocida: Chromium solo reproduce la primera pista, así que no hay previa del mute
+> antes de guardar. Verificado E2E sobre un clip real de 5 pistas: (mezcla_antes −
+> mezcla_después) − mic = −55 dB (lo que se fue es exactamente el mic), pista `mic` intacta,
+> video bit a bit idéntico (mismo MD5), mezcla restaurada al re-marcar, y export con solo `mic`
+> marcado = 1 pista que es el mic (residuo −67 dB).
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 

@@ -129,6 +129,19 @@ export class LibraryManager extends EventEmitter {
     return clip;
   }
 
+  /**
+   * Registra el edit de audio de un clip ya reescrito en disco: pistas muteadas en la mezcla y
+   * tamaño nuevo del archivo.
+   */
+  setAudioEdit(id: number, mutedTracks: string[]): Clip {
+    const clip = this.repo.get(id);
+    if (!clip) throw new Error(`Clip ${id} no existe.`);
+    const sizeBytes = existsSync(clip.filePath) ? statSync(clip.filePath).size : clip.sizeBytes;
+    const actualizado = this.repo.setAudioEdit(id, mutedTracks, sizeBytes);
+    this.emit('changed');
+    return actualizado;
+  }
+
   /** Borra registro, archivo de video y thumbnail. */
   deleteClip(id: number): void {
     const clip = this.repo.get(id);
