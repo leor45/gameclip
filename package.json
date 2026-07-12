@@ -15,6 +15,7 @@
     "test": "vitest run",
     "build": "electron-vite build",
     "build:portable": "electron-vite build && electron-builder --win portable",
+    "icon": "electron scripts/build-icon.cjs",
     "postinstall": "node scripts/rebuild-sqlite-electron.mjs"
   },
   "dependencies": {

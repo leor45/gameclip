@@ -291,7 +291,8 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Licencia **GPL-3.0** (`LICENSE`): la app enlaza `obs-studio-node` (GPL-2.0, es libobs) y
       redistribuye el `ffmpeg.exe` de `ffmpeg-static` (GPL-3.0-or-later) — el copyleft no es opcional.
       Mismo encuadre que Streamlabs Desktop.
-- [ ] Ícono propio del `.exe` (hoy sale con el de Electron por defecto: no hay `.ico` en el repo).
+- [x] Ícono propio: mando oscuro sobre baldosa amarilla (`#f5c518`, el acento de la app).
+      `build/icon.svg` es la fuente y `npm run icon` genera `build/icon.ico` (7 capas, 16→256 px).
 - [ ] Publicar el release en GitHub.
 
 > `feature/build-portable` (2026-07-11): la API va **embebida en el main**, no como proceso hijo —
@@ -312,6 +313,14 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > por el puerto fijo de la API). Verificado sobre el `.exe`: API embebida OK, registro/login,
 > `obs64.exe` corriendo desde `app.asar.unpacked`, F8 → clip de 36 MB con las 5 pistas nombradas
 > (el remux con ffmpeg desempaquetado también corre), y la sesión sobrevive a cerrar y reabrir.
+> `feature/icono-app` (2026-07-11): el icono se rasteriza con el **propio Electron** (`npm run icon`),
+> sin sumar ninguna dependencia de imágenes: el SVG se dibuja en un `<canvas>` del renderer y se lee
+> con `toDataURL`, en vez de `capturePage()` — la captura depende del compositor y en una ventana
+> offscreen puede no entregar nunca un frame (se colgaba). El script es `.cjs` porque este Electron
+> no arranca con un entrypoint `.mjs`. En el `.ico`, las capas chicas van como **BMP** y solo la de
+> 256 como PNG: la API clásica de iconos (GDI+, y con ella parte del shell) no sabe leer entradas
+> PNG y las decodifica en basura — verificado leyendo el `.ico` con `System.Drawing` (`#f5c518` y
+> `#111318` exactos a 16/32/48 px) y extrayendo el icono ya incrustado en el `.exe`.
 > **Bug encontrado durante la verificación, fuera del alcance de esta tarea:** la grabación manual
 > deja un MP4 de 261 bytes. Reproducido **también en dev**, así que es previo al empaquetado. Los
 > detalles y las pistas quedan en "Bugs abiertos", más abajo.
