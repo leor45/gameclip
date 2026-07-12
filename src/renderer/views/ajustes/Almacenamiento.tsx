@@ -34,14 +34,15 @@ export default function AjustesAlmacenamiento() {
   }
 
   const total = stats ? stats.driveTotalBytes : 0;
+  const gameclipBytes = stats
+    ? stats.clipsBytes + stats.recordingsBytes + stats.screenshotsBytes
+    : 0;
   const otrosBytes =
-    stats && total > 0
-      ? Math.max(0, total - stats.driveFreeBytes - stats.clipsBytes - stats.recordingsBytes)
-      : 0;
+    stats && total > 0 ? Math.max(0, total - stats.driveFreeBytes - gameclipBytes) : 0;
   // El catálogo puede contar clips de otra unidad: normalizar para que los segmentos
   // nunca sumen más del 100 % de la barra.
   const denominador = stats
-    ? Math.max(total, stats.clipsBytes + stats.recordingsBytes + otrosBytes + stats.driveFreeBytes)
+    ? Math.max(total, gameclipBytes + otrosBytes + stats.driveFreeBytes)
     : 0;
 
   return (
@@ -119,6 +120,10 @@ export default function AjustesAlmacenamiento() {
               style={{ width: `${(stats.recordingsBytes / denominador) * 100}%` }}
             />
             <span
+              className="storage-seg storage-seg-screenshots"
+              style={{ width: `${(stats.screenshotsBytes / denominador) * 100}%` }}
+            />
+            <span
               className="storage-seg storage-seg-other"
               style={{ width: `${(otrosBytes / denominador) * 100}%` }}
             />
@@ -135,6 +140,10 @@ export default function AjustesAlmacenamiento() {
             <li>
               <span className="storage-dot storage-seg-recordings" />
               Grabaciones: {formatStorage(stats.recordingsBytes)}
+            </li>
+            <li>
+              <span className="storage-dot storage-seg-screenshots" />
+              Capturas: {formatStorage(stats.screenshotsBytes)}
             </li>
             <li>
               <span className="storage-dot storage-seg-other" />

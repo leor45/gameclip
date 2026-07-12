@@ -4,6 +4,7 @@ import {
   clipFileName,
   clipFolderSegments,
   clipTimestamp,
+  gameFromFolderName,
 } from '../clip-naming';
 
 // 2 de julio de 2026, 10:02:01.010 → centésimas 01
@@ -61,5 +62,22 @@ describe('clipFolderSegments', () => {
     expect(clipFolderSegments('Terraria.exe', 'screenshot')).toEqual(['Terraria', 'Capturas']);
     expect(clipFolderSegments(null, 'video')).toEqual(['Desktop']);
     expect(clipFolderSegments(null, 'screenshot')).toEqual(['Desktop', 'Capturas']);
+  });
+});
+
+describe('gameFromFolderName', () => {
+  it('traduce la carpeta (ejecutable sin extensión) al nombre del juego', () => {
+    expect(gameFromFolderName('terraria')).toBe('Terraria');
+    expect(gameFromFolderName('cs2')).toBe('Counter-Strike 2');
+  });
+
+  it('Desktop no es un juego', () => {
+    expect(gameFromFolderName('Desktop')).toBeNull();
+    expect(gameFromFolderName('desktop')).toBeNull();
+    expect(gameFromFolderName('  ')).toBeNull();
+  });
+
+  it('una carpeta desconocida (juego manual o hecha a mano) se toma tal cual', () => {
+    expect(gameFromFolderName('MiJuegoRaro')).toBe('MiJuegoRaro');
   });
 });

@@ -204,6 +204,8 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
       y nomenclatura `<Juego> [Screenshot] AAAA.MM.DD - HH.MM.SS.CC`, con migración de lo viejo.
 - [x] Filtro "Escritorio" en la biblioteca: aísla las grabaciones que no vienen de un juego.
 - [x] Preview al pasar el cursor: borde blanco en la tarjeta y los primeros 10 s en bucle, mudos.
+- [x] Capturas de pantalla en la biblioteca: se ven, se filtran por juego/Escritorio y se gestionan
+      como un clip más (sin editor ni preview); cuentan para el límite pero el auto-borrado no las toca.
 
 > `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
 > `library:get-storage-stats` (las mismas contra las que el auto-borrado compara el límite, o el
@@ -231,6 +233,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > NULL`, con precedencia sobre `game`) y el desplegable usa un centinela que traduce el renderer.
 > Así un clip cuyo juego se llamara "Escritorio" sigue filtrándose como el juego que es, y no hace
 > falta escribir un pseudo-juego en el catálogo.
+> `feature/capturas-en-biblioteca` (2026-07-11): el catálogo distingue **qué es** un archivo
+> (`kind`: video o imagen, derivado de la extensión) de **de dónde salió** (`source`) — un PNG es una
+> imagen tanto si lo guardó la hotkey como si lo encontró el escaneo, así que ningún alta puede
+> catalogarlo mal. La captura se registra al tomarla (aparece sin reiniciar) y el escaneo indexa las
+> `Capturas/`. Para que se filtren por juego, el juego de lo escaneado **se infiere de la carpeta**
+> (`gameFromFolderName`, el inverso de `clipBaseName`), que la Fase 10 hizo fiable; antes todo lo
+> escaneado quedaba sin juego. Las capturas llevan miniatura propia (canvas desde `<img>`): pintar
+> el PNG entero en cada tarjeta es justo el coste que la app evita mientras se juega. Cuentan para el
+> límite pero el auto-borrado las salta (decisión del owner): borrar 2 MB de PNG no libera nada y son
+> irrecuperables.
 > `feature/preview-hover-biblioteca` (2026-07-11): la preview reproduce el MP4 original por el
 > protocolo de medios (ya sirve Range con `stream: true`), sin generar previews en disco ni pasar
 > por ffmpeg. **Restricción del owner: la app corre mientras se juega**, así que solo vive la
@@ -241,6 +253,13 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 
 ## Futuro (fuera de alcance por ahora)
 
+- **Overlay in-game por inyección (estilo Discord):** hoy el overlay es una BrowserWindow
+  transparente siempre-encima, así que **no se ve en fullscreen exclusivo** — ni el indicador de
+  grabación, ni el toast de clip guardado, ni el aviso al detectar el juego. La solución real es
+  inyectar en el proceso del juego y dibujar sobre su swapchain (hook de `Present` en
+  DX11/DX12/OpenGL/Vulkan), como hacen Discord, las apps de clips y el overlay de Steam. Implica una DLL nativa,
+  IPC con el main y riesgo de falsos positivos de anticheat: es una tarea propia (spec + plan) y
+  probablemente una fase entera, no un ajuste del overlay actual.
 - Guardado en la nube y compartir alojado.
 - Login social (Discord, Google, etc.).
 - Otras plataformas además de Windows.

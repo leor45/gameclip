@@ -2,9 +2,24 @@
 
 export type ClipSource = 'replay' | 'recording' | 'scan';
 
+/**
+ * Qué ES el archivo, que no es lo mismo que de dónde salió (`ClipSource`): un PNG es una imagen
+ * tanto si lo guardó la hotkey como si lo encontró el escaneo. Se deriva de la extensión.
+ */
+export type MediaKind = 'video' | 'image';
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
+/** `…/Terraria Screenshot 2026.png` → `image`; cualquier otra cosa → `video`. */
+export function mediaKindForFile(filePath: string): MediaKind {
+  const punto = filePath.lastIndexOf('.');
+  const ext = punto === -1 ? '' : filePath.slice(punto).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext) ? 'image' : 'video';
+}
+
 export interface Clip {
   id: number;
-  /** Ruta absoluta del archivo de video. */
+  /** Ruta absoluta del archivo (video o captura). */
   filePath: string;
   /** Nombre visible, editable por el usuario. */
   title: string;
@@ -20,6 +35,8 @@ export interface Clip {
   /** ISO 8601. */
   createdAt: string;
   source: ClipSource;
+  /** Video o captura de pantalla. Lo consulta la UI para decidir qué pintar y qué acciones ofrecer. */
+  kind: MediaKind;
   /** Pistas de audio muteadas en la mezcla del clip (claves de `trackKey`); ver `@shared/tracks`. */
   mutedTracks: string[];
 }
@@ -38,6 +55,8 @@ export interface StorageStats {
   clipsBytes: number;
   /** Bytes de grabaciones manuales (source 'recording'). */
   recordingsBytes: number;
+  /** Bytes de las capturas de pantalla. Ocupan (cuentan para el límite) pero no se auto-borran. */
+  screenshotsBytes: number;
   driveFreeBytes: number;
   driveTotalBytes: number;
 }

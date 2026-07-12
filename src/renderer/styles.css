@@ -550,6 +550,8 @@ body {
   width: 100%;
   max-height: 70vh;
   background: #000;
+  /* Una captura puede tener cualquier proporción: se muestra entera, no recortada. */
+  object-fit: contain;
 }
 
 .editor {
@@ -1294,6 +1296,10 @@ body {
 
 .storage-seg-recordings {
   background: #4caf50;
+}
+
+.storage-seg-screenshots {
+  background: #e0a33e;
 }
 
 .storage-seg-other {

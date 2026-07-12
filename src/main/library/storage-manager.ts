@@ -22,8 +22,10 @@ export class StorageManager {
   getStats(outputDir: string): StorageStats {
     let clipsBytes = 0;
     let recordingsBytes = 0;
+    let screenshotsBytes = 0;
     for (const clip of this.library.list()) {
-      if (clip.source === 'recording') recordingsBytes += clip.sizeBytes;
+      if (clip.kind === 'image') screenshotsBytes += clip.sizeBytes;
+      else if (clip.source === 'recording') recordingsBytes += clip.sizeBytes;
       else clipsBytes += clip.sizeBytes;
     }
 
@@ -37,14 +39,15 @@ export class StorageManager {
       // unidad desmontada, permisos, etc.: se informan ceros en vez de propagar el error
     }
 
-    return { clipsBytes, recordingsBytes, driveFreeBytes, driveTotalBytes };
+    return { clipsBytes, recordingsBytes, screenshotsBytes, driveFreeBytes, driveTotalBytes };
   }
 
   /**
    * Si el uso supera el límite y el auto-borrado está activo, elimina los archivos más
-   * viejos hasta quedar por debajo. Nunca borra `protectPath` (el clip recién guardado)
-   * ni favoritos; con `onlyDeleteRecordings` respeta también ese filtro.
-   * Devuelve las rutas eliminadas.
+   * viejos hasta quedar por debajo. Nunca borra `protectPath` (el clip recién guardado),
+   * favoritos ni **capturas de pantalla** (pesan poco y son irrecuperables: el límite es para los
+   * videos, aunque las capturas cuenten para medirlo); con `onlyDeleteRecordings` respeta también
+   * ese filtro. Devuelve las rutas eliminadas.
    */
   async enforceLimit(
     settings: CaptureSettings,
@@ -63,6 +66,7 @@ export class StorageManager {
       if (used <= limitBytes) break;
       if (clip.filePath === opts.protectPath) continue;
       if (clip.favorite) continue;
+      if (clip.kind === 'image') continue;
       if (settings.onlyDeleteRecordings && clip.source !== 'recording') continue;
 
       await this.removeClip(clip, settings.useRecycleBin);

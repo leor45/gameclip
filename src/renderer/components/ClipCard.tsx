@@ -23,6 +23,7 @@ function prefiereMenosMovimiento(): boolean {
 }
 
 export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange }: Props) {
+  const esImagen = clip.kind === 'image';
   const [editando, setEditando] = useState(false);
   const [titulo, setTitulo] = useState(clip.title);
   const [tags, setTags] = useState(clip.tags.join(', '));
@@ -44,7 +45,8 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
   }
 
   function entrar() {
-    if (prefiereMenosMovimiento()) return;
+    // Una captura no tiene nada que reproducir: el hover le deja solo el borde.
+    if (esImagen || prefiereMenosMovimiento()) return;
     cancelarPreview();
     temporizador.current = setTimeout(() => onPreviewChange?.(true), PREVIEW_DELAY_MS);
   }
@@ -96,12 +98,12 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
       <button
         type="button"
         className="clip-thumb"
-        aria-label={`Reproducir ${clip.title}`}
+        aria-label={`${esImagen ? 'Ver' : 'Reproducir'} ${clip.title}`}
         onClick={() => onPlay(clip)}
       >
         {/* La preview se MONTA al apuntar y se DESMONTA al salir: pausarla dejaría vivos el búfer
             y el decodificador, y la app corre mientras el usuario juega. */}
-        {previewActiva ? (
+        {previewActiva && !esImagen ? (
           <video
             className="clip-preview"
             data-testid={`preview-${clip.id}`}
@@ -122,9 +124,11 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         ) : poster ? (
           <img src={poster} alt="" />
         ) : (
-          <span className="clip-thumb-placeholder">▶</span>
+          <span className="clip-thumb-placeholder">{esImagen ? '🖼' : '▶'}</span>
         )}
-        <span className="clip-duration">{formatDuration(clip.durationSeconds)}</span>
+        <span className="clip-duration">
+          {esImagen ? 'Captura' : formatDuration(clip.durationSeconds)}
+        </span>
       </button>
 
       {editando ? (
@@ -190,17 +194,20 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         >
           ✎
         </button>
-        <button
-          type="button"
-          aria-label="Editar"
-          disabled={ocupado}
-          onClick={() => {
-            // Navegación por hash: la tarjeta no se acopla al router (HashRouter la resuelve).
-            window.location.hash = `#/editor/${clip.id}`;
-          }}
-        >
-          ✂
-        </button>
+        {/* El editor recorta y mezcla pistas de audio: no hay nada que hacer con una captura. */}
+        {!esImagen && (
+          <button
+            type="button"
+            aria-label="Editar"
+            disabled={ocupado}
+            onClick={() => {
+              // Navegación por hash: la tarjeta no se acopla al router (HashRouter la resuelve).
+              window.location.hash = `#/editor/${clip.id}`;
+            }}
+          >
+            ✂
+          </button>
+        )}
         <button
           type="button"
           aria-label="Abrir carpeta"

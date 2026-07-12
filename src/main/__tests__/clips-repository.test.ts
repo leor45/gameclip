@@ -168,6 +168,38 @@ describe('ClipsRepository — migración', () => {
     expect(migrado.getByPath('C:\viejo.mp4')?.mutedTracks).toEqual([]);
     vieja.close();
   });
+
+  it('el backfill de kind marca como imagen lo que ya estuviera catalogado con extensión de imagen', () => {
+    const vieja = new Database(':memory:');
+    vieja.exec(`CREATE TABLE clips (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       file_path TEXT NOT NULL UNIQUE, title TEXT NOT NULL, game TEXT,
+       duration_seconds REAL, size_bytes INTEGER NOT NULL DEFAULT 0,
+       favorite INTEGER NOT NULL DEFAULT 0, tags TEXT NOT NULL DEFAULT '[]',
+       thumbnail_path TEXT, created_at TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'scan');
+     INSERT INTO clips (file_path, title, created_at) VALUES
+       ('C:\\Videos\\Captura.PNG', 'Captura', '2026-01-01T00:00:00.000Z'),
+       ('C:\\Videos\\Clip.mp4', 'Clip', '2026-01-01T00:00:00.000Z');
+     PRAGMA user_version = 1;`);
+
+    const migrado = new ClipsRepository(vieja);
+
+    expect(migrado.getByPath('C:\\Videos\\Captura.PNG')?.kind).toBe('image');
+    expect(migrado.getByPath('C:\\Videos\\Clip.mp4')?.kind).toBe('video');
+    vieja.close();
+  });
+});
+
+describe('ClipsRepository — kind (video vs captura)', () => {
+  it('lo decide la extensión, no el source', () => {
+    const captura = repo.insert(
+      nuevo({ filePath: 'C:\\Videos\\GameClip\\Terraria\\Capturas\\a.png', source: 'replay' }),
+    );
+    const clip = repo.insert(nuevo({ filePath: 'C:\\Videos\\GameClip\\b.mp4', source: 'scan' }));
+
+    expect(captura.kind).toBe('image');
+    expect(clip.kind).toBe('video');
+  });
 });
 
 describe('ClipsRepository — filtro escritorio (clips sin juego)', () => {

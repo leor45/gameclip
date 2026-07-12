@@ -9,7 +9,7 @@ import type { ClipSavedInfo } from './capture/manager';
 import type { DisplayInfo } from './capture/obs';
 import { GameDetector } from './capture/game-detector';
 import { AutoSwitcher } from './capture/auto-switcher';
-import { takeScreenshot } from './capture/screenshots';
+import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
@@ -254,12 +254,7 @@ function registerHotkeys(manager: CaptureManager): void {
   }
   if (s.screenshotsEnabled) {
     registrar(s.screenshotHotkey, () => {
-      const cur = manager.getSettings();
-      void takeScreenshot(
-        cur.screenMonitorIndex,
-        manager.outputDir(),
-        manager.activeGameExecutable(),
-      ).then((path) => {
+      void takeAndRegisterScreenshot(manager, library).then((path) => {
         if (path) overlay?.showToast('Captura guardada ✓');
       });
     });

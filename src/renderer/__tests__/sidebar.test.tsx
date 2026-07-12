@@ -20,10 +20,16 @@ beforeEach(() => {
 });
 
 /** Stats y límite del catálogo, como los devuelve el main. */
-function conAlmacenamiento(clipsGb: number, recordingsGb: number, limitGb: number) {
+function conAlmacenamiento(
+  clipsGb: number,
+  recordingsGb: number,
+  limitGb: number,
+  screenshotsGb = 0,
+) {
   mock().library.getStorageStats.mockResolvedValue({
     clipsBytes: clipsGb * GB,
     recordingsBytes: recordingsGb * GB,
+    screenshotsBytes: screenshotsGb * GB,
     driveFreeBytes: 60 * GB,
     driveTotalBytes: 100 * GB,
   });
@@ -56,6 +62,14 @@ describe('Indicador de almacenamiento del sidebar', () => {
 
     expect(await screen.findByText('3 GB')).toBeInTheDocument();
     expect(screen.getByText('10 GB')).toBeInTheDocument();
+  });
+
+  it('las capturas también ocupan: entran en lo usado', async () => {
+    conAlmacenamiento(2, 1, 10, 1); // 2 + 1 + 1 = 4 GB
+
+    renderIndicador();
+
+    expect(await screen.findByText('4 GB')).toBeInTheDocument();
   });
 
   it('el anillo representa el porcentaje usado', async () => {

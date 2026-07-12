@@ -14,7 +14,7 @@ import {
   type SaveAudioEditResult,
 } from '@shared/tracks';
 import { listAudioApps } from './capture/audio-apps';
-import { takeScreenshot } from './capture/screenshots';
+import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
@@ -68,11 +68,7 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IpcChannel.CaptureSwitchGame, () => capture.switchGame());
   ipcMain.handle(IpcChannel.CaptureTakeScreenshot, () =>
-    takeScreenshot(
-      capture.getSettings().screenMonitorIndex,
-      capture.outputDir(),
-      capture.activeGameExecutable(),
-    ),
+    takeAndRegisterScreenshot(capture, library),
   );
   ipcMain.handle(IpcChannel.CaptureGetAudioApps, () => listAudioApps());
   ipcMain.handle(IpcChannel.CapturePickOutputDir, async (event) => {

@@ -88,6 +88,7 @@ export function crearGameclipMock() {
       getStorageStats: vi.fn().mockResolvedValue({
         clipsBytes: 20 * 1024 ** 3,
         recordingsBytes: 10 * 1024 ** 3,
+        screenshotsBytes: 0,
         driveFreeBytes: 60 * 1024 ** 3,
         driveTotalBytes: 100 * 1024 ** 3,
       }),
