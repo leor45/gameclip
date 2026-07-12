@@ -75,7 +75,7 @@ en main → contrato IPC → preload → UI):
   trivial de parsear.
 - **Lista curada de procesos en vez de heurísticas** — una heurística (ventana fullscreen,
   uso de GPU) da falsos positivos difíciles de depurar; la lista es predecible, testeable
-  y ampliable. las apps de clips usa una DB de juegos: queda explícitamente fuera.
+  y ampliable. Una DB de juegos (como la que usan las apps comerciales) queda explícitamente fuera.
 - **Overlay como BrowserWindow transparente, no inyección** — la inyección al proceso del
   juego (estilo Discord/Steam) exige un hook nativo por API gráfica y firma de código;
   fuera de alcance. La ventana encima cubre borderless/ventana, que es el modo dominante.

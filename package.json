@@ -1,7 +1,7 @@
 {
   "name": "gameclip",
   "version": "0.1.0",
-  "description": "Captura de clips de juegos y grabación de escritorio (clon de las apps de clips comerciales, sin nube)",
+  "description": "Captura de clips de juegos y grabación de escritorio, 100% local",
   "private": true,
   "main": "out/main/index.js",
   "author": "Leo",

@@ -8,7 +8,7 @@
 
 Los clips se capturan enteros: sobra material antes y después del momento importante y no hay
 forma de quedarse solo con lo bueno ni de compartirlo en otro formato. Objetivo: editor básico
-estilo de las apps de clips — recortar un clip con vista previa y exportarlo (MP4 o GIF, con calidad a
+básico — recortar un clip con vista previa y exportarlo (MP4 o GIF, con calidad a
 elegir), guardándolo donde el usuario quiera o copiándolo al portapapeles para pegarlo en
 Discord/donde sea.
 
@@ -26,7 +26,7 @@ Discord/donde sea.
 - El recorte exportado **no** toca el clip original.
 
 **Fuera (explícito):**
-- Resto de herramientas del editor de las apps de clips (texto, zoom, censura, música…): llegarán de
+- Resto de herramientas de un editor completo (texto, zoom, censura, música…): llegarán de
   forma incremental con specs propios.
 - Editar metadatos desde el editor (eso vive en la Biblioteca).
 - Exportaciones concurrentes (una a la vez).

@@ -1,4 +1,4 @@
-# Tasks — Audio avanzado (PTT, supresión de ruido, lista estilo de las apps de clips) + Development Mode
+# Tasks — Audio avanzado (PTT, supresión de ruido, lista de audio por app) + Development Mode
 
 Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 

@@ -2,7 +2,7 @@
 
 ## Resumen
 
-App web empaquetada con **Electron** (como las apps de clips comerciales), frontend y backend en **un mismo repositorio
+App web empaquetada con **Electron**, frontend y backend en **un mismo repositorio
 con un solo `package.json`** — sin monorepo, sin workspaces. Todo en **TypeScript**.
 
 | Capa | Tecnología | Notas |
@@ -47,7 +47,7 @@ gameclip/
 ## Decisiones y riesgos del stack
 
 - **`obs-studio-node` (binding de libobs para Electron, mantenido por Streamlabs).** Es lo que usa
-  Streamlabs Desktop en producción y lo más cercano a cómo las apps de clips captura de verdad.
+  Streamlabs Desktop en producción y lo más cercano a cómo capturan las apps comerciales del rubro.
   **Riesgos conocidos:** compatibilidad estricta con versiones concretas de Electron/Node (hay que
   fijar versiones), binarios nativos por plataforma, y documentación escasa (la referencia es el
   código de Streamlabs Desktop). La versión de Electron del proyecto se elige en función de la que

@@ -37,7 +37,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Integración de `obs-studio-node`: inicialización, contexto de video/audio, fijar versión de Electron compatible.
 - [x] Grabación manual de escritorio (display capture) con audio de sistema y micrófono.
 - [x] Game capture de juegos en primer plano (any_fullscreen, apilado sobre monitor_capture).
-- [x] **Clip retroactivo:** buffer de repetición + hotkey global configurable (estilo F8 de las apps de clips).
+- [x] **Clip retroactivo:** buffer de repetición + hotkey global configurable (F8 por defecto).
 - [x] Ajustes de calidad: resolución, FPS, calidad (presets de libobs), encoder (NVENC/AMF/QSV/x264).
 
 > osn `0.26.29b18` desde el S3 de Streamlabs (la versión viva se lee de
@@ -93,7 +93,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Exportación (calidad/formato/GIF) y compartir a portapapeles/archivo.
 - [x] Pistas de audio por nombre: mostrar, mutear, exportar solo las marcadas y **guardar edit**
       sobre el clip de la biblioteca.
-- [ ] Resto de herramientas del editor de las apps de clips, de forma incremental (specs propios).
+- [ ] Resto de herramientas de un editor completo, de forma incremental (specs propios).
 
 > Exportación con ffmpeg (`ffmpeg-static`) en el main: MP4 (libx264, CRF 18/23/28) y GIF
 > (palettegen/paletteuse), `-ss` antes de `-i` (corte exacto al reencodear), progreso por
@@ -169,11 +169,11 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Push-to-talk global (teclado o Mouse4/5) con hook `uiohook-napi`; el mic solo se abre con
       la tecla pulsada, sin reconstruir el pipeline; degradación limpia si el hook no carga.
 - [x] Supresión de ruido del micrófono (filtro RNNoise de libobs vía `FilterFactory`).
-- [x] Lista de audio estilo de las apps de clips en modo apps: filas fijas (Audio del juego, Micrófono,
+- [x] Lista de audio por aplicación en modo apps: filas fijas (Audio del juego, Micrófono,
       Discord siempre visible) con checkbox para pausar sin quitar; apps del usuario con
       checkbox + basurero rojo; `audioApps.enabled` en el modelo (migración automática).
 - [x] Sección Desarrollo: toggle de aceleración por hardware, aplicado antes de `ready`
-      (requiere reinicio; advertencia estilo de las apps de clips).
+      (requiere reinicio; con advertencia en rojo).
 
 > Verificado en máquina real: MP4 con 3 pistas AAC (juego/mic/apps) respetando apps
 > deshabilitadas, y arranque con la aceleración desactivada. PTT emite `held` desde el hook
@@ -323,7 +323,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
   transparente siempre-encima, así que **no se ve en fullscreen exclusivo** — ni el indicador de
   grabación, ni el toast de clip guardado, ni el aviso al detectar el juego. La solución real es
   inyectar en el proceso del juego y dibujar sobre su swapchain (hook de `Present` en
-  DX11/DX12/OpenGL/Vulkan), como hacen Discord, las apps de clips y el overlay de Steam. Implica una DLL nativa,
+  DX11/DX12/OpenGL/Vulkan), como hacen Discord y el overlay de Steam. Implica una DLL nativa,
   IPC con el main y riesgo de falsos positivos de anticheat: es una tarea propia (spec + plan) y
   probablemente una fase entera, no un ajuste del overlay actual.
 - Guardado en la nube y compartir alojado.

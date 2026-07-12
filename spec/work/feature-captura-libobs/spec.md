@@ -6,7 +6,7 @@
 
 ## Problema / Objetivo
 
-El corazón de GameClip: capturar juegos y escritorio como las apps de clips. Integrar libobs vía
+El corazón de GameClip: capturar juegos y escritorio con calidad de grabador nativo. Integrar libobs vía
 `@streamlabs/obs-studio-node` en el proceso main para (a) grabación manual de escritorio/juego
 con audio, (b) **clip retroactivo** con buffer de repetición y hotkey global, y (c) ajustes de
 calidad configurables.

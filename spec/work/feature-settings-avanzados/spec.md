@@ -7,10 +7,10 @@
 ## Problema / Objetivo
 
 Las fases de desarrollo están completas pero los Ajustes son un formulario plano con opciones
-mínimas. Falta la paridad de configuración con las apps de clips comerciales: audio por aplicación con tracks
-separados, selección de micrófono, calidad con bitrate, gestión de almacenamiento con límite y
-auto-borrado, y opciones avanzadas de captura. Además, todo en una sola página produce un scroll
-gigante: hay que desglosar Ajustes en submenús.
+mínimas. Falta la paridad de configuración con las apps de clips del mercado: audio por aplicación
+con tracks separados, selección de micrófono, calidad con bitrate, gestión de almacenamiento con
+límite y auto-borrado, y opciones avanzadas de captura. Además, todo en una sola página produce un
+scroll gigante: hay que desglosar Ajustes en submenús.
 
 ## Alcance
 
@@ -42,15 +42,15 @@ gigante: hay que desglosar Ajustes en submenús.
 
 **Fuera (explícito):**
 
-- La sección "Clip Options" de las apps de clips (watermark, copiar links) — pedido explícito del owner.
-- La sección "Development Mode" de las apps de clips (logging, SDK mode, aceleración por hardware).
-- Cloud Sync / importación de grabadores externos (las apps de clips PC Storage) — sin nube por ahora.
-- Push-to-talk, supresión de ruido y test de micrófono (UI de Audio de las apps de clips): fase propia.
+- La sección "Clip Options" de la referencia (watermark, copiar links) — pedido explícito del owner.
+- La sección "Development Mode" de la referencia (logging, SDK mode, aceleración por hardware).
+- Cloud Sync / importación de grabadores externos — sin nube por ahora.
+- Push-to-talk, supresión de ruido y test de micrófono (UI de Audio de la referencia): fase propia.
 - **Limitación aceptada:** `recordingBuffer: 'disk' | 'memory'` se persiste y se expone en la UI,
   pero el buffer de repetición de libobs es siempre en RAM; hoy ambos valores se comportan igual
   (queda documentado en la UI y preparado para un motor de buffer a disco futuro).
 - Los toggles avanzados se mapean *best-effort* a settings reales de libobs (ver plan); no se
-  replica el motor de captura propio de las apps de clips.
+  replica el motor de captura propio de las apps comerciales.
 
 ## Criterios de aceptación
 

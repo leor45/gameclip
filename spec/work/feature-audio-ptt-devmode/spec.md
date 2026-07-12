@@ -1,4 +1,4 @@
-# Spec — Audio avanzado (PTT, supresión de ruido, lista estilo de las apps de clips) + Development Mode
+# Spec — Audio avanzado (PTT, supresión de ruido, lista de audio por app) + Development Mode
 
 **Tipo:** Feature
 **Rama:** `feature/audio-ptt-devmode` (parte de `feature/settings-avanzados`, aún sin mergear:
@@ -8,7 +8,7 @@ mergear aquella primero y esta después)
 ## Problema / Objetivo
 
 Pedido del owner tras la Fase 7: (1) push-to-talk y supresión de ruido **funcionales** en el
-micrófono; (2) la lista de audio en modo apps debe funcionar como en las apps de clips — filas por defecto
+micrófono; (2) la lista de audio en modo apps debe funcionar como en las apps de clips de referencia — filas por defecto
 ya presentes (Audio del juego, Micrófono y Discord siempre visible aunque no esté corriendo)
 con checkbox para activar/desactivar la captura sin quitar la fila, y las apps añadidas con
 checkbox + botón de basurero rojo; (3) una sección Development Mode con al menos el toggle de
@@ -37,15 +37,15 @@ aceleración por hardware.
 - **Development Mode:** nueva sección "Desarrollo" en Ajustes con el toggle **Aceleración por
   hardware** (default ON). Desactivarla llama `app.disableHardwareAcceleration()` en el
   próximo arranque (aplica antes de `ready`; la UI avisa que requiere reiniciar) con la
-  advertencia estilo de las apps de clips (puede romper el editor/reproducción; solo para debugging).
+  advertencia en rojo (puede romper el editor/reproducción; solo para debugging).
 
 **Fuera (explícito):**
 
-- Logging verboso / SDK mode de las apps de clips (resto de su Development Mode).
+- Logging verboso / SDK mode (resto del Development Mode de la referencia).
 - Test de micrófono con playback y slider de dB de la supresión (el toggle usa RNNoise, que
   no requiere umbral); specs propios si se piden.
 - PTT por combinaciones de teclas (modificador + tecla); una sola tecla o botón del mouse.
-- "las apps de clips Clip Sound" y "NVIDIA Broadcast" de la captura de referencia (no aplican a GameClip).
+- El sonido de clip guardado y "NVIDIA Broadcast" de la captura de referencia (no aplican a GameClip).
 
 ## Criterios de aceptación
 

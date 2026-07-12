@@ -1,4 +1,4 @@
-# Plan — Audio avanzado (PTT, supresión de ruido, lista estilo de las apps de clips) + Development Mode
+# Plan — Audio avanzado (PTT, supresión de ruido, lista de audio por app) + Development Mode
 
 > **Este plan es un contrato.** Se propone y se espera el OK del owner antes de escribir código.
 > Aprobado, el alcance queda fijo: lo nuevo lleva su propio spec/plan.
@@ -51,14 +51,14 @@ micrófono, no conviene paralelizar.
 
 ### 5. UI (`src/renderer/views/ajustes/`)
 
-- **Audio** rediseñada: en modo apps, lista estilo de las apps de clips — filas fijas *Audio del juego*
+- **Audio** rediseñada: en modo apps, lista de audio por aplicación — filas fijas *Audio del juego*
   (gameAudioEnabled/Volume), *Micrófono* (micEnabled/micVolume) y *Discord* (entrada de
   `DEFAULT_AUDIO_APPS`, siempre visible, checkbox sin basurero); apps del usuario con checkbox
   a la izquierda + botón icono-basurero rojo (`aria-label` "Quitar <app>"). Debajo del bloque
   de micrófono: toggle *Push to talk* + select de tecla (F1–F12, Ctrl, Alt, Shift, Space,
   CapsLock, Mouse4, Mouse5) + aviso si el hook no está disponible; toggle *Supresión de ruido*.
 - **Desarrollo** (sección nueva en el sub-nav y rutas): toggle *Aceleración por hardware* con
-  advertencia roja estilo de las apps de clips + nota "requiere reiniciar GameClip".
+  advertencia roja + nota "requiere reiniciar GameClip".
 
 ## Archivos / módulos afectados
 
@@ -80,7 +80,7 @@ micrófono, no conviene paralelizar.
   de osn exige un hook propio igualmente (así lo hace Streamlabs). N-API prebuilt = sin
   recompilación por ABI de Electron. Alternativa descartada: iohook (abandonado, ABI frágil).
 - **RNNoise sin slider** — el filtro `noise_suppress_filter` en método rnnoise no usa umbral
-  de dB; el slider de las apps de clips aplica a su motor propio. Toggle simple y honesto.
+  de dB; los sliders de otras apps aplican a su motor propio. Toggle simple y honesto.
 - **Discord fijo vía `DEFAULT_AUDIO_APPS`** en shared y no hardcodeado en la UI — el pipeline
   y la UI comparten la fuente de verdad; añadir otra app por defecto es una línea.
 - **`enabled` default true en normalización** — migra los `audioApps` guardados por la Fase 7

@@ -1,6 +1,6 @@
 # GameClip — instrucciones para el agente
 
-Grabador de clips de juegos (funciones premium, sin nube por ahora): captura de clips de juegos y grabación
+Grabador de clips de juegos para Windows (sin nube por ahora): captura de clips de partidas y grabación
 de escritorio. App Electron + React + TypeScript con server Express en el mismo repo (un solo
 `package.json`, sin monorepo). Documentación y commits **en español**.
 

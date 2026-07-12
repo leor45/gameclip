@@ -52,7 +52,7 @@ binarios (libobs, plugins, ffmpeg) vienen dentro del paquete.
   una dependencia nativa menos; si algún juego exclusivo se traga el hotkey, se reevalúa.
 - **Settings en JSON de userData** — descartado meterlos en SQLite del server: son ajustes
   por máquina, el main los necesita antes de que el server responda.
-- **Buffer siempre activo** (estilo de las apps de clips) — descartado botón de armado manual: el valor del
+- **Buffer siempre activo** — descartado botón de armado manual: el valor del
   producto es no perder el momento; el costo es RAM/CPU aceptable y configurable (duración).
 
 ## Riesgos
