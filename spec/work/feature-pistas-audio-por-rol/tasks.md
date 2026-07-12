@@ -45,6 +45,6 @@ Plan aprobado por el owner (2026-07-11). Pasos pequeños y verificables; una tar
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada
-- [ ] `roadmap.md` actualizado
+- [x] Aprobación del owner (plan aprobado y merge pedido, 2026-07-11)
+- [x] Merge a `main` con `--no-ff` y rama borrada
+- [x] `roadmap.md` actualizado
