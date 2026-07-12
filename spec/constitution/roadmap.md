@@ -206,6 +206,8 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Preview al pasar el cursor: borde blanco en la tarjeta y los primeros 10 s en bucle, mudos.
 - [x] Capturas de pantalla en la biblioteca: se ven, se filtran por juego/Escritorio y se gestionan
       como un clip más (sin editor ni preview); cuentan para el límite pero el auto-borrado no las toca.
+- [x] Barra de captura nativa: píldoras con el juego capturado (marca "manual" si lo añadió el
+      usuario) y la duración del clip retroactivo, editable desde la propia barra.
 
 > `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
 > `library:get-storage-stats` (las mismas contra las que el auto-borrado compara el límite, o el
@@ -233,6 +235,13 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > NULL`, con precedencia sobre `game`) y el desplegable usa un centinela que traduce el renderer.
 > Así un clip cuyo juego se llamara "Escritorio" sigue filtrándose como el juego que es, y no hace
 > falta escribir un pseudo-juego en el catálogo.
+> `feature/barra-captura-nativa` (2026-07-11): sin tocar el main — **cero canales nuevos**. El juego
+> ya viaja en `CaptureStatus`, y para saber si es manual no hace falta un flag: el nombre visible de
+> un juego manual **es su ejecutable sin `.exe`**, así que se deduce cruzándolo con `customGames`
+> (`isManualGame`, puro). La duración escribe `replaySeconds` y se re-hidrata con `settings:changed`
+> (Fase 10), así que cambiarla en Ajustes actualiza la barra al vuelo. Presets (30 s · 1 m · 2 m ·
+> 3 m · 5 m) dentro de los límites que el dominio ya valida: ningún valor del control puede ser
+> rechazado por la normalización. Un valor no-preset guardado desde Ajustes se muestra igual.
 > `feature/capturas-en-biblioteca` (2026-07-11): el catálogo distingue **qué es** un archivo
 > (`kind`: video o imagen, derivado de la extensión) de **de dónde salió** (`source`) — un PNG es una
 > imagen tanto si lo guardó la hotkey como si lo encontró el escaneo, así que ningún alta puede

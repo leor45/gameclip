@@ -107,6 +107,17 @@ export function findRunningGamesMatch(
 }
 
 /**
+ * ¿El juego activo lo añadió el usuario a mano, o lo reconoció la lista curada? No hace falta un
+ * campo nuevo en el estado: el nombre visible de un juego manual **es su ejecutable sin `.exe`**
+ * (ver `findRunningGamesMatch`), así que basta cruzarlo con la lista de ejecutables de los ajustes.
+ */
+export function isManualGame(name: string | null, customGames: string[]): boolean {
+  if (!name) return false;
+  const key = name.trim().toLowerCase();
+  return customGames.some((exe) => exe.trim().toLowerCase().replace(/\.exe$/, '') === key);
+}
+
+/**
  * Busca un juego conocido en una lista de nombres de proceso. Acepta nombres con o sin
  * `.exe` y en cualquier capitalización; devuelve el match (nombre + ejecutable) o null.
  */

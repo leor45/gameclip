@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { DEFAULT_CAPTURE_SETTINGS, type CaptureSettings } from '@shared/capture';
 import CaptureBar from '../components/CaptureBar';
 import { crearGameclipMock } from './setup';
 
@@ -65,14 +66,90 @@ describe('CaptureBar', () => {
   });
 
   it('muestra el chip del juego detectado', async () => {
-    mock().capture.getStatus.mockResolvedValue({
-      state: 'buffering',
-      error: null,
-      lastClipPath: null,
-      detectedGame: 'Valorant',
-    });
+    conJuego('Valorant');
     render(<CaptureBar />);
 
     expect(await screen.findByText(/Valorant/)).toBeInTheDocument();
+  });
+});
+
+/** Estado con un juego detectado (el resto, como el mock por defecto). */
+function conJuego(detectedGame: string | null) {
+  mock().capture.getStatus.mockResolvedValue({
+    state: 'buffering',
+    error: null,
+    lastClipPath: null,
+    detectedGame,
+  });
+}
+
+function conAjustes(overrides: Partial<CaptureSettings>) {
+  mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, ...overrides });
+}
+
+describe('CaptureBar — indicador de juego', () => {
+  it('sin juego, invita a esperar uno', async () => {
+    conJuego(null);
+    render(<CaptureBar />);
+
+    expect(await screen.findByText('Esperando juego')).toBeInTheDocument();
+  });
+
+  it('un juego de la lista curada no se marca como manual', async () => {
+    conJuego('Valorant');
+    conAjustes({ customGames: ['MiJuego.exe'] });
+    render(<CaptureBar />);
+
+    await screen.findByText('Valorant');
+    expect(screen.queryByText('manual')).not.toBeInTheDocument();
+  });
+
+  it('un juego añadido a mano se marca como manual', async () => {
+    // El nombre visible de un juego manual es su ejecutable sin .exe.
+    conJuego('MiJuego');
+    conAjustes({ customGames: ['MiJuego.exe'] });
+    render(<CaptureBar />);
+
+    expect(await screen.findByText('manual')).toBeInTheDocument();
+  });
+});
+
+describe('CaptureBar — duración del clip', () => {
+  it('muestra la duración configurada y la guarda al cambiarla', async () => {
+    const user = userEvent.setup();
+    conAjustes({ replaySeconds: 60 });
+    render(<CaptureBar />);
+
+    const select = (await screen.findByLabelText('Duración del clip')) as HTMLSelectElement;
+    expect(select.value).toBe('60');
+
+    await user.selectOptions(select, '120');
+
+    expect(mock().capture.setSettings).toHaveBeenCalledWith({ replaySeconds: 120 });
+    expect(select.value).toBe('120');
+  });
+
+  it('un valor que no es preset (puesto en Ajustes) se muestra igual', async () => {
+    conAjustes({ replaySeconds: 45 });
+    render(<CaptureBar />);
+
+    const select = (await screen.findByLabelText('Duración del clip')) as HTMLSelectElement;
+    expect(select.value).toBe('45');
+    expect(screen.getByRole('option', { name: '45 s' })).toBeInTheDocument();
+  });
+
+  it('cambiar la duración desde Ajustes actualiza el control en el acto', async () => {
+    conAjustes({ replaySeconds: 60 });
+    let empujar: ((s: CaptureSettings) => void) | null = null;
+    mock().capture.onSettingsChanged.mockImplementation((listener: (s: CaptureSettings) => void) => {
+      empujar = listener;
+      return () => undefined;
+    });
+    render(<CaptureBar />);
+    const select = (await screen.findByLabelText('Duración del clip')) as HTMLSelectElement;
+
+    act(() => empujar?.({ ...DEFAULT_CAPTURE_SETTINGS, replaySeconds: 300 }));
+
+    expect(select.value).toBe('300');
   });
 });
