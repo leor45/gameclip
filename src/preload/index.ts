@@ -35,6 +35,11 @@ const capture: CaptureApi = {
     ipcRenderer.on(IpcEvent.CaptureStatusChanged, wrapped);
     return () => ipcRenderer.removeListener(IpcEvent.CaptureStatusChanged, wrapped);
   },
+  onSettingsChanged: (listener: (settings: CaptureSettings) => void) => {
+    const wrapped = (_event: unknown, settings: CaptureSettings) => listener(settings);
+    ipcRenderer.on(IpcEvent.SettingsChanged, wrapped);
+    return () => ipcRenderer.removeListener(IpcEvent.SettingsChanged, wrapped);
+  },
 };
 
 const library: LibraryApi = {
