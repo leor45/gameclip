@@ -268,9 +268,9 @@ export default function Editor() {
           </p>
           {!puedeGuardarEdit && (
             <p className="editor-tracks-hint">
-              Este clip no tiene pistas por rol (se grabó en modo escritorio o antes de que
-              existieran), así que su mezcla no se puede rehacer: solo se puede exportar con o sin
-              audio.
+              Este clip trae una sola pista de audio (se grabó en modo escritorio con un solo audio,
+              o antes de que existieran las pistas por rol), así que su mezcla no se puede rehacer:
+              solo se puede exportar con o sin audio.
             </p>
           )}
         </fieldset>

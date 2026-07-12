@@ -243,13 +243,28 @@ describe('Editor — pistas de audio', () => {
     expect(await screen.findByText('Permission denied')).toBeInTheDocument();
   });
 
-  it('un clip sin pistas por rol muestra una sola pista y no deja guardar edit', async () => {
+  it('un clip de escritorio con un solo audio muestra una pista y no deja guardar edit', async () => {
     mock().library.get.mockResolvedValue(crearClip({ id: 8, title: 'Escritorio' }));
     mock().editor.getAudioTracks.mockResolvedValue([{ index: 0, name: null }]);
     renderEditor('/editor/8');
 
     expect(await screen.findByLabelText('Audio')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Guardar edit' })).toBeDisabled();
-    expect(screen.getByText(/no tiene pistas por rol/)).toBeInTheDocument();
+    expect(screen.getByText(/modo escritorio con un solo audio/)).toBeInTheDocument();
+  });
+
+  it('un clip de escritorio con PC y micro separados se edita como uno de juego', async () => {
+    mock().library.get.mockResolvedValue(crearClip({ id: 9, title: 'Escritorio' }));
+    mock().editor.getAudioTracks.mockResolvedValue([
+      { index: 0, name: 'default' },
+      { index: 1, name: 'pc' },
+      { index: 2, name: 'mic' },
+    ]);
+    renderEditor('/editor/9');
+
+    expect(await screen.findByLabelText('pc')).toBeInTheDocument();
+    expect(screen.getByLabelText('mic')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Guardar edit' })).toBeEnabled();
+    expect(screen.queryByText(/un solo audio/)).not.toBeInTheDocument();
   });
 });

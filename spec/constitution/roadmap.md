@@ -315,6 +315,23 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > 1 pista y el audio del PC dentro; clip de juego con las pistas por rol; y grabación en curso +
 > juego lanzado → clip entero.
 
+## Fase 13 · Pistas del escritorio editables — ✅ entregado
+
+- [x] Escritorio con "PC y micrófono en pistas separadas" pasa a **layout por rol**: T1 `default`
+      (mezcla) · T2 `pc` (audio del PC aislado) · T3 `mic`. Antes el PC solo vivía dentro de la
+      mezcla (T1 mezcla + T2 mic, sin nombres), así que `hasRoleTracks()` daba false y el editor
+      **no podía rehacer la mezcla**: separar las pistas no servía para nada.
+- [x] Con `named: true` el remux de nombres corre también en los clips de escritorio, y el editor
+      los trata igual que a los de juego (marcar/desmarcar fuentes y guardar el edit).
+- [x] La leyenda del editor distingue el caso: un clip de una sola pista dice que se grabó "en modo
+      escritorio con un solo audio".
+
+> `feature/pistas-escritorio-pc-mic` (2026-07-12): no hizo falta tocar el editor para que funcione —
+> mutear pistas y guardar el edit ya eran genéricos sobre "pista 1 = mezcla, el resto = fuentes
+> nombradas"; bastó con producir ese layout desde la captura. Verificado en máquina real: clip de
+> escritorio con 3 pistas nombradas, el tono del PC aislado en `pc` (−28,6 dB) y el micro en `mic`.
+> Los clips ya grabados no se migran.
+
 ## Fase 11 · Distribución — 🚧 en curso
 
 - [x] Build `.exe` **portable** (sin instalador) con la API embebida en el proceso main:
