@@ -493,6 +493,25 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > tiene instaladas pero **sin un solo juego**, así que su lógica solo está probada con fixtures. Cada una
 > está aislada: si el formato no es el esperado, devuelve `[]` y el resto del índice sigue igual.
 
+## Verificación pendiente (no es un bug: es que no se pudo probar)
+
+### 🔍 Detección de juegos de Ubisoft, EA, GOG, Battle.net y Xbox
+
+Las fuentes del índice para esos cinco launchers (`src/main/games/sources/`) están **escritas y
+probadas con fixtures, pero nunca ejecutadas contra un juego real**: en la máquina del owner los cinco
+launchers están instalados y **vacíos** (ni un juego), así que no hubo con qué comprobarlas. Steam y
+Epic sí están verificados de extremo a extremo.
+
+**Qué hay que hacer:** instalar **un** juego en cada launcher y comprobar que (a) aparece en el índice
+con su nombre de catálogo, (b) se detecta al abrirlo, y (c) no mete falsos positivos (el caso
+`EpicWebHelper.exe` de Fortnite: helpers del launcher que corren aunque el juego esté cerrado). Basta
+con arrancar la app y mirar el log `[games]`, o el contador de "ejecutables reconocidos" en
+Ajustes → Grabación.
+
+**Riesgo si fallan:** acotado por diseño. Cada fuente está aislada y devuelve `[]` ante cualquier
+error, así que un formato inesperado deja el índice sin esos juegos —se siguen pudiendo añadir a
+mano— pero no rompe la detección de Steam/Epic ni la app.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🐞 La grabación manual escribe un solo frame (MP4 de 261 bytes)
