@@ -117,6 +117,8 @@ export interface CaptureSettings {
   separateAudioTracks: boolean;
   /** Acelerador de Electron para guardar el clip retroactivo. */
   replayHotkey: string;
+  /** Acelerador de Electron que arranca y corta la grabación normal (la larga). */
+  recordingHotkey: string;
   recordingMode: RecordingMode;
   /** Hotkey global para rotar el juego activo entre los juegos en ejecución. */
   gameSwitchEnabled: boolean;
@@ -203,6 +205,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   audioApps: [],
   separateAudioTracks: false,
   replayHotkey: 'F8',
+  recordingHotkey: 'F7',
   recordingMode: 'manual',
   gameSwitchEnabled: true,
   gameSwitchHotkey: 'F10',
@@ -360,6 +363,10 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     typeof raw.replayHotkey === 'string' && raw.replayHotkey.trim()
       ? raw.replayHotkey.trim()
       : d.replayHotkey;
+  const recordingHotkey =
+    typeof raw.recordingHotkey === 'string' && raw.recordingHotkey.trim()
+      ? raw.recordingHotkey.trim()
+      : d.recordingHotkey;
   const gameSwitchHotkey =
     typeof raw.gameSwitchHotkey === 'string' && raw.gameSwitchHotkey.trim()
       ? raw.gameSwitchHotkey.trim()
@@ -398,6 +405,7 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     audioApps: normalizeAudioApps(raw.audioApps),
     separateAudioTracks: bool(raw.separateAudioTracks, d.separateAudioTracks),
     replayHotkey,
+    recordingHotkey,
     recordingMode: oneOf(raw.recordingMode, ['manual', 'auto', 'off'], d.recordingMode),
     gameSwitchEnabled: bool(raw.gameSwitchEnabled, d.gameSwitchEnabled),
     gameSwitchHotkey,

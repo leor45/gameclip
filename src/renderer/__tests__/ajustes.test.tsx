@@ -66,14 +66,23 @@ describe('Ajustes — General', () => {
     const buffer = screen.getByLabelText('Duración del buffer (segundos)');
     await user.clear(buffer);
     await user.type(buffer, '90');
-    const hotkey = screen.getByLabelText('Hotkey para guardar clip');
-    await user.clear(hotkey);
-    await user.type(hotkey, 'F9');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
     expect(mock().capture.setSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ replaySeconds: 90, replayHotkey: 'F9' }),
+      expect.objectContaining({ replaySeconds: 90 }),
+    );
+  });
+
+  it('el atajo del clip se muestra pero no se edita aquí: se edita en Atajos', async () => {
+    await irAGeneral();
+
+    expect(screen.getByText('Atajo para guardar clip')).toBeInTheDocument();
+    expect(screen.getByText('F8')).toBeInTheDocument(); // el configurado ahora mismo
+    expect(screen.queryByLabelText('Hotkey para guardar clip')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Editar en Atajos' })).toHaveAttribute(
+      'href',
+      '#/ajustes/atajos',
     );
   });
 

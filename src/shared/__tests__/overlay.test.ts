@@ -25,6 +25,7 @@ describe('buildGameNotice', () => {
       ajustes({
         replayHotkey: 'F9',
         replaySeconds: 60,
+        recordingHotkey: 'F7',
         screenshotsEnabled: true,
         screenshotHotkey: 'F6',
       }),
@@ -34,6 +35,7 @@ describe('buildGameNotice', () => {
       title: 'Listo para clipear',
       hotkeys: [
         { key: 'F9', label: 'Guardar el último minuto' },
+        { key: 'F7', label: 'Grabar / detener' },
         { key: 'F6', label: 'Guardar una captura' },
       ],
     });
@@ -50,6 +52,7 @@ describe('buildGameNotice', () => {
 
     expect(aviso?.hotkeys.map((h) => h.label)).toEqual([
       expect.stringContaining('Guardar el último'),
+      'Grabar / detener',
     ]);
   });
 
@@ -59,7 +62,9 @@ describe('buildGameNotice', () => {
 
   it('sin ninguna hotkey activa no se muestra el aviso (no diría nada útil)', () => {
     expect(
-      buildGameNotice(ajustes({ replayHotkey: '', screenshotsEnabled: false })),
+      buildGameNotice(
+        ajustes({ replayHotkey: '', recordingHotkey: '', screenshotsEnabled: false }),
+      ),
     ).toBeNull();
   });
 });

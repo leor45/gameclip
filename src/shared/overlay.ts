@@ -57,6 +57,9 @@ export function buildGameNotice(settings: CaptureSettings): OverlayNotice | null
       label: `Guardar ${describeReplayDuration(settings.replaySeconds)}`,
     });
   }
+  if (settings.recordingHotkey) {
+    hotkeys.push({ key: settings.recordingHotkey, label: 'Grabar / detener' });
+  }
   if (settings.screenshotsEnabled && settings.screenshotHotkey) {
     hotkeys.push({ key: settings.screenshotHotkey, label: 'Guardar una captura' });
   }

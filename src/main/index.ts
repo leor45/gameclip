@@ -4,6 +4,8 @@ import Database from 'better-sqlite3-electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { SERVER_PORT } from '@shared/config';
 import type { RunningGameMatch } from '@shared/games';
+import type { HotkeyKey } from '@shared/hotkeys';
+import { HOTKEY_ACTIONS, hotkeyCollisions, isHotkeyActive } from '@shared/hotkeys';
 import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
 import { startApi, type ApiHandle } from '../../server/api';
@@ -284,40 +286,43 @@ function registerMediaProtocol(): void {
   });
 }
 
-// Hotkeys globales de captura: replay (salvo en modo off), cambio de juego y screenshot.
-// Se re-registran enteros al cambiar los ajustes (globalShortcut no permite editar uno solo).
+/**
+ * Hotkeys globales de captura, uno por acción del catálogo (`HOTKEY_ACTIONS`). Se re-registran
+ * enteros al cambiar los ajustes (globalShortcut no permite editar uno solo). Las acciones inactivas
+ * (modo off, capturas o cambio de juego apagados) no registran nada.
+ */
 function registerHotkeys(manager: CaptureManager): void {
   globalShortcut.unregisterAll();
   const s = manager.getSettings();
-  const usados = new Set<string>();
-  const registrar = (accel: string, accion: () => void): void => {
-    if (!accel) return;
-    // Dos acciones con el mismo acelerador: la segunda fallaría en silencio; mejor avisar.
-    const key = accel.toLowerCase();
-    if (usados.has(key)) {
-      console.warn(`[hotkeys] '${accel}' ya está asignado a otra acción; se ignora el duplicado`);
-      return;
-    }
-    try {
-      if (globalShortcut.register(accel, accion)) usados.add(key);
-    } catch {
-      // acelerador inválido: la acción sigue disponible desde la UI
-    }
-  };
 
-  // En modo off no hay grabación: el hotkey de replay no se registra.
-  if (s.recordingMode !== 'off') {
-    registrar(s.replayHotkey, () => void manager.saveReplay());
-  }
-  if (s.gameSwitchEnabled) {
-    registrar(s.gameSwitchHotkey, () => void manager.switchGame());
-  }
-  if (s.screenshotsEnabled) {
-    registrar(s.screenshotHotkey, () => {
+  // La UI ya impide guardar atajos duplicados; si aun así llegan (ajustes editados a mano), la
+  // segunda acción no se registra: dos acciones no pueden compartir acelerador.
+  const enColision = new Set(hotkeyCollisions(s).flatMap((grupo) => grupo.slice(1)));
+
+  const acciones: Record<HotkeyKey, () => void> = {
+    replayHotkey: () => void manager.saveReplay(),
+    // Un solo atajo para grabar y para parar: lo decide el estado actual.
+    recordingHotkey: () => {
+      if (manager.getStatus().state === 'recording') void manager.stopRecording();
+      else void manager.startRecording();
+    },
+    screenshotHotkey: () => {
       void takeAndRegisterScreenshot(manager, library).then((path) => {
         if (path) overlay?.showToast('Captura guardada ✓');
       });
-    });
+    },
+    gameSwitchHotkey: () => void manager.switchGame(),
+  };
+
+  for (const action of HOTKEY_ACTIONS) {
+    if (!isHotkeyActive(action, s) || enColision.has(action.key)) continue;
+    const accel = s[action.key].trim();
+    if (!accel) continue;
+    try {
+      globalShortcut.register(accel, acciones[action.key]);
+    } catch {
+      // acelerador inválido: la acción sigue disponible desde la UI
+    }
   }
 }
 

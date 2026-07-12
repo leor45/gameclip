@@ -1,4 +1,5 @@
 import { REPLAY_SECONDS_MAX, REPLAY_SECONDS_MIN } from '@shared/capture';
+import { HotkeyInfo } from './HotkeyInfo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -21,14 +22,7 @@ export default function AjustesGeneral() {
             onChange={(e) => set('replaySeconds', Number(e.target.value))}
           />
         </label>
-        <label>
-          Hotkey para guardar clip
-          <input
-            type="text"
-            value={settings.replayHotkey}
-            onChange={(e) => set('replayHotkey', e.target.value)}
-          />
-        </label>
+        <HotkeyInfo label="Atajo para guardar clip" accel={settings.replayHotkey} />
       </fieldset>
 
       <fieldset>

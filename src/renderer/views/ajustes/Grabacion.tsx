@@ -7,6 +7,7 @@ import {
   type RecordingMode,
 } from '@shared/capture';
 import DisplayPicker from '../../components/DisplayPicker';
+import { HotkeyInfo } from './HotkeyInfo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -133,15 +134,7 @@ export default function AjustesGrabacion() {
             />
             Activar hotkey de cambio de juego
           </label>
-          <label>
-            Hotkey de cambio de juego
-            <input
-              type="text"
-              value={settings.gameSwitchHotkey}
-              disabled={!settings.gameSwitchEnabled}
-              onChange={(e) => set('gameSwitchHotkey', e.target.value)}
-            />
-          </label>
+          <HotkeyInfo label="Atajo de cambio de juego" accel={settings.gameSwitchHotkey} />
           <label className="settings-check">
             <input
               type="checkbox"
@@ -162,15 +155,7 @@ export default function AjustesGrabacion() {
             />
             Activar capturas de pantalla
           </label>
-          <label>
-            Hotkey de captura
-            <input
-              type="text"
-              value={settings.screenshotHotkey}
-              disabled={!settings.screenshotsEnabled}
-              onChange={(e) => set('screenshotHotkey', e.target.value)}
-            />
-          </label>
+          <HotkeyInfo label="Atajo de captura" accel={settings.screenshotHotkey} />
         </fieldset>
 
         <fieldset>

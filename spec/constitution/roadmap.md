@@ -332,6 +332,27 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > escritorio con 3 pistas nombradas, el tono del PC aislado en `pc` (−28,6 dB) y el micro en `mic`.
 > Los clips ya grabados no se migran.
 
+## Fase 14 · Sección Atajos — ✅ entregado
+
+- [x] Sección **Atajos** en Ajustes: una fila por acción (guardar clip · grabar/detener · captura ·
+      cambio de juego) con su tecla actual y **captura de la pulsación** al estilo Discord (clic en
+      "Editar atajo…" → teclea la combinación; `Esc` cancela). Botón de restablecer los defaults.
+- [x] Atajo nuevo `recordingHotkey` (`F7`): arranca la grabación normal y, pulsado otra vez, la corta
+      y guarda el clip. Antes solo se podía grabar desde la UI.
+- [x] Las colisiones **se ven y bloquean el guardado**; la tecla del push-to-talk queda reservada
+      (mismo teclado físico aunque el motor sea otro) y se rechaza al capturarla, con su leyenda.
+- [x] En General y Grabación los atajos pasan a informativos, con enlace a la sección.
+
+> `feature/seccion-atajos` (2026-07-12): el catálogo de acciones vive ahora en `src/shared/hotkeys.ts`
+> y lo comparten el registro global del main y la UI — antes el main tenía las acciones escritas a
+> mano y el renderer las repetía pieza a pieza, así que añadir el atajo de grabación salió casi
+> gratis. Dos agujeros que esto tapa: los atajos se escribían en un `<input>` libre y un valor
+> inválido fallaba **en silencio** (el `catch` de `globalShortcut.register` estaba vacío), y dos
+> acciones con la misma tecla se resolvían descartando la segunda con un `console.warn` que nadie
+> veía. Verificado en máquina real: la sección lista las teclas configuradas y **pulsar F7 grabó y el
+> segundo F7 cortó y guardó el clip**. El PTT sigue en Audio: usa otro motor (uiohook), con lista
+> blanca cerrada y sin combinaciones.
+
 ## Fase 11 · Distribución — 🚧 en curso
 
 - [x] Build `.exe` **portable** (sin instalador) con la API embebida en el proceso main:
