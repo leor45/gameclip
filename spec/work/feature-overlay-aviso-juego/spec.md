@@ -48,11 +48,21 @@ F6   Guardar una captura
 
 Observables y verificables uno a uno:
 
-- [ ] Al detectarse un juego, el overlay muestra el aviso con "Listo para clipear" y las hotkeys.
-- [ ] Las teclas mostradas son las configuradas (si el replay es F9, dice F9).
-- [ ] La fila del clip refleja la duración del buffer configurada.
-- [ ] El aviso entra deslizándose desde arriba y, a los pocos segundos, se va hacia arriba.
-- [ ] Con el overlay desactivado en Ajustes no aparece.
-- [ ] Con el modo de grabación en "apagado" no aparece.
-- [ ] Una hotkey desactivada (p. ej. capturas) no aparece como fila.
-- [ ] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
+- [x] Al detectarse un juego, el overlay muestra el aviso con "Listo para clipear" y las hotkeys.
+- [x] Las teclas mostradas son las configuradas (si el replay es F9, dice F9).
+- [x] La fila del clip refleja la duración del buffer configurada.
+- [x] El aviso entra deslizándose desde arriba y, a los pocos segundos, se va hacia arriba.
+- [x] Con el overlay desactivado en Ajustes no aparece.
+- [x] Con el modo de grabación en "apagado" no aparece.
+- [x] Una hotkey desactivada (p. ej. capturas) no aparece como fila.
+- [x] Gates verdes: `npm run typecheck`, `npm run lint`, `npm run test`.
+
+## Ajuste pedido por el owner (2026-07-11, tras probarlo en la app)
+
+El aviso pasa a la esquina **superior izquierda**, junto con el toast de "Clip guardado" (que adopta
+el mismo diseño de tarjeta); el indicador **REC se queda a la derecha**. El overlay pasa a ser **dos
+ventanas**, una por esquina, y cada una recibe el estado ya filtrado con lo que le toca
+(`overlayStateFor`, puro): la página sigue sin saber en qué esquina está.
+
+- [x] El aviso y el toast salen arriba a la izquierda; el REC, arriba a la derecha.
+- [x] El toast usa la misma tarjeta que el aviso (mismo fondo y misma animación de entrada/salida).

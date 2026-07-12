@@ -3,6 +3,7 @@ import { BrowserWindow, app, globalShortcut, protocol, shell } from 'electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import type { RunningGameMatch } from '@shared/games';
 import { IpcEvent } from '@shared/ipc';
+import { buildGameNotice } from '@shared/overlay';
 import ffmpegPath from 'ffmpeg-static';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
@@ -129,11 +130,21 @@ function setupCapture(): CaptureManager {
   undefined,
   ffmpegPath ?? 'ffmpeg');
 
+  // El aviso se dispara en la TRANSICIÓN sin-juego → juego, no con cada status: el estado se emite
+  // en cada cambio del buffer y el aviso reaparecería solo.
+  let juegoAnterior: string | null = null;
+
   manager.on('status', (status: CaptureStatus) => {
     console.log('[capture]', JSON.stringify(status));
     mainWindow?.webContents.send(IpcEvent.CaptureStatusChanged, status);
     overlay?.setRecording(status.state === 'recording');
     tray?.setRecording(status.state === 'recording');
+
+    if (status.detectedGame && !juegoAnterior) {
+      const aviso = buildGameNotice(manager.getSettings());
+      if (aviso) overlay?.showNotice(aviso);
+    }
+    juegoAnterior = status.detectedGame;
   });
   // Los ajustes guardados se empujan al renderer (el sidebar refleja el límite al instante).
   // Va sobre el evento del manager, no sobre el handler IPC: así notifica cualquier vía de

@@ -208,6 +208,8 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
       como un clip más (sin editor ni preview); cuentan para el límite pero el auto-borrado no las toca.
 - [x] Barra de captura nativa: píldoras con el juego capturado (marca "manual" si lo añadió el
       usuario) y la duración del clip retroactivo, editable desde la propia barra.
+- [x] Aviso del overlay al detectar el juego: entra deslizándose desde arriba con las hotkeys reales
+      y se va solo a los segundos.
 
 > `feature/sidebar-almacenamiento` (2026-07-11): sin canales nuevos — las cifras salen de
 > `library:get-storage-stats` (las mismas contra las que el auto-borrado compara el límite, o el
@@ -235,6 +237,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > NULL`, con precedencia sobre `game`) y el desplegable usa un centinela que traduce el renderer.
 > Así un clip cuyo juego se llamara "Escritorio" sigue filtrándose como el juego que es, y no hace
 > falta escribir un pseudo-juego en el catálogo.
+> `feature/overlay-aviso-juego` (2026-07-11): el contenido lo arma el **main** con una función pura
+> (`buildGameNotice`, en `@shared/overlay`), porque el overlay es una ventana aparte y no puede leer
+> ajustes — y el aviso depende de ellos: las teclas que muestra son las configuradas y la fila del
+> clip dice la duración real del buffer ("el último minuto"). Se dispara en la **transición**
+> sin-juego → juego, no con cada `status` (se emite en cada cambio de buffer: reaparecería solo). La
+> animación de salida vive en el renderer (el main no sabe cuánto dura una transición CSS: manda
+> "quitalo"), y por eso `sync()` demora el `hide()` de la ventana lo justo para que se vea. Sin
+> hotkeys activas o en modo `off` no hay aviso: no diría nada útil.
+> **Sigue sin verse en fullscreen exclusivo** (como el resto del overlay); la inyección tipo Discord
+> queda anotada en Futuro.
 > `feature/barra-captura-nativa` (2026-07-11): sin tocar el main — **cero canales nuevos**. El juego
 > ya viaja en `CaptureStatus`, y para saber si es manual no hace falta un flag: el nombre visible de
 > un juego manual **es su ejecutable sin `.exe`**, así que se deduce cruzándolo con `customGames`
