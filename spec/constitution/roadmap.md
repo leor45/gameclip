@@ -467,6 +467,13 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > salta ese filtro); y del **segundo arranque en adelante el launcher no crea `7z-out`** —el payload ya
 > está extraído—, así que usarlo como marcador dejaba el staging sin registrar justo en el caso más
 > común. El marcador es `app-64.7z`, que está siempre.
+> **Lo que el fix NO recupera** (medido, fabricando la basura de un usuario que viene de la 0.3.1): al
+> actualizar se limpia el grueso —el payload viejo (~400 MB) y los stagings con marcador (~500 MB), y
+> ahora ya **al arrancar**—, pero los stagings "invisibles" que quedaron **de antes del fix** (~94 MB
+> cada uno) sobreviven: nadie anotó su ruta, y por dentro son idénticos a los de cualquier otra app de
+> electron-builder, así que borrarlos sería meterse con temporales ajenos. Son restos históricos y ya no
+> se generan más. Se documenta en las notas del release v0.4.1, con la instrucción de borrarlos a mano.
+> Publicado como **v0.4.1** (portable): https://github.com/leor45/gameclip/releases/tag/v0.4.1
 
 ## Fase 15 · Detección de juegos instalados y nombres reales — ✅ entregado
 
