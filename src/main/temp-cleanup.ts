@@ -72,13 +72,21 @@ const PAYLOAD_7Z = 'app-64.7z';
  * el peor caso adoptaríamos el staging de otra que se lanzase **en el mismo minuto** que nosotros. La
  * ventana temporal lo hace improbable, y aunque pasara, la regla 3 impide tocarlo mientras esté en
  * uso: como mucho se limpiaría basura muerta ajena.
+ *
+ * Una carpeta ya apartada (`.borrar`) queda fuera pase lo que pase: conserva su `app-64.7z` y el
+ * renombrado le dejó el mtime de ahora, así que por las dos señales parecería el staging en curso —
+ * pero ese sufijo solo lo escribimos al dar una carpeta por muerta. Adoptarla la volvía intocable y
+ * la libraba del borrado justo cuando tocaba reintentarlo.
  */
 export function stagingsActuales(entorno: EntornoTemp): string[] {
   const { tempDir, listar, existe, esAnterior } = entorno;
 
   return listar(tempDir)
     .map((nombre) => join(tempDir, nombre))
-    .filter((carpeta) => !esAnterior(carpeta) && existe(join(carpeta, PAYLOAD_7Z)));
+    .filter(
+      (carpeta) =>
+        !carpeta.endsWith('.borrar') && !esAnterior(carpeta) && existe(join(carpeta, PAYLOAD_7Z)),
+    );
 }
 
 /**
@@ -179,6 +187,34 @@ export function limpiarTemporales(
   entorno: EntornoTemp,
   registro?: RegistroStaging,
 ): ResultadoLimpieza {
+  return sinAsar(() => limpieza(entorno, registro));
+}
+
+/**
+ * Corre `fn` con el intérprete de asar de Electron **apagado**.
+ *
+ * Electron intercepta todo `fs` cuyo path contenga un `.asar` y lo trata como un archivo empaquetado:
+ * lo **abre para leer su cabecera y deja el handle cacheado** para el resto de la vida del proceso.
+ * El staging que borramos lleva dentro un `7z-out\resources\app.asar`, así que el propio `rmSync`
+ * hacía que Electron lo abriera, el borrado moría con `EBUSY`... **contra un handle que acabábamos de
+ * abrir nosotros**, y que ya no se soltaba. La carpeta quedaba a medias (los 118 MB que el owner
+ * encontró) y ningún arranque posterior podía rematarla: se volvía a bloquear sola.
+ *
+ * Con `noAsar` el `.asar` es un fichero más y se borra como cualquier otro. Se restaura el valor
+ * anterior al salir: el resto de la app (que lee de SU propio asar) no se entera.
+ */
+export function sinAsar<T>(fn: () => T): T {
+  const proceso = process as NodeJS.Process & { noAsar?: boolean };
+  const antes = proceso.noAsar;
+  proceso.noAsar = true;
+  try {
+    return fn();
+  } finally {
+    proceso.noAsar = antes;
+  }
+}
+
+function limpieza(entorno: EntornoTemp, registro?: RegistroStaging): ResultadoLimpieza {
   const resultado: ResultadoLimpieza = { borradas: 0, enUso: 0 };
   const registradas = registro?.leer() ?? [];
 
