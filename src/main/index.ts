@@ -134,6 +134,12 @@ function setupCapture(): CaptureManager {
     overlay?.setRecording(status.state === 'recording');
     tray?.setRecording(status.state === 'recording');
   });
+  // Los ajustes guardados se empujan al renderer (el sidebar refleja el límite al instante).
+  // Va sobre el evento del manager, no sobre el handler IPC: así notifica cualquier vía de
+  // guardado del main, no solo la que viene de la UI.
+  manager.on('settings', (settings: CaptureSettings) =>
+    mainWindow?.webContents.send(IpcEvent.SettingsChanged, settings),
+  );
   manager.on('clip-saved', () => overlay?.showToast('Clip guardado ✓'));
 
   registerHotkeys(manager);

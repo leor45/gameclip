@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { CaptureSettings } from '@shared/capture';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import StorageIndicator from '../components/StorageIndicator';
 import { crearGameclipMock } from './setup';
@@ -100,6 +101,26 @@ describe('Indicador de almacenamiento del sidebar', () => {
     notificar();
 
     expect(await screen.findByText('5 GB')).toBeInTheDocument();
+  });
+
+  it('refleja al instante el límite nuevo cuando se guardan los ajustes', async () => {
+    conAlmacenamiento(3, 0, 10);
+    let notificarAjustes: (s: CaptureSettings) => void = () => undefined;
+    mock().capture.onSettingsChanged.mockImplementation((listener: (s: CaptureSettings) => void) => {
+      notificarAjustes = listener;
+      return () => undefined;
+    });
+
+    renderIndicador();
+    await screen.findByText('10 GB');
+
+    // El usuario sube el límite en Ajustes: el catálogo no cambia, pero el anillo sí.
+    notificarAjustes({ ...DEFAULT_CAPTURE_SETTINGS, storageLimitGb: 50 });
+
+    expect(await screen.findByText('50 GB')).toBeInTheDocument();
+    const circunferencia = 2 * Math.PI * 16;
+    const offset = Number(anillo()?.getAttribute('stroke-dashoffset'));
+    expect(offset).toBeCloseTo(circunferencia * (1 - 3 / 50), 1);
   });
 
   it('lleva a Ajustes → Almacenamiento al pulsarlo', async () => {

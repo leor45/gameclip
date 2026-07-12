@@ -75,6 +75,7 @@ export function crearGameclipMock() {
         detectedGame: null,
       }),
       onStatusChanged: vi.fn().mockReturnValue(() => undefined),
+      onSettingsChanged: vi.fn().mockReturnValue(() => undefined),
     },
     library: {
       list: vi.fn().mockResolvedValue([]),

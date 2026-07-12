@@ -48,6 +48,8 @@ export const IpcChannel = {
 // Eventos push main → renderer (webContents.send).
 export const IpcEvent = {
   CaptureStatusChanged: 'capture:status-changed',
+  /** Ajustes guardados (por cualquier vía del main): se empujan ya normalizados. */
+  SettingsChanged: 'settings:changed',
   LibraryChanged: 'library:changed',
   ExportProgress: 'export:progress',
   OverlayState: 'overlay:state',
@@ -135,6 +137,8 @@ export interface CaptureApi {
   saveReplay(): Promise<CaptureStatus>;
   /** Suscribe al estado de captura; devuelve la función para desuscribirse. */
   onStatusChanged(listener: (status: CaptureStatus) => void): () => void;
+  /** Suscribe a los ajustes guardados; devuelve la función para desuscribirse. */
+  onSettingsChanged(listener: (settings: CaptureSettings) => void): () => void;
 }
 
 export interface LibraryApi {

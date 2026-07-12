@@ -27,9 +27,17 @@ export default function StorageIndicator() {
       .catch(() => setLimitGb(0));
   }, []);
 
+  // Dos fuentes, cada una con lo suyo: el catálogo mueve los bytes usados y los ajustes, el límite.
   useEffect(() => {
     cargar();
-    return window.gameclip.library.onChanged(cargar);
+    const offCatalogo = window.gameclip.library.onChanged(cargar);
+    const offAjustes = window.gameclip.capture.onSettingsChanged((s) =>
+      setLimitGb(s.storageLimitGb),
+    );
+    return () => {
+      offCatalogo();
+      offAjustes();
+    };
   }, [cargar]);
 
   if (!stats) return null;

@@ -199,7 +199,7 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 - [x] Indicador de almacenamiento en el sidebar: anillo con el espacio usado por el catálogo
       sobre el límite configurado (el par de cifras que gobierna el auto-borrado), con enlace a
       Ajustes → Almacenamiento y estado de alerta al pasarse.
-- [ ] Evento `settings:changed`: el sidebar refleja el cambio de límite al instante.
+- [x] Evento `settings:changed`: el sidebar refleja el cambio de límite al instante.
 - [ ] Estructura de carpetas por juego (`<carpeta>/<Juego|Desktop>/…`, capturas en `Capturas/`)
       y nomenclatura `<Juego> [Screenshot] AAAA.MM.DD - HH.MM.SS.CC`, con migración de lo viejo.
 
@@ -208,6 +208,11 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > indicador mentiría) y de `storageLimitGb`. Anillo SVG a mano (dos círculos y un `dashoffset`),
 > refrescado con `library:changed`. `formatStorage` pasa a `@shared/library` para que el sidebar y
 > la leyenda de Ajustes digan lo mismo.
+> `feature/settings-changed-evento` (2026-07-11): el `CaptureManager` ya emitía `'settings'` al
+> guardar (Fase 7) pero nadie lo escuchaba; ahora `index.ts` lo puentea a `settings:changed` y el
+> preload expone `capture.onSettingsChanged`. El indicador queda con dos fuentes: el catálogo mueve
+> los bytes usados y los ajustes, el límite. Emitir desde el manager (y no desde el handler IPC)
+> hace que notifique cualquier vía de guardado del main, no solo la que viene de la UI.
 
 ## Futuro (fuera de alcance por ahora)
 
