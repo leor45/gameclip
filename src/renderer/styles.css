@@ -137,14 +137,22 @@ body {
   letter-spacing: 0.03em;
 }
 
+/* El desplegable nativo se pinta con el fondo del propio select: transparente sale en blanco
+   (Windows), así que va un fondo sólido y las opciones se declaran a mano. */
 .capture-pill-clip select {
-  background: transparent;
+  background: var(--bg-panel);
   border: none;
+  border-radius: 6px;
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
-  padding: 0;
+  padding: 2px 4px;
   cursor: pointer;
+}
+
+.capture-pill-clip select option {
+  background: var(--bg-panel);
+  color: var(--text);
 }
 
 .capture-dot {
