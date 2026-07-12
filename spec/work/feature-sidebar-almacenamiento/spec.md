@@ -8,7 +8,7 @@
 
 Hoy hay que entrar a Ajustes → Almacenamiento para saber cuánto espacio ocupan los clips y cuánto
 falta para el límite configurado (que dispara el auto-borrado de los más viejos). El sidebar debe
-mostrarlo siempre, como en las apps de clips: un anillo de progreso con **usado / límite**.
+mostrarlo siempre: un anillo de progreso con **usado / límite**.
 
 ## Alcance
 

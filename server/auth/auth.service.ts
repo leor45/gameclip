@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
-import bcrypt from 'bcrypt';
+// bcryptjs (JS puro) en vez de bcrypt nativo: el server corre embebido en el proceso main, y un
+// binario con ABI de Node no carga dentro de Electron. Los hashes son el mismo formato ($2b), así
+// que los usuarios registrados antes siguen entrando.
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import {
   PASSWORD_MIN_LENGTH,

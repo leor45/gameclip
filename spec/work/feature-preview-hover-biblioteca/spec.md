@@ -7,7 +7,7 @@
 ## Problema / Objetivo
 
 La biblioteca muestra un thumbnail estático por clip: hay que abrir el reproductor para saber qué
-hay dentro. Como en las apps de clips, al pasar el cursor por una tarjeta esta debe **resaltarse** y
+hay dentro. Al pasar el cursor por una tarjeta esta debe **resaltarse** y
 **previsualizar el clip en movimiento**, para poder barrer la grilla y encontrar la jugada sin abrir
 nada.
 

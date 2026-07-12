@@ -6,8 +6,8 @@
 
 ## Problema / Objetivo
 
-Cerrar la brecha de experiencia con las apps de clips comerciales en el día a día: hoy el buffer graba siempre
-(consume recursos aunque no haya juego), no hay feedback visual mientras se juega (¿está
+Cerrar la brecha de experiencia con las apps de clips comerciales en el día a día: hoy el buffer
+graba siempre (consume recursos aunque no haya juego), no hay feedback visual mientras se juega (¿está
 grabando? ¿se guardó el clip?) y la app vive como una ventana normal (hay que abrirla a mano
 y cerrar la ventana la mata). La Fase 6 añade detección automática de juegos con auto-inicio
 del buffer, un overlay in-game mínimo y comportamiento de app residente (bandeja del sistema

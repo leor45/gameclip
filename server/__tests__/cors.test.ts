@@ -1,11 +1,12 @@
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../app';
+import Database from 'better-sqlite3';
 import { openDatabase } from '../db/database';
 
 // Regresión: el renderer en dev (http://localhost:5173) quedaba bloqueado por CORS
 // porque el server no respondía el preflight ni enviaba Access-Control-Allow-Origin.
-const db = openDatabase(':memory:');
+const db = openDatabase(Database, ':memory:');
 const app = createApp(db);
 
 afterAll(() => db.close());

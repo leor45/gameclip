@@ -99,7 +99,7 @@ del `<video>` se recarga con un sufijo de cache-busting para que suene la mezcla
 - **Sondear con `ffmpeg -i` en vez de añadir `ffprobe-static`** — evita un binario extra de
   decenas de MB en el bundle; el parseo es una función pura con tests.
 - **El export produce UNA pista de audio (la mezcla de las marcadas)**, no un MP4 multipista.
-  Es lo que hace las apps de clips y lo que espera cualquier reproductor/Discord. El multipista sigue vivo
+  Es lo que espera cualquier reproductor/Discord. El multipista sigue vivo
   en el clip guardado.
 - **Guardar edit no borra pistas** — solo reescribe la mezcla. Es lo que pidió el owner y hace
   la operación reversible sin guardar copias del original.

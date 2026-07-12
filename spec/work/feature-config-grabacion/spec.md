@@ -7,10 +7,10 @@ primero)
 
 ## Problema / Objetivo
 
-Paridad con la pantalla Recorder Settings de las apps de clips: modos de grabación, cambio entre juegos,
-capturas de pantalla y alta manual de juegos que la detección automática no reconoce. Además,
-grabación de escritorio con elección de display (modal con preview de cada monitor, como
-las apps de clips) y sub-opciones (cambio automático a captura de juego, selector de display).
+Paridad con la pantalla de ajustes de grabación de las apps de referencia: modos de grabación,
+cambio entre juegos, capturas de pantalla y alta manual de juegos que la detección automática no
+reconoce. Además, grabación de escritorio con elección de display (modal con preview de cada
+monitor) y sub-opciones (cambio automático a captura de juego, selector de display).
 
 ## Alcance
 
@@ -42,7 +42,7 @@ las apps de clips) y sub-opciones (cambio automático a captura de juego, select
   ejecución (lista curada + manuales) y emite la lista; el manager elige el activo.
 
 **Fuera (explícito):**
-- El dropdown Tap/Hold del hotkey de las apps de clips (solo tap).
+- El dropdown Tap/Hold del hotkey (solo tap).
 - Subir los juegos añadidos a una lista comunitaria ("we'll add it to our list!") — sin nube.
 - Captura de pantalla del juego exclusivo fullscreen vía hook (se captura el monitor con
   `desktopCapturer`; puede no ver fullscreen exclusivo — limitación documentada).

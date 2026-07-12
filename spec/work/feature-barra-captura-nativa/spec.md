@@ -7,7 +7,7 @@
 ## Problema / Objetivo
 
 La barra superior es funcional pero "de andamio": una fila de texto plano con botones. Debe verse
-como parte del diseño de la app (estilo de las apps de clips, como el adjunto del owner) y ganar dos cosas que hoy
+como parte del diseño de la app (según el adjunto del owner) y ganar dos cosas que hoy
 obligan a entrar a Ajustes o a adivinar:
 
 - **Qué juego se está capturando**, y si la app lo reconoció por su lista o si es un juego que el

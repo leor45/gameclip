@@ -784,7 +784,7 @@ body {
   font-size: 13px;
 }
 
-/* Indicador de almacenamiento: anillo de progreso con usado / límite (estilo de las apps de clips). */
+/* Indicador de almacenamiento: anillo de progreso con usado / límite. */
 .storage-indicator {
   display: flex;
   flex-direction: column;

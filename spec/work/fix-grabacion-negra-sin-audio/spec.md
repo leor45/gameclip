@@ -90,7 +90,7 @@ grabación de escritorio en ese modo queda estructuralmente muda (así salió el
 
 **Mejora futura anotada (spec propio):** selector de dispositivo para el audio de
 escritorio (hoy captura el default del sistema; con varios dispositivos — auriculares WG1,
-monitores — conviene elegir el que se escucha, como hacen OBS y las apps de clips).
+monitores — conviene elegir el que se escucha, como hace OBS).
 
 ## Alcance
 

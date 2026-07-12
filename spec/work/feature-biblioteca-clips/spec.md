@@ -8,7 +8,7 @@
 
 Los clips (replay F8 y grabaciones manuales) quedan sueltos en la carpeta de salida: no hay
 registro, ni vista para encontrarlos, reproducirlos ni gestionarlos. Objetivo: una biblioteca
-local estilo de las apps de clips — todo clip guardado queda catalogado con metadatos y se puede ver,
+local — todo clip guardado queda catalogado con metadatos y se puede ver,
 buscar, filtrar y gestionar desde la app.
 
 ## Alcance

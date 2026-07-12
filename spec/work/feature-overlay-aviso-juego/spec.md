@@ -10,7 +10,7 @@ Cuando la app detecta un juego y activa el buffer, **el usuario no se entera**: 
 muestra el punto REC al grabar y un toast al guardar. Hay que alt-tabear a la app para saber si los
 clips están activos.
 
-Objetivo (estilo de las apps de clips, adjunto del owner): al detectarse el juego, un aviso **entra deslizándose
+Objetivo (según el adjunto del owner): al detectarse el juego, un aviso **entra deslizándose
 desde arriba** en el overlay, dice que los clips están listos y recuerda las hotkeys, y a los pocos
 segundos **se va deslizándose hacia arriba**.
 
