@@ -1,0 +1,42 @@
+GameClip — software de terceros redistribuido
+=============================================
+
+GameClip se distribuye bajo la GNU General Public License v3.0 (ver LICENSE).
+El paquete incluye además los siguientes componentes de terceros:
+
+--------------------------------------------------------------------------------
+libobs / OBS Studio, vía obs-studio-node (Streamlabs)
+--------------------------------------------------------------------------------
+Licencia: GNU General Public License v2.0 o posterior.
+Copyright (c) OBS Studio contributors.
+
+Se redistribuyen sus binarios (obs64.exe, libobs.dll, plugins de captura y audio).
+Código fuente:
+  https://github.com/obsproject/obs-studio
+  https://github.com/stream-labs/obs-studio-node
+Texto de la licencia:
+  https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+--------------------------------------------------------------------------------
+FFmpeg
+--------------------------------------------------------------------------------
+Licencia: GNU General Public License (la build incluida trae libx264, por lo que
+queda bajo GPL, no LGPL).
+Copyright (c) 2000-2025 the FFmpeg developers.
+
+Se redistribuye la build de FFmpeg que acompaña a obs-studio-node (ffmpeg.exe y
+las DLLs av*), usada para exportar clips y para nombrar las pistas de audio.
+Código fuente:
+  https://ffmpeg.org/download.html
+Texto de la licencia:
+  https://www.gnu.org/licenses/gpl-3.0.html
+
+--------------------------------------------------------------------------------
+Electron / Chromium / Node.js
+--------------------------------------------------------------------------------
+Licencia: MIT (Electron y Node.js) y BSD de 3 cláusulas (Chromium).
+Los avisos completos viajan en LICENSES.chromium.html, dentro del paquete.
+
+--------------------------------------------------------------------------------
+El código fuente de GameClip está disponible en:
+  https://github.com/leor45/gameclip

@@ -4,11 +4,31 @@ directories:
   output: release
 
 # El bundle de electron-vite. Las dependencias de producción las resuelve electron-builder solo.
+#
+# Las exclusiones de abajo recortan ~695 MB de los 738 que el portable descomprime en CADA arranque
+# (de los 707 MB de osn, solo 90 son libobs de verdad). Se hacen AQUÍ y no podando node_modules:
+# borrar archivos del árbol de dependencias se revertiría en el próximo `npm install`.
 files:
   - out/**
   - package.json
+  # Símbolos de depuración de OBS (50 archivos, 336 MB). El .exe no los abre jamás.
+  - '!**/*.pdb'
+  # Navegador Chromium embebido de OBS (265 MB): existe para las "browser sources", una fuente que
+  # GameClip no expone. libobs no se cae si falta un plugin: lo registra y sigue (hoy ya pasa con
+  # decklink y obs-ndi).
+  - '!**/node_modules/@streamlabs/obs-studio-node/obs-plugins/64bit/libcef.dll'
+  - '!**/node_modules/@streamlabs/obs-studio-node/obs-plugins/64bit/obs-browser*'
+  - '!**/node_modules/@streamlabs/obs-studio-node/obs-plugins/64bit/icudtl.dat'
+  - '!**/node_modules/@streamlabs/obs-studio-node/obs-plugins/64bit/*.pak'
+  - '!**/node_modules/@streamlabs/obs-studio-node/obs-plugins/64bit/*.bin'
+  # WebRTC del streaming de Streamlabs (14 MB): no se usa.
+  - '!**/node_modules/@streamlabs/obs-studio-node/obs-plugins/64bit/mediasoup-connector*'
 
 asar: true
+
+# Compresión por defecto (LZMA). Se midió `compression: store` para acelerar el arranque: el .exe
+# pasaba de 93 MB a 419 MB y el arranque solo bajaba de ~13,5 s a ~11 s — cuadruplicar la descarga
+# por 3 segundos no compensa. El arranque del portable es lo que es (ver el spec de la tarea).
 
 # Todo lo que se toca desde FUERA del fs de Electron tiene que existir como archivo real: libobs
 # lanza obs64.exe desde su carpeta, ffmpeg se spawnea, y los .node se cargan con dlopen. Ojo: aun
@@ -18,7 +38,6 @@ asarUnpack:
   - '**/node_modules/@streamlabs/obs-studio-node/**'
   - '**/node_modules/better-sqlite3-electron/**'
   - '**/node_modules/uiohook-napi/**'
-  - '**/node_modules/ffmpeg-static/**'
   - '**/*.node'
 
 # Sin recompilar nativos: better-sqlite3 debe conservar su binario de ABI-Node (lo usa dev:server),
@@ -26,12 +45,14 @@ asarUnpack:
 # el postinstall. Un rebuild global rompería uno de los dos.
 npmRebuild: false
 
-# GPL: el ffmpeg.exe que redistribuimos es GPL-3.0-or-later y su licencia viaja con el binario.
+# GPL: redistribuimos libobs (GPL-2.0) y el ffmpeg que trae osn (GPL, por libx264), así que sus
+# avisos viajan con el paquete. osn no incluye ningún archivo de licencia, de ahí que el aviso de
+# terceros lo mantengamos nosotros en build/TERCEROS.txt.
 extraResources:
   - from: LICENSE
     to: LICENSE
-  - from: node_modules/ffmpeg-static/ffmpeg.exe.LICENSE
-    to: licenses/ffmpeg.LICENSE
+  - from: build/TERCEROS.txt
+    to: TERCEROS.txt
 
 win:
   # build/icon.ico lo genera `npm run icon` desde build/icon.svg (7 capas, 16→256 px).
@@ -41,3 +62,6 @@ win:
 
 portable:
   artifactName: GameClip-${version}-portable.exe
+  # Carpeta de descompresión con nombre fijo: si el launcher la reutiliza, el segundo arranque se
+  # ahorra los ~10 s de extracción. (Se mide; si no la reutiliza, no cuesta nada tenerlo.)
+  unpackDirName: GameClip-${version}

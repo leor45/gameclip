@@ -12,8 +12,8 @@ function bandejaFalsa() {
     get destruida() {
       return destruida;
     },
-    setRecording: vi.fn((_grabando: boolean) => {
-      if (destruida) throw new Error('Tray is destroyed');
+    setRecording: vi.fn((grabando: boolean) => {
+      if (destruida) throw new Error(`Tray is destroyed (setRecording ${grabando})`);
     }),
     destroy: vi.fn(() => {
       destruida = true;
@@ -39,6 +39,7 @@ function partes(over: Partial<PartesDelCierre> = {}): PartesDelCierre {
     overlay: { destroy: vi.fn() },
     tray: { destroy: vi.fn() },
     api: { close: vi.fn() },
+    limpiarTemporales: vi.fn(),
     ...over,
   };
 }
@@ -87,6 +88,20 @@ describe('teardown', () => {
 
   // Si un paso revienta, el cierre tiene que TERMINAR igual: si no, libobs y el puerto de la API
   // quedan colgados. Era el daño colateral del bug (la excepción abortaba el will-quit a mitad).
+  it('la limpieza de temporales corre al final, después de cerrar todo', () => {
+    const orden: string[] = [];
+    const p = partes({
+      capture: { shutdown: vi.fn(() => orden.push('captura')) },
+      tray: { destroy: vi.fn(() => orden.push('bandeja')) },
+      api: { close: vi.fn(() => orden.push('api')) },
+      limpiarTemporales: vi.fn(() => orden.push('temporales')),
+    });
+
+    teardown(p);
+
+    expect(orden).toEqual(['captura', 'bandeja', 'api', 'temporales']);
+  });
+
   it('un paso que falla no impide los siguientes: la API se cierra igual', () => {
     const api = { close: vi.fn() };
     const capture = {
