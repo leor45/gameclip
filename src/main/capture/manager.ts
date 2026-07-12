@@ -11,6 +11,7 @@ import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
 import { ObsCapture } from './obs';
 import type { DisplayInfo } from './obs';
+import { relocateSavedFile, targetPathFor } from './relocate';
 import type { SettingsStore } from './settings-store';
 import { remuxAudioTrackNames } from './track-names';
 
@@ -92,6 +93,8 @@ export class CaptureManager extends EventEmitter {
   private bufferRunning = false;
   /** Ejecutable del juego activo (el proceso real que vio el detector). */
   private detectedGameExe: string | null = null;
+  /** Ejecutable del juego de la grabación en curso: el clip pertenece a él, no al juego actual. */
+  private sessionGameExe: string | null = null;
   /** Todos los juegos en ejecución (el activo es uno de ellos). */
   private runningGames: RunningGameMatch[] = [];
   /** Juego activo: el que se graba y cuyo audio se captura. */
@@ -120,6 +123,28 @@ export class CaptureManager extends EventEmitter {
     await this.remuxFn(this.ffmpegPath, file, tracks);
   }
 
+  /**
+   * Post-proceso de todo clip guardado: nombres de pista + reubicación en la carpeta del juego
+   * (`<salida>/<Juego|Desktop>/<Nombre> <marca>.mp4`). Devuelve la ruta definitiva.
+   *
+   * Se hace DESPUÉS de guardar y no configurando la carpeta de libobs, porque el juego puede
+   * cambiar (foco o hotkey) sin reconstruir el pipeline —y reconstruirlo vaciaría el buffer de
+   * repetición—, así que la carpeta que libobs conoce puede estar vencida al guardar.
+   */
+  private async finishSavedClip(file: string, gameExecutable: string | null): Promise<string> {
+    await this.applyTrackNames(file);
+    return relocateSavedFile(
+      file,
+      targetPathFor({
+        outputDir: this.outputDir(),
+        gameExecutable,
+        date: new Date(),
+        kind: 'video',
+        extension: 'mp4',
+      }),
+    );
+  }
+
   getStatus(): CaptureStatus {
     return { ...this.status };
   }
@@ -139,6 +164,11 @@ export class CaptureManager extends EventEmitter {
   /** Juegos en ejecución conocidos (el activo incluido). */
   getRunningGames(): RunningGameMatch[] {
     return [...this.runningGames];
+  }
+
+  /** Ejecutable del juego activo (null si no hay): decide la carpeta y el nombre de lo guardado. */
+  activeGameExecutable(): string | null {
+    return this.detectedGameExe;
   }
 
   /**
@@ -334,6 +364,7 @@ export class CaptureManager extends EventEmitter {
     // El buffer sigue disponible para el replay hotkey mientras dura la sesión.
     if (this.shouldBuffer() && !this.bufferRunning) await this.startBuffer();
     await this.obs.startRecording();
+    this.sessionGameExe = this.detectedGameExe; // el juego de ESTA sesión, aunque luego cambie
     this.setStatus({ state: 'recording', error: null });
   }
 
@@ -344,8 +375,12 @@ export class CaptureManager extends EventEmitter {
    */
   private async stopSessionRecording(game: string | null = this.status.detectedGame): Promise<void> {
     if (this.status.state !== 'recording') return;
-    const file = await this.obs.stopRecording();
-    await this.applyTrackNames(file);
+    const raw = await this.obs.stopRecording();
+    // El ejecutable es el que tenía la sesión al arrancar: al cambiar de juego, el status ya
+    // apunta al nuevo pero el clip que se cierra es del anterior.
+    const exe = this.sessionGameExe ?? gameExecutableForName(game);
+    const file = await this.finishSavedClip(raw, exe);
+    this.sessionGameExe = null;
     await this.reconcileBuffer();
     this.setStatus({
       state: this.bufferRunning ? 'buffering' : 'idle',
@@ -372,8 +407,9 @@ export class CaptureManager extends EventEmitter {
   async stopRecording(): Promise<CaptureStatus> {
     if (this.status.state !== 'recording') return this.getStatus();
     try {
-      const file = await this.obs.stopRecording();
-      await this.applyTrackNames(file);
+      const raw = await this.obs.stopRecording();
+      const file = await this.finishSavedClip(raw, this.detectedGameExe);
+      this.sessionGameExe = null;
       await this.reconcileBuffer();
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',
@@ -396,8 +432,8 @@ export class CaptureManager extends EventEmitter {
       return this.getStatus();
     }
     try {
-      const file = await this.obs.saveReplay();
-      await this.applyTrackNames(file);
+      const raw = await this.obs.saveReplay();
+      const file = await this.finishSavedClip(raw, this.detectedGameExe);
       this.setStatus({ error: null, lastClipPath: file });
       this.emitClipSaved(file, 'replay');
     } catch (err) {

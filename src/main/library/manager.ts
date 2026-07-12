@@ -87,23 +87,19 @@ export class LibraryManager extends EventEmitter {
       }
     }
 
-    if (existsSync(outputDir)) {
-      for (const name of readdirSync(outputDir)) {
-        const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
-        if (!VIDEO_EXTENSIONS.has(ext)) continue;
-        const filePath = join(outputDir, name);
-        if (this.repo.getByPath(filePath)) continue;
-        const stats = statSync(filePath);
-        this.repo.insert({
-          filePath,
-          title: titleFromFileName(name),
-          game: null,
-          sizeBytes: stats.size,
-          createdAt: stats.mtime.toISOString(),
-          source: 'scan',
-        });
-        added++;
-      }
+    // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…`.
+    for (const filePath of videoFilesIn(outputDir)) {
+      if (this.repo.getByPath(filePath)) continue;
+      const stats = statSync(filePath);
+      this.repo.insert({
+        filePath,
+        title: titleFromFileName(fileName(filePath)),
+        game: null,
+        sizeBytes: stats.size,
+        createdAt: stats.mtime.toISOString(),
+        source: 'scan',
+      });
+      added++;
     }
 
     if (added || removed) this.emit('changed');
@@ -178,4 +174,20 @@ export class LibraryManager extends EventEmitter {
 
 function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
+}
+
+/** Videos de la carpeta de clips, incluidas las subcarpetas por juego. */
+function videoFilesIn(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...videoFilesIn(full));
+      continue;
+    }
+    const ext = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase();
+    if (VIDEO_EXTENSIONS.has(ext)) out.push(full);
+  }
+  return out;
 }

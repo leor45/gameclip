@@ -140,6 +140,26 @@ describe('LibraryManager — gestión', () => {
   });
 });
 
+describe('LibraryManager — reconcile recursivo (carpetas por juego)', () => {
+  it('indexa los clips que viven en las subcarpetas de juego', () => {
+    const manager = crearManager();
+    mkdirSync(join(outputDir, 'Terraria', 'Capturas'), { recursive: true });
+    mkdirSync(join(outputDir, 'Desktop'), { recursive: true });
+    writeFileSync(join(outputDir, 'Terraria', 'Terraria 2026.07.02 - 10.02.01.01.mp4'), 'video');
+    writeFileSync(join(outputDir, 'Desktop', 'Desktop 2026.07.02 - 11.00.00.00.mp4'), 'video');
+    // Las capturas no entran al catálogo (no son video).
+    writeFileSync(join(outputDir, 'Terraria', 'Capturas', 'Terraria Screenshot.png'), 'png');
+
+    const resultado = manager.reconcile(outputDir);
+
+    expect(resultado.added).toBe(2);
+    expect(manager.list().map((c) => c.title).sort()).toEqual([
+      'Desktop 2026.07.02 - 11.00.00.00',
+      'Terraria 2026.07.02 - 10.02.01.01',
+    ]);
+  });
+});
+
 describe('LibraryManager — regresión: clips duplicados (rutas con distinto separador)', () => {
   it('la ruta de libobs (con barra) y la del reconcile (nativa) son el MISMO clip', async () => {
     const manager = crearManager();

@@ -68,7 +68,11 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IpcChannel.CaptureSwitchGame, () => capture.switchGame());
   ipcMain.handle(IpcChannel.CaptureTakeScreenshot, () =>
-    takeScreenshot(capture.getSettings().screenMonitorIndex, capture.outputDir()),
+    takeScreenshot(
+      capture.getSettings().screenMonitorIndex,
+      capture.outputDir(),
+      capture.activeGameExecutable(),
+    ),
   );
   ipcMain.handle(IpcChannel.CaptureGetAudioApps, () => listAudioApps());
   ipcMain.handle(IpcChannel.CapturePickOutputDir, async (event) => {
