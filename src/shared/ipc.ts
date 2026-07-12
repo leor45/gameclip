@@ -11,6 +11,7 @@ import type {
 } from './capture';
 import type { ExportProgress, ExportRequest, ExportResult } from './export';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
+import type { ClipAudioTrack, SaveAudioEditResult } from './tracks';
 
 export const IpcChannel = {
   AppVersion: 'app:version',
@@ -40,6 +41,8 @@ export const IpcChannel = {
   ExportCancel: 'export:cancel',
   ExportCopyLast: 'export:copy-last',
   ExportShowLast: 'export:show-last',
+  ClipGetAudioTracks: 'clip:get-audio-tracks',
+  ClipSaveAudioEdit: 'clip:save-audio-edit',
 } as const;
 
 // Eventos push main → renderer (webContents.send).
@@ -103,6 +106,13 @@ export interface IpcContract {
   [IpcChannel.ExportCancel]: { request: void; response: void };
   [IpcChannel.ExportCopyLast]: { request: void; response: boolean };
   [IpcChannel.ExportShowLast]: { request: void; response: void };
+  /** Pistas de audio del clip, sondeadas del archivo (vacío si no se pudo leer). */
+  [IpcChannel.ClipGetAudioTracks]: { request: { id: number }; response: ClipAudioTrack[] };
+  /** Reescribe la mezcla del clip guardado con las pistas marcadas (no borra pistas). */
+  [IpcChannel.ClipSaveAudioEdit]: {
+    request: { clipId: number; mutedTracks: string[] };
+    response: SaveAudioEditResult;
+  };
 }
 
 export interface CaptureApi {
@@ -155,6 +165,16 @@ export interface ExporterApi {
   onProgress(listener: (progress: ExportProgress) => void): () => void;
 }
 
+export interface EditorApi {
+  /** Pistas de audio del clip, con su nombre embebido. */
+  getAudioTracks(id: number): Promise<ClipAudioTrack[]>;
+  /**
+   * Guarda el edit de audio sobre el clip de la biblioteca: su mezcla pasa a llevar solo las
+   * pistas marcadas. Las muteadas siguen en el archivo (el edit es reversible).
+   */
+  saveAudioEdit(clipId: number, mutedTracks: string[]): Promise<SaveAudioEditResult>;
+}
+
 export interface OverlayApi {
   /** Suscribe al estado del overlay; devuelve la función para desuscribirse. */
   onState(listener: (state: OverlayState) => void): () => void;
@@ -166,5 +186,6 @@ export interface GameclipApi {
   capture: CaptureApi;
   library: LibraryApi;
   exporter: ExporterApi;
+  editor: EditorApi;
   overlay: OverlayApi;
 }

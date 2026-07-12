@@ -21,6 +21,7 @@ export function crearClip(parcial: Partial<Clip> = {}): Clip {
     thumbnailPath: `C:\\thumbs\\${clipId}.jpg`,
     createdAt: '2026-07-10T18:00:00.000Z',
     source: 'replay',
+    mutedTracks: [],
     ...parcial,
   };
 }

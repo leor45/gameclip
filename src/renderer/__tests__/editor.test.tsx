@@ -75,6 +75,7 @@ describe('Editor — exportación', () => {
       endSeconds: 20,
       format: 'gif',
       quality: 'alta',
+      mutedTracks: [],
     });
   });
 
@@ -127,5 +128,86 @@ describe('Editor — exportación', () => {
     await user.click(screen.getByRole('button', { name: 'Exportar…' }));
 
     expect(await screen.findByText('Invalid data')).toBeInTheDocument();
+  });
+});
+
+describe('Editor — pistas de audio', () => {
+  const pistasPorRol = [
+    { index: 0, name: 'default' },
+    { index: 1, name: 'game' },
+    { index: 2, name: 'mic' },
+    { index: 3, name: 'opera' },
+  ];
+
+  async function prepararConPistas(clip = crearClip({ id: 7, title: 'Con pistas' })) {
+    mock().library.get.mockResolvedValue(clip);
+    mock().editor.getAudioTracks.mockResolvedValue(pistasPorRol);
+    renderEditor('/editor/7');
+    await screen.findByLabelText('mic');
+    return clip;
+  }
+
+  it('lista las pistas por nombre, sin la mezcla, todas marcadas', async () => {
+    await prepararConPistas();
+
+    expect(mock().editor.getAudioTracks).toHaveBeenCalledWith(7);
+    expect(screen.getByLabelText('game')).toBeChecked();
+    expect(screen.getByLabelText('mic')).toBeChecked();
+    expect(screen.getByLabelText('opera')).toBeChecked();
+    expect(screen.queryByLabelText('default')).not.toBeInTheDocument();
+  });
+
+  it('reabre el clip con las pistas muteadas que se guardaron', async () => {
+    await prepararConPistas(crearClip({ id: 7, title: 'Editado', mutedTracks: ['mic'] }));
+
+    expect(screen.getByLabelText('mic')).not.toBeChecked();
+    expect(screen.getByLabelText('game')).toBeChecked();
+  });
+
+  it('exporta con las pistas desmarcadas', async () => {
+    const user = userEvent.setup();
+    await prepararConPistas();
+
+    await user.click(screen.getByLabelText('mic'));
+    await user.click(screen.getByRole('button', { name: 'Exportar…' }));
+
+    expect(mock().exporter.run).toHaveBeenCalledWith(
+      expect.objectContaining({ clipId: 7, mutedTracks: ['mic'] }),
+    );
+  });
+
+  it('guardar edit aplica el mute al clip guardado y recarga el reproductor', async () => {
+    const user = userEvent.setup();
+    await prepararConPistas();
+    const src = () => document.querySelector('video')?.getAttribute('src');
+    const antes = src();
+
+    await user.click(screen.getByLabelText('mic'));
+    await user.click(screen.getByRole('button', { name: 'Guardar edit' }));
+
+    expect(mock().editor.saveAudioEdit).toHaveBeenCalledWith(7, ['mic']);
+    expect(await screen.findByText('Edit guardado ✓')).toBeInTheDocument();
+    // el archivo se reescribió: la URL cambia para que Chromium no sirva el video cacheado
+    expect(src()).not.toBe(antes);
+  });
+
+  it('un fallo de ffmpeg al guardar el edit se muestra', async () => {
+    const user = userEvent.setup();
+    await prepararConPistas();
+    mock().editor.saveAudioEdit.mockResolvedValue({ status: 'error', message: 'Permission denied' });
+
+    await user.click(screen.getByRole('button', { name: 'Guardar edit' }));
+
+    expect(await screen.findByText('Permission denied')).toBeInTheDocument();
+  });
+
+  it('un clip sin pistas por rol muestra una sola pista y no deja guardar edit', async () => {
+    mock().library.get.mockResolvedValue(crearClip({ id: 8, title: 'Escritorio' }));
+    mock().editor.getAudioTracks.mockResolvedValue([{ index: 0, name: null }]);
+    renderEditor('/editor/8');
+
+    expect(await screen.findByLabelText('Audio')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Guardar edit' })).toBeDisabled();
+    expect(screen.getByText(/no tiene pistas por rol/)).toBeInTheDocument();
   });
 });

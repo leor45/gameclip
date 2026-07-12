@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3';
 import type { Clip, ClipPatch, ClipSource, ClipsQuery } from '@shared/library';
 import { normalizeTags } from '@shared/library';
+import { normalizeMutedTracks } from '@shared/tracks';
 
 // Migraciones secuenciales; la posición i lleva el esquema de la versión i a la i+1.
 const migrations: string[] = [
@@ -18,6 +19,8 @@ const migrations: string[] = [
      source           TEXT NOT NULL DEFAULT 'scan'
    );
    CREATE INDEX idx_clips_created ON clips(created_at DESC);`,
+  // Selección de pistas de audio del editor (claves muteadas en la mezcla), JSON.
+  `ALTER TABLE clips ADD COLUMN muted_tracks TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 interface ClipRow {
@@ -32,6 +35,7 @@ interface ClipRow {
   thumbnail_path: string | null;
   created_at: string;
   source: string;
+  muted_tracks: string;
 }
 
 export interface NewClip {
@@ -153,6 +157,14 @@ export class ClipsRepository {
     return this.mustGet(id);
   }
 
+  /** Edit de audio del editor: pistas muteadas en la mezcla y tamaño del archivo reescrito. */
+  setAudioEdit(id: number, mutedTracks: string[], sizeBytes: number): Clip {
+    this.db
+      .prepare('UPDATE clips SET muted_tracks = ?, size_bytes = ? WHERE id = ?')
+      .run(JSON.stringify(normalizeMutedTracks(mutedTracks)), sizeBytes, id);
+    return this.mustGet(id);
+  }
+
   delete(id: number): void {
     this.db.prepare('DELETE FROM clips WHERE id = ?').run(id);
   }
@@ -195,7 +207,16 @@ function toClip(row: ClipRow): Clip {
     thumbnailPath: row.thumbnail_path,
     createdAt: row.created_at,
     source: (['replay', 'recording', 'scan'] as const).find((s) => s === row.source) ?? 'scan',
+    mutedTracks: parseMutedTracks(row.muted_tracks),
   };
+}
+
+function parseMutedTracks(raw: string): string[] {
+  try {
+    return normalizeMutedTracks(JSON.parse(raw));
+  } catch {
+    return []; // columna corrupta → sin pistas muteadas
+  }
 }
 
 function escapeLike(term: string): string {

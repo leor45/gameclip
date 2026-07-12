@@ -7,6 +7,12 @@ import type { IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings } from '@shared/capture';
 import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
+import {
+  activeTrackIndexes,
+  hasRoleTracks,
+  normalizeSaveAudioEditRequest,
+  type SaveAudioEditResult,
+} from '@shared/tracks';
 import { listAudioApps } from './capture/audio-apps';
 import { takeScreenshot } from './capture/screenshots';
 import type { CaptureManager } from './capture/manager';
@@ -145,6 +151,14 @@ export function registerIpcHandlers(
         : await dialog.showSaveDialog(opciones);
       if (eleccion.canceled || !eleccion.filePath) return { status: 'canceled' };
 
+      // Las pistas marcadas viajan por nombre: el main sondea el archivo y las traduce a los
+      // ordinales (`0:a:N`) que entiende ffmpeg. Sin sondeo (o clip sin audio) no se mapea nada.
+      let audioTracks: number[] | undefined;
+      if (request.mutedTracks && request.format === 'mp4') {
+        const tracks = await exporter.probeTracks(clip.filePath);
+        if (tracks.length > 0) audioTracks = activeTrackIndexes(tracks, request.mutedTracks);
+      }
+
       const resultado = await exporter.run({
         inputPath: clip.filePath,
         outputPath: eleccion.filePath,
@@ -152,6 +166,7 @@ export function registerIpcHandlers(
         endSeconds: request.endSeconds,
         format: request.format,
         quality: request.quality,
+        audioTracks,
       });
       if (resultado.status === 'done' && resultado.outputPath) {
         lastExportPath = resultado.outputPath;
@@ -159,6 +174,37 @@ export function registerIpcHandlers(
       return resultado;
     },
   );
+  const exp = exporter;
+  ipcMain.handle(IpcChannel.ClipGetAudioTracks, (_event, req: { id: number }) => {
+    const clip = lib.getClip(mustId(req?.id));
+    return clip ? exp.probeTracks(clip.filePath) : [];
+  });
+  ipcMain.handle(
+    IpcChannel.ClipSaveAudioEdit,
+    async (_event, rawRequest: unknown): Promise<SaveAudioEditResult> => {
+      const request = normalizeSaveAudioEditRequest(rawRequest);
+      const clip = lib.getClip(request.clipId);
+      if (!clip) return { status: 'error', message: 'El clip ya no existe.' };
+      if (exp.isBusy) return { status: 'error', message: 'Hay una operación de ffmpeg en curso.' };
+
+      const tracks = await exp.probeTracks(clip.filePath);
+      if (!hasRoleTracks(tracks)) {
+        return { status: 'error', message: 'Este clip no tiene pistas de audio por rol.' };
+      }
+      try {
+        await exp.saveAudioEdit(
+          clip.filePath,
+          tracks,
+          activeTrackIndexes(tracks, request.mutedTracks),
+        );
+      } catch (err) {
+        return { status: 'error', message: err instanceof Error ? err.message : String(err) };
+      }
+      lib.setAudioEdit(clip.id, request.mutedTracks);
+      return { status: 'done' };
+    },
+  );
+
   ipcMain.handle(IpcChannel.ExportCancel, () => exporter.cancel());
   ipcMain.handle(IpcChannel.ExportShowLast, () => {
     if (lastExportPath && existsSync(lastExportPath)) shell.showItemInFolder(lastExportPath);
