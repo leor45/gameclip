@@ -11,11 +11,21 @@ const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const DATA_URL_JPEG = 'data:image/jpeg;base64,';
 
+/** Cuántas veces se reintenta borrar el archivo y cuánto se espera entre intentos (backoff lineal). */
+const DELETE_ATTEMPTS = 6;
+const DELETE_DELAY_MS = 150;
+/** Códigos con los que Windows avisa de que el archivo está tomado por otro handle. */
+const BLOQUEADO = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
 export interface LibraryOptions {
   /** Carpeta donde se guardan los thumbnails (userData/thumbnails). */
   thumbnailsDir: string;
   /** Ventana activa al guardar un clip; inyectable en tests. */
   getForegroundTitle?: () => Promise<string | null>;
+  /** Borra el archivo del clip; inyectable en tests para simular un archivo bloqueado. */
+  removeFile?: (filePath: string) => void;
+  /** Espera entre reintentos de borrado; inyectable en tests. */
+  sleep?: (ms: number) => Promise<void>;
   /**
    * De dónde salen los nombres de los juegos (índice de launchers + juegos manuales). Es una función
    * porque el índice se construye en background y el owner puede re-escanear: hay que leerlo en el
@@ -186,18 +196,48 @@ export class LibraryManager extends EventEmitter {
     return actualizado;
   }
 
-  /** Borra registro, archivo de video y thumbnail. */
-  deleteClip(id: number): void {
+  /**
+   * Borra archivo de video, thumbnail y registro. El registro **solo** se borra si el archivo se
+   * pudo borrar (o ya no existía): dejar el archivo huérfano lo hacía reaparecer en el siguiente
+   * `reconcile`. Si el archivo sigue en uso tras los reintentos, lanza y no toca la DB.
+   */
+  async deleteClip(id: number): Promise<void> {
     const clip = this.repo.get(id);
     if (!clip) return;
-    try {
-      rmSync(clip.filePath, { force: true });
-    } catch {
-      // el archivo puede estar bloqueado por el reproductor; el registro se borra igual
-    }
+    await this.removeClipFile(clip.filePath);
     this.removeThumbnail(clip);
     this.repo.delete(id);
     this.emit('changed');
+  }
+
+  /**
+   * Borra el archivo reintentando mientras esté tomado. En Windows lo tiene abierto la propia app: el
+   * `<video>` de la preview lo lee por el protocolo `gameclip-media://` (handle vivo sin
+   * `FILE_SHARE_DELETE`), así que `rmSync` da `EBUSY`. La tarjeta suelta la preview antes de borrar,
+   * pero cerrar el handle es asíncrono; los reintentos cubren esa ventana — y de paso bloqueos ajenos
+   * transitorios (indexador de Windows, antivirus). `force:true` hace no-op de un archivo ya inexistente.
+   */
+  private async removeClipFile(filePath: string): Promise<void> {
+    const remove = this.opts.removeFile ?? ((p: string) => rmSync(p, { force: true }));
+    const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+
+    for (let intento = 1; intento <= DELETE_ATTEMPTS; intento++) {
+      try {
+        remove(filePath);
+        return;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? '';
+        if (!BLOQUEADO.has(code)) throw err;
+        if (intento === DELETE_ATTEMPTS) {
+          // El EBUSY crudo no le dice nada al usuario; el motivo real sí.
+          throw new Error(
+            'El archivo del clip está en uso y no se pudo borrar. Cerralo en el reproductor ' +
+              '(o esperá unos segundos) y volvé a intentar.',
+          );
+        }
+        await sleep(DELETE_DELAY_MS * intento);
+      }
+    }
   }
 
   private removeThumbnail(clip: Clip | null): void {

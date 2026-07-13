@@ -22,11 +22,22 @@ beforeEach(() => {
   mkdirSync(outputDir, { recursive: true });
 });
 
-function crearManager(foreground: string | null = null) {
+function crearManager(
+  foreground: string | null = null,
+  extra: Partial<ConstructorParameters<typeof LibraryManager>[1]> = {},
+) {
   return new LibraryManager(repo, {
     thumbnailsDir: join(dir, 'thumbs'),
     getForegroundTitle: () => Promise.resolve(foreground),
+    ...extra,
   });
+}
+
+/** Error de Windows para un archivo tomado por otro handle (Chromium sirviendo el clip). */
+function ebusy(path: string): NodeJS.ErrnoException {
+  const err: NodeJS.ErrnoException = new Error(`EBUSY: resource busy or locked, unlink '${path}'`);
+  err.code = 'EBUSY';
+  return err;
 }
 
 function video(nombre: string): string {
@@ -216,11 +227,54 @@ describe('LibraryManager — gestión', () => {
     const dataUrl = `data:image/jpeg;base64,${Buffer.from('x').toString('base64')}`;
     const conThumb = manager.setClipMedia(clip.id, { thumbnailDataUrl: dataUrl });
 
-    manager.deleteClip(clip.id);
+    await manager.deleteClip(clip.id);
 
     expect(manager.list()).toHaveLength(0);
     expect(existsSync(ruta)).toBe(false);
     expect(existsSync(conThumb.thumbnailPath!)).toBe(false);
+  });
+
+  // Regresión: en Windows el clip lo tiene abierto la propia app (el <video> de la preview lo lee por
+  // el protocolo gameclip-media). rmSync daba EBUSY, se tragaba el error y borraba el registro igual:
+  // el clip desaparecía de la app pero el archivo quedaba en la carpeta. Ahora, si sigue en uso, el
+  // registro NO se borra y avisa en español.
+  it('regresión: si el archivo está en uso, no borra el registro y avisa en español', async () => {
+    const cambios = vi.fn();
+    const manager = crearManager(null, {
+      removeFile: (p: string) => {
+        throw ebusy(p);
+      },
+      sleep: () => Promise.resolve(),
+    });
+    const ruta = video('bloqueado.mp4');
+    const clip = (await manager.registerSavedClip(ruta, 'replay'))!;
+    manager.on('changed', cambios);
+
+    await expect(manager.deleteClip(clip.id)).rejects.toThrow(/en uso/i);
+
+    expect(manager.list()).toHaveLength(1);
+    expect(existsSync(ruta)).toBe(true);
+    expect(cambios).not.toHaveBeenCalled();
+  });
+
+  it('regresión: un borrado bloqueado que a la siguiente funciona borra archivo y registro', async () => {
+    let intentos = 0;
+    const manager = crearManager(null, {
+      removeFile: (p: string) => {
+        intentos++;
+        if (intentos === 1) throw ebusy(p); // el primer intento encuentra el handle vivo
+        rmSync(p, { force: true }); // para el segundo, Chromium ya lo soltó
+      },
+      sleep: () => Promise.resolve(),
+    });
+    const ruta = video('se-libera.mp4');
+    const clip = (await manager.registerSavedClip(ruta, 'replay'))!;
+
+    await manager.deleteClip(clip.id);
+
+    expect(intentos).toBe(2);
+    expect(manager.list()).toHaveLength(0);
+    expect(existsSync(ruta)).toBe(false);
   });
 
   it('updateClip valida el patch (título vacío lanza)', async () => {

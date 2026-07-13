@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import AuthGate from './auth/AuthGate';
 import CaptureBar from './components/CaptureBar';
 import Sidebar from './components/Sidebar';
+import UpdateModal from './components/UpdateModal';
+import { UpdateProvider } from './updates/UpdateContext';
 import AjustesLayout from './views/ajustes/AjustesLayout';
 import AjustesAlmacenamiento from './views/ajustes/Almacenamiento';
 import AjustesAtajos from './views/ajustes/Atajos';
@@ -29,6 +31,7 @@ function Shell() {
 
   return (
     <div className="app-shell">
+      <UpdateModal />
       <Sidebar versionInfo={versionInfo} />
       <div className="app-main">
         <CaptureBar />
@@ -64,9 +67,11 @@ function Root() {
 export default function App() {
   return (
     <AuthProvider>
-      <HashRouter>
-        <Root />
-      </HashRouter>
+      <UpdateProvider>
+        <HashRouter>
+          <Root />
+        </HashRouter>
+      </UpdateProvider>
     </AuthProvider>
   );
 }

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import type { AppVersionInfo } from '@shared/ipc';
 import { useAuth } from '../auth/AuthContext';
+import { useUpdates } from '../updates/UpdateContext';
 import StorageIndicator from './StorageIndicator';
 
 const links = [
@@ -15,6 +16,8 @@ interface SidebarProps {
 
 export default function Sidebar({ versionInfo }: SidebarProps) {
   const { session, logout } = useAuth();
+  const { result, comprobando, comprobadoManual, comprobar } = useUpdates();
+  const hayUpdate = result?.updateAvailable ?? false;
 
   return (
     <aside className="sidebar">
@@ -30,6 +33,28 @@ export default function Sidebar({ versionInfo }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
+      <div className="sidebar-updates">
+        {hayUpdate && result?.latest && (
+          <button
+            type="button"
+            className="update-notice"
+            onClick={() => window.open(result.url)}
+          >
+            ⬆ Actualización disponible: v{result.latest}
+          </button>
+        )}
+        <button
+          type="button"
+          className="update-check"
+          onClick={() => void comprobar()}
+          disabled={comprobando}
+        >
+          {comprobando ? 'Comprobando…' : 'Comprobar actualizaciones'}
+        </button>
+        {comprobadoManual && !hayUpdate && !comprobando && (
+          <span className="update-uptodate">Estás al día ✓</span>
+        )}
+      </div>
       <StorageIndicator />
       {session && (
         <div className="sidebar-user">

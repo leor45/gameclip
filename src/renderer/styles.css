@@ -80,6 +80,115 @@ body {
   padding: 8px 12px;
 }
 
+/* Bloque de actualizaciones: se empuja al fondo del sidebar (por encima del anillo de almacenamiento,
+   que también puede no existir). */
+.sidebar-updates {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 4px;
+}
+
+.update-notice {
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.update-notice:hover {
+  background: rgba(245, 197, 24, 0.1);
+}
+
+.update-check {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.update-check:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.update-check:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.update-uptodate {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-left: 2px;
+}
+
+/* Modal de versión nueva (solo al arrancar). */
+.update-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.update-modal {
+  width: min(420px, 90vw);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.update-modal h2 {
+  font-size: 18px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.update-modal p {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 18px;
+}
+
+.update-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.update-modal-actions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--accent);
+  color: #111318;
+}
+
+.update-modal-actions button.secondary {
+  background: none;
+  color: var(--text-dim);
+}
+
+.update-modal-actions button.secondary:hover {
+  color: var(--text);
+}
+
 .app-main {
   flex: 1;
   display: flex;

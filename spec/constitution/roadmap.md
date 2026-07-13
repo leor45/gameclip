@@ -126,6 +126,15 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > **reintenta** el rename ante EPERM/EACCES/EBUSY con backoff (cerrar el handle es asíncrono, y el
 > antivirus o el indexador también pueden tomar el archivo). Si el bloqueo persiste, el mensaje dice
 > en español que está en uso, en vez de un EPERM crudo.
+> Fix post-entrega (2026-07-13, `fix/borrado-clip-archivo-bloqueado`): borrar un clip lo quitaba de la
+> app pero **dejaba el archivo en la carpeta**. Misma causa raíz que el fix anterior: el clip lo tiene
+> abierto la propia app (el `<video>` de la preview al hacer hover lo lee por `gameclip-media://`), así
+> que `rmSync` daba `EBUSY` — pero `deleteClip` lo tragaba y borraba el registro igual, dejando un
+> archivo huérfano que además revivía en el siguiente `reconcile`. Reproducido aislado con `fs`
+> (handle `FileShare.Read` estilo Chromium → `EBUSY`; liberado → borra). Arreglo: `deleteClip` pasa a
+> async y **solo borra el registro si el archivo se fue**, reintentando ante EPERM/EACCES/EBUSY con
+> backoff; si persiste, avisa en español y no toca la DB. La tarjeta suelta la preview antes de borrar
+> y muestra el error; el auto-borrado por límite salta un clip en uso sin abortar la poda.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
@@ -566,6 +575,24 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > **Sin verificar de extremo a extremo:** las fuentes de Ubisoft, EA, GOG, Battle.net y Xbox. El owner las
 > tiene instaladas pero **sin un solo juego**, así que su lógica solo está probada con fixtures. Cada una
 > está aislada: si el formato no es el esperado, devuelve `[]` y el resto del índice sigue igual.
+
+## Fase 16 · Comprobación de actualizaciones — ✅ entregado
+
+- [x] Chequeo silencioso al arrancar contra `releases/latest` de GitHub; si hay versión nueva, modal
+      propio (una vez por lanzamiento) con botón "Ver release".
+- [x] Aviso pasivo en el sidebar mientras la app corre + botón "Comprobar actualizaciones" con feedback
+      ("Estás al día ✓" / "Hay vX.Y.Z").
+
+> Feature de la 0.6.0 (`feature/comprobar-actualizaciones`). Es un **notificador**, no un auto-updater:
+> abre el release en el navegador (`window.open` → `setWindowOpenHandler` → `shell.openExternal`) y la
+> descarga del portable sigue siendo manual; el auto-update real (electron-updater + firma) queda fuera.
+> Todo el I/O vive en el main (`src/main/updates.ts`, Electron `net`, sin CORS/CSP), con timeout de 5 s
+> y `catch` total: cualquier fallo (offline, rate-limit, JSON raro) es "no hay update" en silencio. El
+> repo es público, así que `GET /repos/leor45/gameclip/releases/latest` va sin token. Comparación de
+> versiones propia en `@shared/version.ts` (numérica `X.Y.Z`, sin dependencia nueva). Verificado por
+> tests (versión, chequeo con `net` inyectable, contexto/sidebar/modal en el renderer) y contra el
+> payload real de la API; la comprobación visual final la hace el owner con la versión bajada a mano.
+> El 0.6.0 incluye además el fix de borrado sin publicar (ver Fase 10 / `fix/borrado-clip-archivo-bloqueado`).
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
