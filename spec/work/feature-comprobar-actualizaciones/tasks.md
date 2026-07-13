@@ -25,12 +25,12 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`) — 584/584
-- [ ] Comprobación manual: con `version` bajada a mano, arrancar → modal; botón → feedback; enlace abre.
-      (Pendiente para el owner.)
+- [x] Comprobación manual: modal al arrancar + aviso pasivo + botón, verificado por el owner. ✅
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Bump a **0.6.0** + notas de release (borrador en `plan.md`)
-- [ ] Merge a `main` con `--no-ff` (fix de borrado + esta feature) y ramas borradas (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Bump a **0.6.0** + notas de release (✨ Novedades / 🐛 Mejoras y estabilización)
+- [x] Merge a `main` con `--no-ff` (fix de borrado + esta feature) y ramas borradas (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado
+- [x] Release `v0.6.0` publicado con `GameClip-0.6.0-portable.exe`
