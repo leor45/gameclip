@@ -1,97 +1,124 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  applyHapticMute,
   buildArgs,
+  HapticMuteListener,
   type HapticMuteDeps,
+  type SpawnedProcess,
 } from '../capture/app-audio-mute';
 
-/**
- * Deps de test con reloj simulado: `now` avanza cada vez que se llama a `wait`, así el bucle de
- * reintento termina sin temporizadores reales. `run` devuelve los códigos de `codes` en orden (el
- * último se repite), o lanza si el elemento es 'throw'.
- */
-function makeDeps(
-  codes: (number | 'throw')[],
-  overrides: Partial<HapticMuteDeps> = {},
-): HapticMuteDeps {
-  let clock = 0;
-  let i = 0;
-  return {
+/** Proceso falso: registra kill() y expone el listener de 'exit' para simular muerte del proceso. */
+function fakeProcess() {
+  const proc = {
+    killed: 0,
+    exitListener: null as null | (() => void),
+    kill: vi.fn(() => {
+      proc.killed++;
+    }),
+    on: vi.fn((_event: 'exit', listener: () => void) => {
+      proc.exitListener = listener;
+    }),
+  };
+  return proc;
+}
+
+function makeDeps(overrides: Partial<HapticMuteDeps> = {}) {
+  const spawned: ReturnType<typeof fakeProcess>[] = [];
+  const deps: HapticMuteDeps = {
     helperPath: () => 'C:\\fake\\gc-app-audio-mute.exe',
-    run: vi.fn(async () => {
-      const code = codes[Math.min(i++, codes.length - 1)];
-      if (code === 'throw') throw new Error('spawn falló');
-      return code;
+    spawn: vi.fn((): SpawnedProcess => {
+      const p = fakeProcess();
+      spawned.push(p);
+      return p;
     }),
-    wait: vi.fn(async (ms: number) => {
-      clock += ms;
-    }),
-    now: () => clock,
     ...overrides,
   };
+  return { deps, spawned };
 }
 
 describe('buildArgs', () => {
-  it('arma la CLI con proceso por defecto obs64.exe y --mute', () => {
+  it('arma la CLI de watch con proceso por defecto obs64.exe', () => {
     expect(buildArgs('DualSense')).toEqual([
       '--device',
       'DualSense',
       '--process',
       'obs64.exe',
-      '--mute',
-    ]);
-  });
-
-  it('acepta un proceso explícito', () => {
-    expect(buildArgs('Wireless Controller', 'otro.exe')).toEqual([
-      '--device',
-      'Wireless Controller',
-      '--process',
-      'otro.exe',
-      '--mute',
+      '--watch',
     ]);
   });
 });
 
-describe('applyHapticMute', () => {
-  it('aplica al primer intento cuando el helper devuelve 0', async () => {
-    const deps = makeDeps([0]);
-    await expect(applyHapticMute('DualSense', deps)).resolves.toBe('applied');
-    expect(deps.run).toHaveBeenCalledTimes(1);
-    expect(deps.run).toHaveBeenCalledWith('C:\\fake\\gc-app-audio-mute.exe', buildArgs('DualSense'));
-    expect(deps.wait).not.toHaveBeenCalled();
+describe('HapticMuteListener', () => {
+  it('apply(true) lanza el listener con los args de watch', () => {
+    const { deps } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    expect(deps.spawn).toHaveBeenCalledTimes(1);
+    expect(deps.spawn).toHaveBeenCalledWith(
+      'C:\\fake\\gc-app-audio-mute.exe',
+      buildArgs('DualSense'),
+    );
   });
 
-  it('no-op si no hay binario (helperPath null)', async () => {
-    const deps = makeDeps([0], { helperPath: () => null });
-    await expect(applyHapticMute('DualSense', deps)).resolves.toBe('skipped');
-    expect(deps.run).not.toHaveBeenCalled();
+  it('apply repetido con el mismo estado no relanza (idempotente)', () => {
+    const { deps } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    listener.apply(true, 'DualSense');
+    listener.apply(true, '  DualSense  '); // el trim lo normaliza al mismo patrón
+    expect(deps.spawn).toHaveBeenCalledTimes(1);
   });
 
-  it('no-op si el patrón está vacío o en blanco', async () => {
-    const deps = makeDeps([0]);
-    await expect(applyHapticMute('   ', deps)).resolves.toBe('skipped');
-    expect(deps.run).not.toHaveBeenCalled();
+  it('cambiar el patrón reinicia el proceso (mata el viejo, lanza uno nuevo)', () => {
+    const { deps, spawned } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    listener.apply(true, 'Wireless Controller');
+    expect(deps.spawn).toHaveBeenCalledTimes(2);
+    expect(spawned[0].killed).toBe(1); // el primero se mató
+    expect(deps.spawn).toHaveBeenLastCalledWith(
+      'C:\\fake\\gc-app-audio-mute.exe',
+      buildArgs('Wireless Controller'),
+    );
   });
 
-  it('reintenta mientras no encuentra la sesión (código 3) y para al obtener 0', async () => {
-    const deps = makeDeps([3, 3, 0]);
-    await expect(applyHapticMute('DualSense', deps)).resolves.toBe('applied');
-    expect(deps.run).toHaveBeenCalledTimes(3);
-    expect(deps.wait).toHaveBeenCalledTimes(2);
+  it('apply(false) mata el proceso; y no relanza mientras siga desactivado', () => {
+    const { deps, spawned } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    listener.apply(false, 'DualSense');
+    expect(spawned[0].killed).toBe(1);
+    listener.apply(false, 'DualSense');
+    expect(deps.spawn).toHaveBeenCalledTimes(1);
   });
 
-  it('se rinde con timeout si la sesión nunca aparece, sin lanzar', async () => {
-    const deps = makeDeps([3]);
-    await expect(applyHapticMute('DualSense', deps)).resolves.toBe('timeout');
-    // 3000 ms / 250 ms → 13 intentos, 12 esperas.
-    expect(deps.run).toHaveBeenCalledTimes(13);
-    expect(deps.wait).toHaveBeenCalledTimes(12);
+  it('patrón vacío equivale a desactivado: no lanza nada', () => {
+    const { deps } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, '   ');
+    expect(deps.spawn).not.toHaveBeenCalled();
   });
 
-  it('un fallo de ejecución (throw) se trata como reintentable y no propaga', async () => {
-    const deps = makeDeps(['throw', 'throw', 0]);
-    await expect(applyHapticMute('DualSense', deps)).resolves.toBe('applied');
-    expect(deps.run).toHaveBeenCalledTimes(3);
+  it('sin binario (helperPath null) es no-op', () => {
+    const { deps } = makeDeps({ helperPath: () => null });
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    expect(deps.spawn).not.toHaveBeenCalled();
+  });
+
+  it('stop() mata el proceso vivo', () => {
+    const { deps, spawned } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    listener.stop();
+    expect(spawned[0].killed).toBe(1);
+  });
+
+  it('si el proceso muere solo, un apply posterior lo relanza', () => {
+    const { deps, spawned } = makeDeps();
+    const listener = new HapticMuteListener(deps);
+    listener.apply(true, 'DualSense');
+    spawned[0].exitListener?.(); // el helper murió por su cuenta
+    listener.apply(true, 'DualSense');
+    expect(deps.spawn).toHaveBeenCalledTimes(2);
   });
 });

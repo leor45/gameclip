@@ -362,19 +362,9 @@ export default function AjustesAudio() {
           cuela en el clip. Con esto, GameClip silencia esa señal en cada grabación sin tocar el
           audio del juego ni la vibración del mando.
         </p>
-        <label>
-          Dispositivo del mando
-          <input
-            type="text"
-            value={settings.hapticMuteDevicePattern}
-            disabled={!settings.hapticMuteEnabled}
-            onChange={(e) => set('hapticMuteDevicePattern', e.target.value)}
-            placeholder="DualSense"
-          />
-        </label>
         <p className="settings-hint">
-          Parte del nombre del dispositivo de audio del mando (p. ej. «DualSense» o «Wireless
-          Controller»). Se busca sin distinguir mayúsculas.
+          Detecta los mandos <strong>DualSense</strong> automáticamente —incluso si conectas otro en
+          plena partida—; solo tienes que activarlo.
         </p>
       </fieldset>
     </SeccionForm>
