@@ -80,7 +80,17 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
     const seguro = window.confirm(
       `¿Eliminar "${clip.title}"? El archivo de video también se borra del disco.`,
     );
-    if (seguro) void accion(() => window.gameclip.library.remove(clip.id));
+    if (!seguro) return;
+    // Soltar la preview desmonta el <video>, que es lo que en Windows tiene el archivo abierto e
+    // impide borrarlo. Cerrar el handle es asíncrono; el main además reintenta el borrado.
+    onPreviewChange?.(false);
+    void accion(async () => {
+      try {
+        await window.gameclip.library.remove(clip.id);
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : 'No se pudo borrar el clip.');
+      }
+    });
   }
 
   const fecha = new Date(clip.createdAt).toLocaleDateString();

@@ -69,7 +69,13 @@ export class StorageManager {
       if (clip.kind === 'image') continue;
       if (settings.onlyDeleteRecordings && clip.source !== 'recording') continue;
 
-      await this.removeClip(clip, settings.useRecycleBin);
+      // Un clip en uso (el usuario lo está viendo) no se puede liberar ahora: se salta sin contarlo
+      // ni abortar la poda; la próxima pasada lo reintenta.
+      try {
+        await this.removeClip(clip, settings.useRecycleBin);
+      } catch {
+        continue;
+      }
       deleted.push(clip.filePath);
       used -= clip.sizeBytes;
     }
@@ -87,7 +93,7 @@ export class StorageManager {
     }
     // deleteClip limpia registro + thumbnail; si el archivo ya fue a la papelera, su
     // rmSync interno (force:true) es un no-op.
-    this.library.deleteClip(clip.id);
+    await this.library.deleteClip(clip.id);
   }
 }
 

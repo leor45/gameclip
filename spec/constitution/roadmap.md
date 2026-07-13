@@ -126,6 +126,15 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > **reintenta** el rename ante EPERM/EACCES/EBUSY con backoff (cerrar el handle es asíncrono, y el
 > antivirus o el indexador también pueden tomar el archivo). Si el bloqueo persiste, el mensaje dice
 > en español que está en uso, en vez de un EPERM crudo.
+> Fix post-entrega (2026-07-13, `fix/borrado-clip-archivo-bloqueado`): borrar un clip lo quitaba de la
+> app pero **dejaba el archivo en la carpeta**. Misma causa raíz que el fix anterior: el clip lo tiene
+> abierto la propia app (el `<video>` de la preview al hacer hover lo lee por `gameclip-media://`), así
+> que `rmSync` daba `EBUSY` — pero `deleteClip` lo tragaba y borraba el registro igual, dejando un
+> archivo huérfano que además revivía en el siguiente `reconcile`. Reproducido aislado con `fs`
+> (handle `FileShare.Read` estilo Chromium → `EBUSY`; liberado → borra). Arreglo: `deleteClip` pasa a
+> async y **solo borra el registro si el archivo se fue**, reintentando ante EPERM/EACCES/EBUSY con
+> backoff; si persiste, avisa en español y no toca la DB. La tarjeta suelta la preview antes de borrar
+> y muestra el error; el auto-borrado por límite salta un clip en uso sin abortar la poda.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
