@@ -11,6 +11,8 @@ import { captureProfile } from '@shared/capture';
 import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
+import { applyHapticMute, realHapticMuteDeps } from './app-audio-mute';
+import type { HapticMuteOutcome } from './app-audio-mute';
 import { ObsCapture } from './obs';
 import type { DisplayInfo } from './obs';
 import { relocateSavedFile, targetPathFor } from './relocate';
@@ -118,8 +120,21 @@ export class CaptureManager extends EventEmitter {
     private readonly obs: CaptureBackend = new ObsCapture(),
     private readonly ffmpegPath: string = 'ffmpeg',
     private readonly remuxFn: typeof remuxAudioTrackNames = remuxAudioTrackNames,
+    private readonly hapticMute: (pattern: string) => Promise<HapticMuteOutcome> = (pattern) =>
+      applyHapticMute(pattern, realHapticMuteDeps()),
   ) {
     super();
+  }
+
+  /**
+   * Silencia el háptico del mando (DualSense) en la sesión de obs64.exe recién abierta. Se llama en
+   * cada arranque de salida porque la sesión por-dispositivo se recrea al reabrir el stream, y es
+   * fire-and-forget para no demorar el arranque de la captura. Best-effort: nunca lanza.
+   */
+  private reapplyHapticMute(): void {
+    const s = this.getSettings();
+    if (!s.hapticMuteEnabled) return;
+    void this.hapticMute(s.hapticMuteDevicePattern).catch(() => undefined);
   }
 
   /**
@@ -393,6 +408,7 @@ export class CaptureManager extends EventEmitter {
     // El buffer sigue disponible para el replay hotkey mientras dura la sesión.
     if (this.shouldBuffer() && !this.bufferRunning) await this.startBuffer();
     await this.obs.startRecording();
+    this.reapplyHapticMute();
     this.sessionGameName = this.activeGame?.name ?? null; // el juego de ESTA sesión, aunque cambie
     this.setStatus({ state: 'recording', error: null });
   }
@@ -438,6 +454,7 @@ export class CaptureManager extends EventEmitter {
     if (this.status.state !== 'buffering' && this.status.state !== 'idle') return;
     try {
       await this.obs.startRecording();
+      this.reapplyHapticMute();
       this.setStatus({ state: 'recording', error: null });
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
@@ -526,6 +543,7 @@ export class CaptureManager extends EventEmitter {
   private async startBuffer(): Promise<void> {
     await this.obs.startReplayBuffer();
     this.bufferRunning = true;
+    this.reapplyHapticMute(); // la sesión de obs64 en el dispositivo se abre al arrancar la salida
   }
 
   private async stopBuffer(): Promise<void> {

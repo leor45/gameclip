@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "build": "electron-vite build",
-    "build:portable": "electron-vite build && electron-builder --win portable",
+    "build:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-haptic-mute.ps1",
+    "build:portable": "electron-vite build && npm run build:native && electron-builder --win portable",
     "icon": "electron scripts/build-icon.cjs",
     "postinstall": "node scripts/rebuild-sqlite-electron.mjs"
   },

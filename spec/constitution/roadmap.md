@@ -187,6 +187,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > escribe libobs, así que se embeben con un remux `ffmpeg -c copy` (atómico, best-effort)
 > al cerrar el clip. El modo escritorio queda igual. Verificado E2E: 5 pistas
 > `default/game/mic/opera/chrome` en orden, mezcla en la 1 y cada rol aislado.
+> Mejora post-entrega (2026-07-12, `feature/silenciar-haptico-dualsense`): opción opt-in
+> (Ajustes → Audio → Mando, apagada por defecto) para que la **vibración háptica del DualSense**
+> —que el mando transporta como audio y en modo apps se cuela por la captura del proceso del juego—
+> no acabe en el clip. Replica automáticamente el arreglo manual (mutear la sesión de `obs64.exe` en
+> el dispositivo del mando): un helper nativo propio (`native/app-audio-mute`, Core Audio
+> `ISimpleAudioVolume::SetMute`, compilado estático con `build-haptic-mute.ps1`, git-ignored y
+> generado en `build:portable`) que el manager reaplica —fire-and-forget, con reintento hasta que
+> la sesión aparece— en cada arranque de buffer/grabación. Best-effort: sin binario o sin mando es
+> no-op. Verificado en máquina real: con la opción activa, cada arranque de `obs64.exe` mutea el
+> audio hacia el dispositivo DualSense y el zumbido deja de colarse.
 
 ## Fase 9 · Configuración de grabación y escritorio — ✅ entregado
 

@@ -82,6 +82,24 @@ describe('normalizeCaptureSettings', () => {
     expect(normalizeCaptureSettings({ autoLaunch: 1 }).autoLaunch).toBe(false);
   });
 
+  it('silenciado del háptico: bool saneado y patrón con fallback al default', () => {
+    expect(normalizeCaptureSettings({}).hapticMuteEnabled).toBe(false);
+    expect(normalizeCaptureSettings({}).hapticMuteDevicePattern).toBe('DualSense');
+    expect(normalizeCaptureSettings({ hapticMuteEnabled: 'sí' }).hapticMuteEnabled).toBe(false);
+    expect(normalizeCaptureSettings({ hapticMuteEnabled: true }).hapticMuteEnabled).toBe(true);
+    // Patrón vacío/en blanco/no-string → default; con valor se recorta.
+    expect(normalizeCaptureSettings({ hapticMuteDevicePattern: '   ' }).hapticMuteDevicePattern).toBe(
+      'DualSense',
+    );
+    expect(normalizeCaptureSettings({ hapticMuteDevicePattern: 42 }).hapticMuteDevicePattern).toBe(
+      'DualSense',
+    );
+    expect(
+      normalizeCaptureSettings({ hapticMuteDevicePattern: '  Wireless Controller  ' })
+        .hapticMuteDevicePattern,
+    ).toBe('Wireless Controller');
+  });
+
   it('audioApps guardados sin `enabled` migran a enabled: true', () => {
     const result = normalizeCaptureSettings({
       audioApps: [
