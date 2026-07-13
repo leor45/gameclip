@@ -13,6 +13,12 @@ afterEach(() => {
 export function crearGameclipMock() {
   return {
     getAppVersion: vi.fn().mockResolvedValue({ version: '0.0.0-test', electron: '29.3.1' }),
+    checkForUpdate: vi.fn().mockResolvedValue({
+      current: '0.0.0-test',
+      latest: null,
+      updateAvailable: false,
+      url: 'https://github.com/leor45/gameclip/releases/latest',
+    }),
     capture: {
       getStatus: vi
         .fn()

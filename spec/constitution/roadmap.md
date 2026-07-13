@@ -576,6 +576,24 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > tiene instaladas pero **sin un solo juego**, así que su lógica solo está probada con fixtures. Cada una
 > está aislada: si el formato no es el esperado, devuelve `[]` y el resto del índice sigue igual.
 
+## Fase 16 · Comprobación de actualizaciones — ✅ entregado
+
+- [x] Chequeo silencioso al arrancar contra `releases/latest` de GitHub; si hay versión nueva, modal
+      propio (una vez por lanzamiento) con botón "Ver release".
+- [x] Aviso pasivo en el sidebar mientras la app corre + botón "Comprobar actualizaciones" con feedback
+      ("Estás al día ✓" / "Hay vX.Y.Z").
+
+> Feature de la 0.6.0 (`feature/comprobar-actualizaciones`). Es un **notificador**, no un auto-updater:
+> abre el release en el navegador (`window.open` → `setWindowOpenHandler` → `shell.openExternal`) y la
+> descarga del portable sigue siendo manual; el auto-update real (electron-updater + firma) queda fuera.
+> Todo el I/O vive en el main (`src/main/updates.ts`, Electron `net`, sin CORS/CSP), con timeout de 5 s
+> y `catch` total: cualquier fallo (offline, rate-limit, JSON raro) es "no hay update" en silencio. El
+> repo es público, así que `GET /repos/leor45/gameclip/releases/latest` va sin token. Comparación de
+> versiones propia en `@shared/version.ts` (numérica `X.Y.Z`, sin dependencia nueva). Verificado por
+> tests (versión, chequeo con `net` inyectable, contexto/sidebar/modal en el renderer) y contra el
+> payload real de la API; la comprobación visual final la hace el owner con la versión bajada a mano.
+> El 0.6.0 incluye además el fix de borrado sin publicar (ver Fase 10 / `fix/borrado-clip-archivo-bloqueado`).
+
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
 ### 🔍 Detección de juegos de Ubisoft, EA, GOG, Battle.net y Xbox

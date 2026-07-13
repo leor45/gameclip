@@ -96,6 +96,7 @@ const overlay: OverlayApi = {
 
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
+  checkForUpdate: () => ipcRenderer.invoke(IpcChannel.AppCheckUpdate),
   capture,
   games,
   library,

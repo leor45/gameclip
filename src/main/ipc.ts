@@ -16,6 +16,7 @@ import {
 import type { GameIndex } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
+import { checkForUpdates } from './updates';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
@@ -46,6 +47,8 @@ export function registerIpcHandlers(
       electron: process.versions.electron,
     }),
   );
+
+  ipcMain.handle(IpcChannel.AppCheckUpdate, () => checkForUpdates(app.getVersion()));
 
   ipcMain.handle(IpcChannel.CaptureGetStatus, () => capture.getStatus());
   ipcMain.handle(IpcChannel.CaptureGetSettings, () => capture.getSettings());

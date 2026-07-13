@@ -17,6 +17,7 @@ import type { ClipAudioTrack, SaveAudioEditResult } from './tracks';
 
 export const IpcChannel = {
   AppVersion: 'app:version',
+  AppCheckUpdate: 'app:check-update',
   CaptureGetStatus: 'capture:get-status',
   CaptureGetSettings: 'capture:get-settings',
   CaptureSetSettings: 'capture:set-settings',
@@ -76,9 +77,21 @@ export interface AppVersionInfo {
   electron: string;
 }
 
+/** Resultado de comprobar si hay una versión nueva publicada en GitHub. */
+export interface UpdateCheckResult {
+  /** Versión instalada (app.getVersion()). */
+  current: string;
+  /** Última versión publicada, sin la 'v'. null si el chequeo falló (offline, rate-limit, etc.). */
+  latest: string | null;
+  updateAvailable: boolean;
+  /** Página del release a la que mandar al usuario; siempre válida aunque el chequeo falle. */
+  url: string;
+}
+
 // Mapa canal → { request, response }; el preload y el main lo usan para tipar invoke/handle.
 export interface IpcContract {
   [IpcChannel.AppVersion]: { request: void; response: AppVersionInfo };
+  [IpcChannel.AppCheckUpdate]: { request: void; response: UpdateCheckResult };
   [IpcChannel.CaptureGetStatus]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureGetSettings]: { request: void; response: CaptureSettings };
   [IpcChannel.CaptureSetSettings]: {
@@ -212,6 +225,8 @@ export interface OverlayApi {
 // API que el preload expone en window.gameclip.
 export interface GameclipApi {
   getAppVersion(): Promise<AppVersionInfo>;
+  /** Comprueba si hay una versión nueva publicada. Nunca rechaza: ante un fallo devuelve sin update. */
+  checkForUpdate(): Promise<UpdateCheckResult>;
   capture: CaptureApi;
   games: GamesApi;
   library: LibraryApi;
