@@ -3,9 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AudioDeviceInfo, CaptureSettings, EncoderInfo } from '@shared/capture';
+import { HapticMuteListener } from '../capture/app-audio-mute';
 import { CaptureManager, gameExecutableForName } from '../capture/manager';
 import type { CaptureBackend, ClipSavedInfo } from '../capture/manager';
 import { SettingsStore } from '../capture/settings-store';
+
+/** Listener del háptico sin binario: apply/stop son no-op, nunca spawnea un proceso real. */
+const noopHapticListener = () => new HapticMuteListener({ helperPath: () => null, spawn: () => ({ kill() {}, on() {} }) }); // prettier-ignore
 
 /** Backend falso: registra llamadas y no toca libobs. */
 class FakeObs implements CaptureBackend {
@@ -123,6 +127,7 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
         remuxCalls.push({ file, tracks });
         return Promise.resolve(true);
       },
+      noopHapticListener(),
     );
   }
 

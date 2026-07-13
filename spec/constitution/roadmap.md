@@ -197,6 +197,17 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > la sesión aparece— en cada arranque de buffer/grabación. Best-effort: sin binario o sin mando es
 > no-op. Verificado en máquina real: con la opción activa, cada arranque de `obs64.exe` mutea el
 > audio hacia el dispositivo DualSense y el zumbido deja de colarse.
+> Fix pre-lanzamiento (2026-07-12, `fix/haptico-dualsense-event-driven`): la reaplicación por
+> arranque de captura no bastaba —la sesión de `obs64.exe` en el DualSense no se crea hasta que el
+> mando emite audio (al pulsar un botón), tarde e impredecible—, así que a veces no muteaba hasta
+> reabrir Ajustes. El helper pasa a **listener persistente event-driven** (`--watch`):
+> `IAudioSessionNotification` mutea la sesión en cuanto `OnSessionCreated` dispara, e
+> `IMMNotificationClient` re-escanea al conectarse un mando nuevo; sale por EOF de stdin (sin
+> huérfano). En reposo no consume CPU. El manager gestiona su ciclo de vida (init/settings/shutdown)
+> en vez de reaplicar por captura. El patrón de dispositivo deja de ser editable: la UI queda
+> plug-and-play (solo el toggle; detecta DualSense automáticamente). Verificado por el owner:
+> mutea al pulsar el botón sin reabrir Ajustes, y cubre desconexión/reconexión y un segundo mando.
+> Como la 0.5.0 no llegó a lanzarse, el arreglo va junto a la feature en la 0.5.1.
 
 ## Fase 9 · Configuración de grabación y escritorio — ✅ entregado
 

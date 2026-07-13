@@ -8,14 +8,17 @@ grabación. Ver `spec/work/feature-silenciar-haptico-dualsense`.
 ## Contrato (CLI)
 
 ```
-gc-app-audio-mute.exe --device "DualSense" --process "obs64.exe" [--mute|--unmute]
+gc-app-audio-mute.exe --device "DualSense" --process "obs64.exe" [--mute|--unmute|--watch]
 ```
 
 - `--device <patrón>` — substring del *friendly name* del dispositivo de render (case-insensitive).
 - `--process <exe>` — basename del ejecutable cuya sesión mutear (p. ej. `obs64.exe`).
-- `--mute` (por defecto) / `--unmute` — silenciar o reactivar.
+- `--mute` (por defecto) / `--unmute` — modo **un disparo**: silenciar o reactivar y salir.
+- `--watch` — modo **persistente event-driven** (ver abajo).
 
-Códigos de salida:
+### Modo un disparo (`--mute`/`--unmute`)
+
+Enumera, aplica `ISimpleAudioVolume::SetMute` y sale. Códigos de salida:
 
 | Código | Significado |
 |---|---|
@@ -24,7 +27,14 @@ Códigos de salida:
 | 3 | hay dispositivo(s) pero ninguna sesión del proceso |
 | 1 | error de COM / argumentos faltantes |
 
-No escribe en disco: enumera, aplica `ISimpleAudioVolume::SetMute` y sale. Efímero por diseño.
+### Modo watch (`--watch`)
+
+Persistente: registra `IAudioSessionNotification` (mutea la sesión de `--process` **en cuanto**
+`OnSessionCreated` dispara — clave porque en el DualSense la sesión no se crea hasta que el mando
+emite audio) e `IMMNotificationClient` (re-escanea al conectarse un mando nuevo). Mutea también lo
+ya existente al arrancar. **Bloquea leyendo stdin**: cuando el padre cierra el pipe (o muere) llega
+EOF, desregistra y sale (sin proceso huérfano). Siempre devuelve 0. Event-driven: en reposo no
+consume CPU. No escribe en disco.
 
 ## Compilar
 
