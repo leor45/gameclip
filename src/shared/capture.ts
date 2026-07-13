@@ -118,6 +118,14 @@ export interface CaptureSettings {
   audioApps: AudioAppCapture[];
   /** Guardar cada fuente de audio en una pista separada del MP4. */
   separateAudioTracks: boolean;
+  /**
+   * Silenciar la sesión de audio de obs64.exe en el dispositivo del mando (DualSense) en cada
+   * arranque de captura, para que la vibración háptica —que el DualSense transporta como audio— no
+   * se cuele en el clip. Ver spec/work/feature-silenciar-haptico-dualsense.
+   */
+  hapticMuteEnabled: boolean;
+  /** Patrón de nombre del dispositivo a silenciar (substring, case-insensitive). */
+  hapticMuteDevicePattern: string;
   /** Acelerador de Electron para guardar el clip retroactivo. */
   replayHotkey: string;
   /** Acelerador de Electron que arranca y corta la grabación normal (la larga). */
@@ -207,6 +215,8 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   gameAudioVolume: 100,
   audioApps: [],
   separateAudioTracks: false,
+  hapticMuteEnabled: false,
+  hapticMuteDevicePattern: 'DualSense',
   replayHotkey: 'F8',
   recordingHotkey: 'F7',
   recordingMode: 'manual',
@@ -419,6 +429,11 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     gameAudioVolume: volume(raw.gameAudioVolume, d.gameAudioVolume),
     audioApps: normalizeAudioApps(raw.audioApps),
     separateAudioTracks: bool(raw.separateAudioTracks, d.separateAudioTracks),
+    hapticMuteEnabled: bool(raw.hapticMuteEnabled, d.hapticMuteEnabled),
+    hapticMuteDevicePattern:
+      typeof raw.hapticMuteDevicePattern === 'string' && raw.hapticMuteDevicePattern.trim()
+        ? raw.hapticMuteDevicePattern.trim()
+        : d.hapticMuteDevicePattern,
     replayHotkey,
     recordingHotkey,
     recordingMode: oneOf(raw.recordingMode, ['manual', 'auto', 'off'], d.recordingMode),

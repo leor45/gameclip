@@ -346,6 +346,37 @@ export default function AjustesAudio() {
           editar.
         </p>
       </fieldset>
+
+      <fieldset>
+        <legend>Mando</legend>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={settings.hapticMuteEnabled}
+            onChange={(e) => set('hapticMuteEnabled', e.target.checked)}
+          />
+          Silenciar el háptico del mando en la grabación
+        </label>
+        <p className="settings-hint">
+          El DualSense transporta la vibración háptica como audio, y en modo Apps específicas se
+          cuela en el clip. Con esto, GameClip silencia esa señal en cada grabación sin tocar el
+          audio del juego ni la vibración del mando.
+        </p>
+        <label>
+          Dispositivo del mando
+          <input
+            type="text"
+            value={settings.hapticMuteDevicePattern}
+            disabled={!settings.hapticMuteEnabled}
+            onChange={(e) => set('hapticMuteDevicePattern', e.target.value)}
+            placeholder="DualSense"
+          />
+        </label>
+        <p className="settings-hint">
+          Parte del nombre del dispositivo de audio del mando (p. ej. «DualSense» o «Wireless
+          Controller»). Se busca sin distinguir mayúsculas.
+        </p>
+      </fieldset>
     </SeccionForm>
   );
 }

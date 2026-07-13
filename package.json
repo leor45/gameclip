@@ -1,6 +1,6 @@
 {
   "name": "gameclip",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Captura de clips de juegos y grabación de escritorio, 100% local",
   "private": true,
   "main": "out/main/index.js",
@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "build": "electron-vite build",
-    "build:portable": "electron-vite build && electron-builder --win portable",
+    "build:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-haptic-mute.ps1",
+    "build:portable": "electron-vite build && npm run build:native && electron-builder --win portable",
     "icon": "electron scripts/build-icon.cjs",
     "postinstall": "node scripts/rebuild-sqlite-electron.mjs"
   },

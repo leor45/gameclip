@@ -8,6 +8,10 @@ out/
 release/
 *.tsbuildinfo
 
+# Helper nativo compilado: se genera desde native/ con scripts/build-haptic-mute.ps1
+# (se compila en build:portable). El fuente y el script sí van al repo; el binario no.
+resources/gc-app-audio-mute.exe
+
 # Datos locales
 *.sqlite
 *.sqlite3
