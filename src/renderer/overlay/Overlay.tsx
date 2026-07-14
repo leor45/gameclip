@@ -41,6 +41,11 @@ export default function Overlay() {
               </li>
             ))}
           </ul>
+          {aviso.valor.controllerCapture && (
+            <p className="overlay-card-note">
+              <span aria-hidden="true">🎮</span> Captura con mandos habilitada
+            </p>
+          )}
         </div>
       )}
 

@@ -27,6 +27,8 @@ export interface OverlayHotkey {
 export interface OverlayNotice {
   title: string;
   hotkeys: OverlayHotkey[];
+  /** El botón de captura del mando está activo: se anuncia bajo los atajos. */
+  controllerCapture: boolean;
 }
 
 /**
@@ -65,5 +67,9 @@ export function buildGameNotice(settings: CaptureSettings): OverlayNotice | null
   }
   if (!hotkeys.length) return null;
 
-  return { title: 'Listo para clipear', hotkeys };
+  return {
+    title: 'Listo para clipear',
+    hotkeys,
+    controllerCapture: settings.controllerCaptureEnabled,
+  };
 }

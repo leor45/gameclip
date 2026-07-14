@@ -1196,6 +1196,19 @@ body {
   font-weight: 700;
 }
 
+/* Nota bajo los atajos: el botón de captura del mando está activo. */
+.overlay-card-note {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 @keyframes overlay-card-in {
   from {
     opacity: 0;

@@ -114,6 +114,31 @@ export default function AjustesAtajos() {
           </button>
         </div>
       </fieldset>
+
+      <fieldset>
+        <legend>Botón de captura del mando</legend>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={settings.controllerCaptureEnabled}
+            onChange={(e) => set('controllerCaptureEnabled', e.target.checked)}
+          />
+          Habilitar botón de captura de mandos
+        </label>
+        <p className="settings-hint">
+          Guarda un clip con el botón dedicado del mando, igual que «{settings.replayHotkey}»: el
+          botón <strong>Create/Share</strong> del DualSense (PS5) o el botón <strong>Compartir</strong>{' '}
+          del mando de Xbox. Funciona con el mando conectado por USB o por Bluetooth.
+        </p>
+        <p className="settings-hint">
+          <strong>Si el botón Compartir del mando de Xbox por USB no funciona:</strong> necesita el
+          componente <em>GameInput</em> de Windows. Viene incluido en Windows 11 actualizado; si no lo
+          tienes, instala la app <em>Accesorios de Xbox</em> desde Microsoft Store (trae el runtime de
+          GameInput) y reinicia GameClip. El DualSense y el mando de Xbox por Bluetooth no necesitan
+          nada extra. Nota: si en Windows dejaste el botón Compartir asignado a la Xbox Game Bar,
+          puede que se dispare también su propia captura.
+        </p>
+      </fieldset>
     </SeccionForm>
   );
 }
