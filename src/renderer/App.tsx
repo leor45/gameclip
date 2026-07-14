@@ -18,6 +18,7 @@ import AjustesGeneral from './views/ajustes/General';
 import AjustesGrabacion from './views/ajustes/Grabacion';
 import Biblioteca from './views/Biblioteca';
 import Editor from './views/Editor';
+import EditorAvanzado from './views/EditorAvanzado';
 
 function Shell() {
   const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null);
@@ -41,6 +42,7 @@ function Shell() {
             <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/editor" element={<Editor />} />
             <Route path="/editor/:clipId" element={<Editor />} />
+            <Route path="/editor-avanzado/:clipId" element={<EditorAvanzado />} />
             <Route path="/ajustes" element={<AjustesLayout />}>
               <Route index element={<Navigate to="grabacion" replace />} />
               <Route path="grabacion" element={<AjustesGrabacion />} />

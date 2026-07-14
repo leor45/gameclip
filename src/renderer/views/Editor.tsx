@@ -189,7 +189,12 @@ export default function Editor() {
 
   return (
     <section className="editor">
-      <h1>Editor</h1>
+      <div className="editor-head">
+        <h1>Editor</h1>
+        <Link className="editor-avanzado-link" to={`/editor-avanzado/${clip.id}`}>
+          Editor avanzado →
+        </Link>
+      </div>
       <h2 className="editor-clip-title" title={clip.title}>
         {clip.title}
       </h2>
