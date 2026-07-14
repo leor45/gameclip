@@ -18,6 +18,7 @@ const AVISO: OverlayNotice = {
     { key: 'F8', label: 'Guardar el último minuto' },
     { key: 'F6', label: 'Guardar una captura' },
   ],
+  controllerCapture: false,
 };
 
 beforeEach(() => {
@@ -102,8 +103,20 @@ describe('Overlay — aviso al detectarse el juego', () => {
     act(() => emitir(estado({ notice: AVISO })));
     act(() => emitir(estado({ notice: null })));
 
-    act(() => emitir(estado({ notice: { title: 'Listo para clipear', hotkeys: [] } })));
+    act(() =>
+      emitir(estado({ notice: { title: 'Listo para clipear', hotkeys: [], controllerCapture: false } })),
+    );
 
     expect(screen.getByTestId('overlay-notice').className).not.toContain('is-leaving');
+  });
+
+  it('anuncia la captura con mandos solo cuando está activa', () => {
+    render(<Overlay />);
+
+    act(() => emitir(estado({ notice: AVISO })));
+    expect(screen.queryByText('Captura con mandos habilitada')).not.toBeInTheDocument();
+
+    act(() => emitir(estado({ notice: { ...AVISO, controllerCapture: true } })));
+    expect(screen.getByText('Captura con mandos habilitada')).toBeInTheDocument();
   });
 });

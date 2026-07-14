@@ -126,6 +126,12 @@ export interface CaptureSettings {
   hapticMuteEnabled: boolean;
   /** Patrón de nombre del dispositivo a silenciar (substring, case-insensitive). */
   hapticMuteDevicePattern: string;
+  /**
+   * Botón de captura del mando (Share/Create): usar el botón dedicado del DualSense o del mando de
+   * Xbox para guardar un clip (equivalente a `replayHotkey`). DualSense por HID; Xbox por GameInput.
+   * Ver spec/work/feature-boton-captura-mandos.
+   */
+  controllerCaptureEnabled: boolean;
   /** Acelerador de Electron para guardar el clip retroactivo. */
   replayHotkey: string;
   /** Acelerador de Electron que arranca y corta la grabación normal (la larga). */
@@ -217,6 +223,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   separateAudioTracks: false,
   hapticMuteEnabled: false,
   hapticMuteDevicePattern: 'DualSense',
+  controllerCaptureEnabled: false,
   replayHotkey: 'F8',
   recordingHotkey: 'F7',
   recordingMode: 'manual',
@@ -434,6 +441,7 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
       typeof raw.hapticMuteDevicePattern === 'string' && raw.hapticMuteDevicePattern.trim()
         ? raw.hapticMuteDevicePattern.trim()
         : d.hapticMuteDevicePattern,
+    controllerCaptureEnabled: bool(raw.controllerCaptureEnabled, d.controllerCaptureEnabled),
     replayHotkey,
     recordingHotkey,
     recordingMode: oneOf(raw.recordingMode, ['manual', 'auto', 'off'], d.recordingMode),

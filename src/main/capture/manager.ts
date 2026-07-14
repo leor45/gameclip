@@ -12,6 +12,7 @@ import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
 import { HapticMuteListener, createHapticMuteListener } from './app-audio-mute';
+import { ControllerCaptureListener, createControllerCaptureListener } from './controller-capture';
 import { ObsCapture } from './obs';
 import type { DisplayInfo } from './obs';
 import { relocateSavedFile, targetPathFor } from './relocate';
@@ -120,6 +121,7 @@ export class CaptureManager extends EventEmitter {
     private readonly ffmpegPath: string = 'ffmpeg',
     private readonly remuxFn: typeof remuxAudioTrackNames = remuxAudioTrackNames,
     private readonly hapticListener: HapticMuteListener = createHapticMuteListener(),
+    private readonly controllerListener: ControllerCaptureListener = createControllerCaptureListener(),
   ) {
     super();
   }
@@ -133,6 +135,18 @@ export class CaptureManager extends EventEmitter {
   private applyHapticListener(): void {
     const s = this.getSettings();
     this.hapticListener.apply(s.hapticMuteEnabled, s.hapticMuteDevicePattern);
+  }
+
+  /**
+   * Reconcilia el listener del botón de captura de mandos con los ajustes. Idempotente: arranca o
+   * para el helper nativo según `controllerCaptureEnabled`. Cada pulsación del botón (Create del
+   * DualSense por HID, Compartir del Xbox por GameInput) guarda un clip, igual que el atajo de replay.
+   * Independiente de los atajos de teclado (motor aparte). Best-effort: sin binario es no-op.
+   */
+  private applyControllerListener(): void {
+    this.controllerListener.apply(this.getSettings().controllerCaptureEnabled, () =>
+      void this.saveReplay(),
+    );
   }
 
   /**
@@ -245,12 +259,15 @@ export class CaptureManager extends EventEmitter {
     }
     // Independiente de obs: el listener vigila las sesiones de obs64 aunque la captura no esté lista.
     this.applyHapticListener();
+    // Independiente de obs: el botón del mando guarda clips mientras haya buffer/grabación.
+    this.applyControllerListener();
   }
 
   async setSettings(partial: Partial<CaptureSettings>): Promise<CaptureSettings> {
     const next = this.store.save(partial);
     this.emit('settings', next);
     this.applyHapticListener(); // arranca/para/reinicia el listener si cambió la opción o el patrón
+    this.applyControllerListener(); // arranca/para el helper del botón de mandos según la opción
     if (this.obs.isInitialized && this.status.state !== 'recording') {
       await this.queueRebuild();
     }
@@ -511,6 +528,7 @@ export class CaptureManager extends EventEmitter {
   shutdown(): void {
     this.obs.shutdown();
     this.hapticListener.stop();
+    this.controllerListener.stop();
     this.bufferRunning = false;
     this.setStatus({ state: 'unavailable', error: null });
   }

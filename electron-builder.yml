@@ -57,6 +57,10 @@ extraResources:
   # scripts/build-haptic-mute.ps1 y se commitea; queda en resources/ del portable (process.resourcesPath).
   - from: resources/gc-app-audio-mute.exe
     to: gc-app-audio-mute.exe
+  # Helper nativo que escucha el botón de captura de los mandos (DualSense por HID, Xbox por
+  # GameInput). Se compila con scripts/build-controller-listen.ps1; queda en resources/ del portable.
+  - from: resources/gc-controller-listen.exe
+    to: gc-controller-listen.exe
 
 win:
   # build/icon.ico lo genera `npm run icon` desde build/icon.svg (7 capas, 16→256 px).

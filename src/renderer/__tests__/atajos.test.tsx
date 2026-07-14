@@ -102,6 +102,20 @@ describe('Ajustes — Atajos', () => {
     expect(mock().capture.setSettings).not.toHaveBeenCalled();
   });
 
+  it('activa el botón de captura de mandos y lo guarda', async () => {
+    const user = await irAAtajos();
+
+    const check = screen.getByRole('checkbox', { name: /Habilitar botón de captura de mandos/ });
+    expect(check).not.toBeChecked();
+    await user.click(check);
+
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ controllerCaptureEnabled: true }),
+    );
+  });
+
   it('restablecer devuelve los atajos a sus valores por defecto', async () => {
     const user = await irAAtajos();
 

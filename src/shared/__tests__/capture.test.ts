@@ -100,6 +100,16 @@ describe('normalizeCaptureSettings', () => {
     ).toBe('Wireless Controller');
   });
 
+  it('botón de captura de mandos: bool saneado, default false', () => {
+    expect(normalizeCaptureSettings({}).controllerCaptureEnabled).toBe(false);
+    expect(normalizeCaptureSettings({ controllerCaptureEnabled: true }).controllerCaptureEnabled).toBe(
+      true,
+    );
+    expect(
+      normalizeCaptureSettings({ controllerCaptureEnabled: 'sí' }).controllerCaptureEnabled,
+    ).toBe(false);
+  });
+
   it('audioApps guardados sin `enabled` migran a enabled: true', () => {
     const result = normalizeCaptureSettings({
       audioApps: [

@@ -594,6 +594,29 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > payload real de la API; la comprobación visual final la hace el owner con la versión bajada a mano.
 > El 0.6.0 incluye además el fix de borrado sin publicar (ver Fase 10 / `fix/borrado-clip-archivo-bloqueado`).
 
+## Fase 17 · Botón de captura de mandos — ✅ entregado
+
+- [x] Ajuste "Habilitar botón de captura de mandos" (Ajustes → Atajos, por defecto off): el botón
+      dedicado del mando guarda un clip, igual que el atajo de replay, en paralelo a los atajos de teclado.
+- [x] Helper nativo `gc-controller-listen` con dos vías: **HID crudo** para el botón Create del
+      **DualSense** (USB/BT) y **GameInput** para el botón Compartir del **Xbox** (USB/BT).
+- [x] En el overlay de aviso de juego, línea "Captura con mandos habilitada" cuando la opción está activa.
+
+> Feature de la 0.7.0 (`feature/boton-captura-mandos`). El botón de captura no sale por XInput, así que
+> hay dos caminos: el DualSense se lee por **HID** (bit Create del input report, offsets por USB/BT); el
+> botón Compartir del Xbox **por USB solo existe vía GameInput** (su hijo HID es únicamente XInput, sin
+> ese botón) — la misma API que usa Game Bar. **Pieza clave descubierta en la espina:** sin
+> `SetFocusPolicy(GameInputEnableBackgroundShareButton)` el callback solo llega con foco en primer plano
+> (dio 0); con él, llega en segundo plano, que es el caso real (GameClip en la bandeja mientras juegas).
+> El helper calca el patrón de `gc-app-audio-mute` (proceso hijo, stdout `capture` por pulsación en el
+> flanco, EOF de stdin para salir). GameInput es una **dependencia de runtime blanda**: inbox en Win11
+> 24H2+, redist en otros (app *Accesorios de Xbox*); si falta, la vía Xbox es no-op y el DualSense sigue.
+> `GameInput.h` **no se vendoriza** (GameClip es GPL-3.0 y la licencia del redistribuible de Microsoft
+> lo prohíbe): `scripts/build-controller-listen.ps1` lo baja del NuGet a `build/` (git-ignored) y el
+> `.exe` enlaza el runtime dinámicamente. Verificado end-to-end con hardware real: Xbox por USB 8/8
+> (GameInput, en segundo plano), DualSense 12/12 (HID), y el owner confirmó el guardado de clip en la
+> app con ambos mandos.
+
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
 ### 🔍 Detección de juegos de Ubisoft, EA, GOG, Battle.net y Xbox

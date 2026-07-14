@@ -38,7 +38,15 @@ describe('buildGameNotice', () => {
         { key: 'F7', label: 'Grabar / detener' },
         { key: 'F6', label: 'Guardar una captura' },
       ],
+      controllerCapture: false,
     });
+  });
+
+  it('marca controllerCapture según el ajuste del botón de mandos', () => {
+    expect(buildGameNotice(ajustes({}))?.controllerCapture).toBe(false);
+    expect(buildGameNotice(ajustes({ controllerCaptureEnabled: true }))?.controllerCapture).toBe(
+      true,
+    );
   });
 
   it('la fila del clip refleja la duración del buffer configurada', () => {
@@ -73,7 +81,11 @@ describe('overlayStateFor', () => {
   const completo = {
     recording: true,
     toast: 'Clip guardado ✓',
-    notice: { title: 'Listo para clipear', hotkeys: [{ key: 'F8', label: 'Guardar' }] },
+    notice: {
+      title: 'Listo para clipear',
+      hotkeys: [{ key: 'F8', label: 'Guardar' }],
+      controllerCapture: false,
+    },
   };
 
   it('la esquina izquierda pinta los avisos, no el REC', () => {

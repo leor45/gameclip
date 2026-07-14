@@ -8,9 +8,14 @@ out/
 release/
 *.tsbuildinfo
 
-# Helper nativo compilado: se genera desde native/ con scripts/build-haptic-mute.ps1
-# (se compila en build:portable). El fuente y el script sí van al repo; el binario no.
+# Helpers nativos compilados: se generan desde native/ con scripts/build-*.ps1 (en build:native /
+# build:portable). El fuente y el script sí van al repo; el binario no.
 resources/gc-app-audio-mute.exe
+resources/gc-controller-listen.exe
+
+# SDK de GameInput descargado del NuGet para compilar gc-controller-listen (cabeceras de Microsoft;
+# no se vendorizan por licencia). Lo baja scripts/build-controller-listen.ps1.
+build/gameinput-sdk/
 
 # Datos locales
 *.sqlite
