@@ -10,6 +10,7 @@ import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
 import { startApi, type ApiHandle } from '../../server/api';
 import { ffmpegPath } from './paths';
+import { loginItemSettings } from './auto-launch';
 import { teardown } from './shutdown';
 import { entornoReal, limpiarTemporales, registroEnDisco } from './temp-cleanup';
 import { CaptureManager } from './capture/manager';
@@ -391,7 +392,7 @@ function barrerTemporales(registrar = false): void {
 // En dev registraría electron.exe en el arranque de Windows; solo aplica empaquetada.
 function applyAutoLaunch(settings: CaptureSettings): void {
   if (!app.isPackaged) return;
-  app.setLoginItemSettings({ openAtLogin: settings.autoLaunch, args: ['--hidden'] });
+  app.setLoginItemSettings(loginItemSettings(settings.autoLaunch, process.env, process.execPath));
 }
 
 app.whenReady().then(() => {

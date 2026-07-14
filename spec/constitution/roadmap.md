@@ -459,6 +459,19 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > aunque uno falle. La bandeja además se defiende sola (`isDestroyed()`), para que el bug no vuelva
 > por otro emisor. Verificado sobre el `.exe`: sin diálogo, y el puerto 3030 queda libre.
 
+> Release v0.7.2 (2026-07-14): dos fixes publicados como una sola versión.
+> — `fix/auto-inicio-portable`: "Iniciar con Windows" registraba `process.execPath`, que en el
+> portable es la copia efímera en `%TEMP%\GameClip-<version>\`, así que Windows apuntaba a un
+> ejecutable fantasma y la app no arrancaba. Ahora registra la ruta real vía
+> `PORTABLE_EXECUTABLE_FILE` (cae a `execPath` fuera del portable). La entrada usa un nombre estable
+> (`electron.app.GameClip`) y se re-registra en cada arranque, así que **se auto-repara** al abrir la
+> versión nueva. Lógica en `src/main/auto-launch.ts` (pura, con test de regresión).
+> — `fix/ui-settings-biblioteca`: en Ajustes, un `<fieldset>` ignora el ancho del padre (su
+> `min-width` por defecto es `min-content`), así que crecía con la fila de alta de juego y desbordaba
+> el panel — `min-width:0` en `.settings-form fieldset` lo contiene (verificado midiendo el layout
+> real en Chromium: `formScrollWidth` 706→460). En la Biblioteca, la card muestra el **tamaño del
+> archivo** (`formatFileSize`), los iconos llevan **tooltip** y la ✕ pasa a **basurero rojo**.
+
 > `feature/adelgazar-portable` (2026-07-12): el `.exe` baja de **190 a 93 MB** y el payload que
 > descomprime en cada arranque, de **738 a 418 MB**. De los 707 MB que aportaba osn, solo 90 eran
 > libobs de verdad: fuera los **336 MB de símbolos de depuración** (`.pdb`), los **265 MB del

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Clip } from '@shared/library';
-import { formatDuration } from '@shared/library';
+import { formatDuration, formatFileSize } from '@shared/library';
 import { clipMediaUrl, thumbMediaUrl } from '../lib/media';
 
 /** Segundos de clip que muestra la preview antes de volver al principio. */
@@ -170,6 +170,7 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
           <p className="clip-meta">
             {clip.game ?? 'Sin juego'} · {fecha}
           </p>
+          <p className="clip-size">{formatFileSize(clip.sizeBytes)}</p>
           {clip.tags.length > 0 && (
             <div className="clip-tags">
               {clip.tags.map((t) => (
@@ -187,6 +188,7 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
           type="button"
           className={clip.favorite ? 'clip-fav on' : 'clip-fav'}
           aria-label={clip.favorite ? 'Quitar de favoritos' : 'Marcar favorito'}
+          title={clip.favorite ? 'Quitar de favoritos' : 'Marcar favorito'}
           disabled={ocupado}
           onClick={() =>
             void accion(() =>
@@ -199,6 +201,7 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         <button
           type="button"
           aria-label="Renombrar y etiquetar"
+          title="Renombrar y etiquetar"
           disabled={ocupado}
           onClick={() => setEditando(true)}
         >
@@ -209,6 +212,7 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
           <button
             type="button"
             aria-label="Editar"
+            title="Editar (recortar y mezclar audio)"
             disabled={ocupado}
             onClick={() => {
               // Navegación por hash: la tarjeta no se acopla al router (HashRouter la resuelve).
@@ -221,6 +225,7 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         <button
           type="button"
           aria-label="Abrir carpeta"
+          title="Abrir carpeta"
           disabled={ocupado}
           onClick={() => void window.gameclip.library.openFolder(clip.id)}
         >
@@ -228,12 +233,18 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         </button>
         <button
           type="button"
-          className="danger"
+          className="clip-trash"
           aria-label="Eliminar"
+          title="Eliminar"
           disabled={ocupado}
           onClick={eliminar}
         >
-          ✕
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M6 1h4l.5 1H14v2H2V2h3.5L6 1zm-2.5 4h9L12 15H4L3.5 5zm3 2v6h1V7h-1zm2.5 0v6h1V7h-1z"
+            />
+          </svg>
         </button>
       </div>
     </article>
