@@ -1,4 +1,5 @@
 import type { ExportFormat, ExportQuality } from '@shared/export';
+import type { TrackGain } from '@shared/tracks';
 
 export interface FfmpegJob {
   inputPath: string;
@@ -12,6 +13,12 @@ export interface FfmpegJob {
    * audio. Sin definir → ffmpeg elige la pista por su cuenta (clips sin sondeo).
    */
   audioTracks?: number[];
+  /**
+   * Ganancia por pista (editor avanzado): cada fuente se atenúa/amplifica antes de mezclarse.
+   * Tiene precedencia sobre `audioTracks`. Ganancia 0 = pista fuera de la mezcla; todas en 0 → sin
+   * audio.
+   */
+  audioGains?: TrackGain[];
 }
 
 // CRF de libx264 por preset (menor = mejor calidad).
@@ -42,7 +49,7 @@ export function buildFfmpegArgs(job: FfmpegJob): string[] {
   if (job.format === 'mp4') {
     return [
       ...base,
-      ...audioArgs(job.audioTracks),
+      ...audioArgs(job),
       '-c:v',
       'libx264',
       '-preset',
@@ -87,24 +94,41 @@ export function amixFilter(audioTracks: number[], label: string): string {
 }
 
 /**
- * Mapeo del audio del MP4 exportado: sin pistas marcadas no hay audio; con una se mapea directo
- * y con varias se mezclan. Sin selección (undefined) se conserva el comportamiento previo:
- * ffmpeg elige la pista por su cuenta.
+ * Filtro que aplica **ganancia por pista** (`volume=g`) antes de sumarlas (`amix`, `normalize=0`,
+ * igual que el mixer de libobs). Las pistas con ganancia 0 quedan fuera. Con una sola activa no hay
+ * `amix`: se le aplica el `volume` directamente. Lanza si no queda ninguna activa (el llamador debe
+ * haber cortado a `-an` antes).
  */
-function audioArgs(audioTracks: number[] | undefined): string[] {
-  if (audioTracks === undefined) return ['-c:a', 'aac', '-b:a', AUDIO_BITRATE];
-  if (audioTracks.length === 0) return ['-an'];
+export function gainMixFilter(gains: TrackGain[], label: string): string {
+  const activos = gains.filter((g) => g.gain > 0);
+  if (activos.length === 0) throw new Error('gainMixFilter: no hay pistas activas.');
+  const fmt = (g: number): string => String(Math.round(g * 1000) / 1000);
+  if (activos.length === 1) {
+    return `[0:a:${activos[0].index}]volume=${fmt(activos[0].gain)}[${label}]`;
+  }
+  const cadenas = activos.map((g, i) => `[0:a:${g.index}]volume=${fmt(g.gain)}[g${i}]`);
+  const entradas = activos.map((_, i) => `[g${i}]`).join('');
+  return `${cadenas.join(';')};${entradas}amix=inputs=${activos.length}:normalize=0[${label}]`;
+}
+
+/**
+ * Mapeo del audio del MP4 exportado. Precedencia: `audioGains` (editor avanzado, con volumen por
+ * pista) → `audioTracks` (editor simple, mute on/off) → sin selección (ffmpeg elige la pista).
+ * Sin pistas marcadas / todas en 0 → sin audio.
+ */
+function audioArgs(job: FfmpegJob): string[] {
   const codec = ['-c:a', 'aac', '-b:a', AUDIO_BITRATE];
+
+  if (job.audioGains !== undefined) {
+    if (job.audioGains.filter((g) => g.gain > 0).length === 0) return ['-an'];
+    return ['-filter_complex', gainMixFilter(job.audioGains, 'aout'), '-map', '0:v:0', '-map', '[aout]', ...codec]; // prettier-ignore
+  }
+
+  const audioTracks = job.audioTracks;
+  if (audioTracks === undefined) return codec;
+  if (audioTracks.length === 0) return ['-an'];
   if (audioTracks.length === 1) {
     return ['-map', '0:v:0', '-map', `0:a:${audioTracks[0]}`, ...codec];
   }
-  return [
-    '-filter_complex',
-    amixFilter(audioTracks, 'aout'),
-    '-map',
-    '0:v:0',
-    '-map',
-    '[aout]',
-    ...codec,
-  ];
+  return ['-filter_complex', amixFilter(audioTracks, 'aout'), '-map', '0:v:0', '-map', '[aout]', ...codec]; // prettier-ignore
 }

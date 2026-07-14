@@ -1,6 +1,6 @@
 // Dominio de exportación de clips: tipos y validación pura (sin Electron ni ffmpeg).
 
-import { normalizeMutedTracks } from './tracks';
+import { normalizeMutedTracks, normalizeTrackVolumes, type TrackVolumes } from './tracks';
 
 export type ExportFormat = 'mp4' | 'gif';
 export type ExportQuality = 'alta' | 'media' | 'baja';
@@ -16,6 +16,11 @@ export interface ExportRequest {
    * las marcadas. Sin definir → el audio del clip tal cual.
    */
   mutedTracks?: string[];
+  /**
+   * Volumen por pista (editor avanzado): clave de `trackKey` → ganancia `0..2`. Tiene precedencia
+   * sobre `mutedTracks`; una pista en 0 equivale a muteada.
+   */
+  trackVolumes?: TrackVolumes;
 }
 
 export type ExportStatus = 'done' | 'canceled' | 'error';
@@ -77,5 +82,6 @@ export function normalizeExportRequest(input: unknown): ExportRequest {
     format,
     quality,
     ...('mutedTracks' in raw ? { mutedTracks: normalizeMutedTracks(raw.mutedTracks) } : {}),
+    ...('trackVolumes' in raw ? { trackVolumes: normalizeTrackVolumes(raw.trackVolumes) } : {}),
   };
 }

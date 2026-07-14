@@ -1,11 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { rmSync } from 'node:fs';
 import type { ExportResult } from '@shared/export';
-import type { ClipAudioTrack } from '@shared/tracks';
+import type { ClipAudioTrack, TrackWaveform } from '@shared/tracks';
+import { selectableTracks, trackKey } from '@shared/tracks';
 import { runAudioEdit } from './audio-edit';
 import { buildFfmpegArgs, type FfmpegJob } from './ffmpeg-args';
 import { probeAudioTracks } from './probe';
 import { defaultSpawn, type FfmpegProcess, type SpawnFfmpeg } from './spawn';
+import { extractWaveform } from './waveform';
 
 export type { FfmpegProcess, SpawnFfmpeg } from './spawn';
 
@@ -33,6 +35,21 @@ export class ExportManager extends EventEmitter {
   /** Pistas de audio de un clip (índice + nombre embebido). */
   probeTracks(file: string): Promise<ClipAudioTrack[]> {
     return probeAudioTracks(this.spawnFn, this.ffmpegPath, file);
+  }
+
+  /**
+   * Ondas (espectros) de las pistas **seleccionables** del clip (las fuentes por rol, o la única
+   * pista si no las hay). Una extracción de ffmpeg por pista, en paralelo. Best-effort: una pista
+   * cuya extracción falle queda con `peaks: []`.
+   */
+  async waveforms(file: string): Promise<TrackWaveform[]> {
+    const tracks = await this.probeTracks(file);
+    return Promise.all(
+      selectableTracks(tracks).map(async (t) => ({
+        key: trackKey(t),
+        peaks: await extractWaveform(this.spawnFn, this.ffmpegPath, file, t.index),
+      })),
+    );
   }
 
   /**

@@ -13,7 +13,7 @@ import type { ExportProgress, ExportRequest, ExportResult } from './export';
 import type { GameIndex } from './games';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
 import type { OverlayNotice } from './overlay';
-import type { ClipAudioTrack, SaveAudioEditResult } from './tracks';
+import type { ClipAudioTrack, SaveAudioEditResult, TrackWaveform } from './tracks';
 
 export const IpcChannel = {
   AppVersion: 'app:version',
@@ -48,6 +48,7 @@ export const IpcChannel = {
   ExportCopyLast: 'export:copy-last',
   ExportShowLast: 'export:show-last',
   ClipGetAudioTracks: 'clip:get-audio-tracks',
+  ClipGetAudioWaveforms: 'clip:get-audio-waveforms',
   ClipSaveAudioEdit: 'clip:save-audio-edit',
 } as const;
 
@@ -136,6 +137,8 @@ export interface IpcContract {
   [IpcChannel.ExportShowLast]: { request: void; response: void };
   /** Pistas de audio del clip, sondeadas del archivo (vacío si no se pudo leer). */
   [IpcChannel.ClipGetAudioTracks]: { request: { id: number }; response: ClipAudioTrack[] };
+  /** Ondas (espectros) por pista seleccionable del clip; best-effort (vacío o pistas sin picos). */
+  [IpcChannel.ClipGetAudioWaveforms]: { request: { id: number }; response: TrackWaveform[] };
   /** Reescribe la mezcla del clip guardado con las pistas marcadas (no borra pistas). */
   [IpcChannel.ClipSaveAudioEdit]: {
     request: { clipId: number; mutedTracks: string[] };
@@ -210,6 +213,8 @@ export interface ExporterApi {
 export interface EditorApi {
   /** Pistas de audio del clip, con su nombre embebido. */
   getAudioTracks(id: number): Promise<ClipAudioTrack[]>;
+  /** Ondas por pista seleccionable (para el editor avanzado); best-effort. */
+  getWaveforms(id: number): Promise<TrackWaveform[]>;
   /**
    * Guarda el edit de audio sobre el clip de la biblioteca: su mezcla pasa a llevar solo las
    * pistas marcadas. Las muteadas siguen en el archivo (el edit es reversible).

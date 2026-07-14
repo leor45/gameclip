@@ -82,6 +82,7 @@ const exporter: ExporterApi = {
 
 const editor: EditorApi = {
   getAudioTracks: (id: number) => ipcRenderer.invoke(IpcChannel.ClipGetAudioTracks, { id }),
+  getWaveforms: (id: number) => ipcRenderer.invoke(IpcChannel.ClipGetAudioWaveforms, { id }),
   saveAudioEdit: (clipId: number, mutedTracks: string[]) =>
     ipcRenderer.invoke(IpcChannel.ClipSaveAudioEdit, { clipId, mutedTracks }),
 };
