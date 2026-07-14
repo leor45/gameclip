@@ -12,17 +12,24 @@ export interface Trim {
 /** Duración mínima de un recorte, para que los sliders/arrastres no dejen un rango sin sentido. */
 export const MIN_TRIM_SECONDS = 0.5;
 
-/** Zoom del timeline en píxeles por segundo. */
-export const ZOOM_MIN = 4;
-export const ZOOM_MAX = 240;
-export const ZOOM_DEFAULT = 24;
+/**
+ * Zoom como **factor sobre el "fit"** al ancho: 1× = el clip llena todo el ancho; 2× = el doble
+ * (con scroll). Nunca baja de 1× (por debajo quedaría espacio vacío). Modelarlo como factor —y no
+ * como px/segundo absolutos— hace que "+"/"–" funcionen igual en clips cortos y largos.
+ */
+export const ZOOM_FACTOR_MIN = 1;
+export const ZOOM_FACTOR_MAX = 24;
+export const ZOOM_FACTOR_STEP = 1.4;
+
+/** px/segundo de referencia cuando aún no se midió el ancho (tests/jsdom sin layout). */
+const FALLBACK_PPS = 24;
 
 /** Paso de volumen por “muesca” de rueda/arrastre (5 %). */
 export const VOLUME_STEP = 0.05;
 
-export function clampZoom(pxPerSecond: number): number {
-  if (!Number.isFinite(pxPerSecond)) return ZOOM_DEFAULT;
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pxPerSecond));
+export function clampZoomFactor(factor: number): number {
+  if (!Number.isFinite(factor)) return ZOOM_FACTOR_MIN;
+  return Math.min(ZOOM_FACTOR_MAX, Math.max(ZOOM_FACTOR_MIN, factor));
 }
 
 export function secondsToPx(seconds: number, pxPerSecond: number): number {
@@ -30,13 +37,17 @@ export function secondsToPx(seconds: number, pxPerSecond: number): number {
 }
 
 /**
- * Escala efectiva del timeline en px/segundo: nunca por debajo del "fit" al ancho del contenedor.
- * Clip corto → llena el ancho (regla, pistas, playhead y asas comparten escala y alinean). Clip
- * largo → se usa el zoom del usuario y aparece scroll. Sin ancho medido aún, cae al zoom.
+ * px/segundo efectivos del timeline: el "fit" al ancho (ancho/duración) multiplicado por el factor
+ * de zoom. A factor 1 llena el ancho exacto (regla, pistas, playhead y asas comparten escala y
+ * alinean); a más factor, se agranda y aparece scroll. Sin ancho medido aún, usa un px/s de reserva.
  */
-export function effectivePxPerSecond(zoom: number, containerWidth: number, duration: number): number {
-  const fit = duration > 0 && containerWidth > 0 ? containerWidth / duration : zoom;
-  return Math.max(zoom, fit);
+export function timelinePxPerSecond(
+  zoomFactor: number,
+  containerWidth: number,
+  duration: number,
+): number {
+  const base = duration > 0 && containerWidth > 0 ? containerWidth / duration : FALLBACK_PPS;
+  return base * clampZoomFactor(zoomFactor);
 }
 
 export function pxToSeconds(px: number, pxPerSecond: number): number {

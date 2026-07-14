@@ -113,3 +113,15 @@ describe('EditorAvanzado — render', () => {
     expect(await screen.findByText('Biblioteca')).toBeInTheDocument();
   });
 });
+
+describe('EditorAvanzado — zoom', () => {
+  it('el zoom parte de 1× (alejar deshabilitado) y acercar lo habilita', async () => {
+    await prepararClip();
+    const alejar = screen.getByRole('button', { name: 'Alejar' });
+    const acercar = screen.getByRole('button', { name: 'Acercar' });
+
+    expect(alejar).toBeDisabled(); // en 1× (fit) no se puede alejar más
+    fireEvent.click(acercar);
+    expect(alejar).toBeEnabled(); // tras acercar, ya se puede alejar
+  });
+});

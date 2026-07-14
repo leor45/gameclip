@@ -1963,21 +1963,28 @@ body {
   padding: 8px 0;
 }
 
+/* Sin padding/borde horizontal: el espectro arranca en x=0 y alinea con la regla y el playhead. */
 .eav-track {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
+  padding: 4px 0;
 }
 
 .eav-track.is-removed {
   opacity: 0.55;
 }
 
+/* Cabecera fija a la izquierda: los controles no los toca el recorte ni el sombreado. */
 .eav-track-head {
+  position: sticky;
+  left: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  width: max-content;
+  max-width: 92%;
+  background: var(--bg-panel);
+  padding: 2px 10px 2px 0;
+  border-radius: 6px;
 }
 
 .eav-track-name {
@@ -1987,8 +1994,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
-  min-width: 0;
+  max-width: 150px;
+  flex-shrink: 0;
 }
 
 .eav-track-pct {
@@ -2031,7 +2038,9 @@ body {
 }
 
 .eav-track-body {
-  margin-top: 4px;
+  margin-top: 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
 }
 
 .waveform-canvas {
@@ -2039,10 +2048,11 @@ body {
   width: 100%;
 }
 
+/* Slider compacto dentro de la cabecera fija (no ocupa el eje de tiempo). */
 .eav-track-slider {
-  width: 100%;
+  width: 92px;
   accent-color: var(--accent);
-  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 .eav-track-removed-note {
@@ -2109,7 +2119,7 @@ body {
   bottom: 0;
   background: rgba(0, 0, 0, 0.55);
   pointer-events: none;
-  z-index: 2;
+  z-index: 1;
 }
 
 /* Modal de render */

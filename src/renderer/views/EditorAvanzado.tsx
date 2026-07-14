@@ -7,11 +7,13 @@ import type { ClipAudioTrack, TrackVolumes, TrackWaveform } from '@shared/tracks
 import { mutedToVolumes, selectableTracks, trackGain, trackKey, trackLabel } from '@shared/tracks';
 import {
   clampTime,
-  clampZoom,
+  clampZoomFactor,
   setTrackVolume,
   setTrimEnd,
   setTrimStart,
-  ZOOM_DEFAULT,
+  ZOOM_FACTOR_MAX,
+  ZOOM_FACTOR_MIN,
+  ZOOM_FACTOR_STEP,
   type Trim,
 } from '@shared/timeline';
 import { clipMediaUrl } from '../lib/media';
@@ -32,7 +34,7 @@ export default function EditorAvanzado() {
   const [waveforms, setWaveforms] = useState<TrackWaveform[]>([]);
   const [volumes, setVolumes] = useState<TrackVolumes>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [zoomFactor, setZoomFactor] = useState(ZOOM_FACTOR_MIN);
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   // Alto del panel inferior (transporte + timeline). Redimensionable arrastrando el divisor; el
@@ -278,17 +280,29 @@ export default function EditorAvanzado() {
         </span>
         <span className="eav-toolbar-spacer" />
         <span className="eav-trim-info">Recorte: {formatDuration(Math.max(0, trim.end - trim.start))}</span>
-        <button type="button" className="eav-btn" onClick={() => setZoom((z) => clampZoom(z / 1.4))} aria-label="Alejar">
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={() => setZoomFactor((z) => clampZoomFactor(z / ZOOM_FACTOR_STEP))}
+          disabled={zoomFactor <= ZOOM_FACTOR_MIN}
+          aria-label="Alejar"
+        >
           –
         </button>
-        <button type="button" className="eav-btn" onClick={() => setZoom((z) => clampZoom(z * 1.4))} aria-label="Acercar">
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={() => setZoomFactor((z) => clampZoomFactor(z * ZOOM_FACTOR_STEP))}
+          disabled={zoomFactor >= ZOOM_FACTOR_MAX}
+          aria-label="Acercar"
+        >
           +
         </button>
       </div>
 
       <Timeline
         duration={duration}
-        zoom={zoom}
+        zoomFactor={zoomFactor}
         playhead={playhead}
         trim={trim}
         onSeek={seek}

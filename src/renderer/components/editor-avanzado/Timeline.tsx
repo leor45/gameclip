@@ -1,17 +1,17 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   clampTime,
-  effectivePxPerSecond,
   pxToSeconds,
   secondsToPx,
+  timelinePxPerSecond,
   type Trim,
 } from '@shared/timeline';
 import { formatDuration } from '@shared/library';
 
 interface Props {
   duration: number;
-  /** Píxeles por segundo pedidos (zoom del usuario). El timeline nunca baja del "fit" al ancho. */
-  zoom: number;
+  /** Factor de zoom (1× = el clip llena el ancho; más = scroll). */
+  zoomFactor: number;
   playhead: number;
   trim: Trim;
   onSeek: (seconds: number) => void;
@@ -32,7 +32,7 @@ function tickStep(pxPerSecond: number): number {
 
 export default function Timeline({
   duration,
-  zoom,
+  zoomFactor,
   playhead,
   trim,
   onSeek,
@@ -55,9 +55,9 @@ export default function Timeline({
     return () => ro.disconnect();
   }, []);
 
-  // Escala efectiva: nunca por debajo del "fit" al ancho. Clip corto → llena el ancho (regla,
-  // pistas, playhead y asas comparten la MISMA escala, así que alinean). Clip largo → scroll.
-  const pps = effectivePxPerSecond(zoom, containerWidth, duration);
+  // px/segundo efectivos: "fit" al ancho × factor de zoom. Regla, pistas, playhead y asas comparten
+  // esta escala, así que siempre alinean (clip corto llena el ancho; con más factor, scroll).
+  const pps = timelinePxPerSecond(zoomFactor, containerWidth, duration);
   const width = Math.max(1, secondsToPx(duration, pps));
 
   /** clientX del ratón → segundos en el clip (contando el scroll horizontal). */

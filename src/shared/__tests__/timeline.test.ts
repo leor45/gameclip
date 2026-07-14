@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampTime,
-  clampZoom,
-  effectivePxPerSecond,
+  clampZoomFactor,
   MIN_TRIM_SECONDS,
   pxToSeconds,
   secondsToPx,
   setTrackVolume,
   setTrimEnd,
   setTrimStart,
+  timelinePxPerSecond,
   wheelToGain,
-  ZOOM_MAX,
-  ZOOM_MIN,
+  ZOOM_FACTOR_MAX,
+  ZOOM_FACTOR_MIN,
 } from '../timeline';
 
 describe('conversión tiempo↔px y zoom', () => {
@@ -21,10 +21,11 @@ describe('conversión tiempo↔px y zoom', () => {
     expect(pxToSeconds(50, 0)).toBe(0); // sin dividir por cero
   });
 
-  it('acota el zoom a su rango', () => {
-    expect(clampZoom(1)).toBe(ZOOM_MIN);
-    expect(clampZoom(9999)).toBe(ZOOM_MAX);
-    expect(clampZoom(NaN)).toBeGreaterThan(0);
+  it('acota el factor de zoom a su rango (mínimo 1× = fit)', () => {
+    expect(clampZoomFactor(0.2)).toBe(ZOOM_FACTOR_MIN);
+    expect(clampZoomFactor(9999)).toBe(ZOOM_FACTOR_MAX);
+    expect(clampZoomFactor(NaN)).toBe(ZOOM_FACTOR_MIN);
+    expect(clampZoomFactor(3)).toBe(3);
   });
 
   it('clampTime acota a [0, duration]', () => {
@@ -33,13 +34,15 @@ describe('conversión tiempo↔px y zoom', () => {
     expect(clampTime(4, 10)).toBe(4);
   });
 
-  it('escala efectiva: clip corto se ajusta al ancho; largo respeta el zoom', () => {
-    // Clip de 28 s en 1264 px: el fit (45,1) supera al zoom (24) → llena el ancho.
-    expect(effectivePxPerSecond(24, 1264, 28)).toBeCloseTo(1264 / 28);
-    // Clip de 300 s en 1264 px: el fit (4,2) es menor que el zoom → se usa el zoom (scroll).
-    expect(effectivePxPerSecond(24, 1264, 300)).toBe(24);
-    // Sin ancho medido aún, cae al zoom.
-    expect(effectivePxPerSecond(24, 0, 28)).toBe(24);
+  it('px/segundo = fit × factor; a 1× llena el ancho, a 2× el doble', () => {
+    // 28 s en 1264 px, factor 1 → llena el ancho exacto.
+    expect(timelinePxPerSecond(1, 1264, 28)).toBeCloseTo(1264 / 28);
+    // Factor 2 → el doble (scroll).
+    expect(timelinePxPerSecond(2, 1264, 28)).toBeCloseTo((1264 / 28) * 2);
+    // Factor por debajo de 1 se acota a 1 (no se puede alejar más que el fit).
+    expect(timelinePxPerSecond(0.3, 1264, 28)).toBeCloseTo(1264 / 28);
+    // Sin ancho medido aún, usa el px/s de reserva.
+    expect(timelinePxPerSecond(1, 0, 28)).toBe(24);
   });
 });
 

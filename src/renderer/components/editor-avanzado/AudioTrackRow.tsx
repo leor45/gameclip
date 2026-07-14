@@ -16,7 +16,7 @@ interface Props {
 /** Icono de basurero (mismo trazo que el resto de la app). */
 function TrashIcon() {
   return (
-    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
       <path
         fill="currentColor"
         d="M6 1h4l.5 1H14v2H2V2h3.5L6 1zm-2.5 4h9L12 15H4L3.5 5zm3 2v6h1V7h-1zm2.5 0v6h1V7h-1z"
@@ -26,8 +26,10 @@ function TrashIcon() {
 }
 
 /**
- * Una pista de audio del timeline: nombre, su espectro (escalado por el volumen), control de volumen
- * por **rueda del ratón** sobre la pista y por slider (0–200 %), y botón de eliminar/restaurar.
+ * Una pista de audio del timeline. La cabecera (nombre, volumen y basurero) va **fija a la
+ * izquierda** (`sticky`): no la toca el recorte ni el sombreado, así que los controles se ven
+ * siempre nítidos. El espectro va a lo ancho y sí se sombrea fuera del recorte. El volumen se ajusta
+ * con la **rueda** sobre el espectro y con el slider de la cabecera.
  */
 export default function AudioTrackRow({
   trackKey,
@@ -63,35 +65,49 @@ export default function AudioTrackRow({
         <span className="eav-track-name" title={label}>
           {label}
         </span>
-        {!removed && <span className="eav-track-pct">{pct}%</span>}
-        <button
-          type="button"
-          className={removed ? 'eav-track-restore' : 'eav-track-trash'}
-          aria-label={removed ? `Restaurar ${label}` : `Eliminar ${label}`}
-          title={removed ? 'Restaurar pista' : 'Eliminar pista'}
-          onClick={() => onToggleRemove(trackKey)}
-        >
-          {removed ? '↺' : <TrashIcon />}
-        </button>
+        {removed ? (
+          <button
+            type="button"
+            className="eav-track-restore"
+            aria-label={`Restaurar ${label}`}
+            title="Restaurar pista"
+            onClick={() => onToggleRemove(trackKey)}
+          >
+            ↺
+          </button>
+        ) : (
+          <>
+            <input
+              className="eav-track-slider"
+              type="range"
+              min={0}
+              max={MAX_TRACK_GAIN * 100}
+              step={5}
+              value={pct}
+              aria-label={`Volumen de ${label}`}
+              onChange={(e) => onSetGain(trackKey, Number(e.target.value) / 100)}
+            />
+            <span className="eav-track-pct">{pct}%</span>
+            <button
+              type="button"
+              className="eav-track-trash"
+              aria-label={`Eliminar ${label}`}
+              title="Eliminar pista"
+              onClick={() => onToggleRemove(trackKey)}
+            >
+              <TrashIcon />
+            </button>
+          </>
+        )}
       </div>
 
-      {removed ? (
-        <p className="eav-track-removed-note">Pista eliminada — no entra en el render.</p>
-      ) : (
-        <div className="eav-track-body" ref={bodyRef}>
+      <div className="eav-track-body" ref={bodyRef}>
+        {removed ? (
+          <p className="eav-track-removed-note">Pista eliminada — no entra en el render.</p>
+        ) : (
           <Waveform peaks={peaks} gain={gain} />
-          <input
-            className="eav-track-slider"
-            type="range"
-            min={0}
-            max={MAX_TRACK_GAIN * 100}
-            step={5}
-            value={pct}
-            aria-label={`Volumen de ${label}`}
-            onChange={(e) => onSetGain(trackKey, Number(e.target.value) / 100)}
-          />
-        </div>
-      )}
+        )}
+      </div>
     </li>
   );
 }
