@@ -41,9 +41,15 @@ describe('Biblioteca: cards uniformes (regresión)', () => {
 });
 
 describe('Ajustes: el alta de juego no desborda (regresión)', () => {
-  // El bug: el <select> de "Proceso en ejecución" tiene opciones larguísimas
-  // (ejecutable — título de ventana). Sin min-width:0 el flex-item no encoge y la fila se sale
-  // del panel ("se estira a la derecha"). El fix es que el label pueda encoger.
+  // El bug de fondo: un <fieldset> ignora el ancho del padre (su min-width por defecto es
+  // min-content), así que crece con su contenido (la fila de alta de juego) y desborda el form de
+  // 460px. min-width:0 en el fieldset es lo que de verdad lo contiene. Verificado midiendo el
+  // layout real en Chromium: sin esto, formScrollWidth = 706 (desborda); con esto, = 460.
+  it('.settings-form fieldset puede encoger al ancho del form (min-width: 0)', () => {
+    expect(rule('.settings-form fieldset')).toMatch(/min-width:\s*0/);
+  });
+
+  // Y el <select> con opciones larguísimas (ejecutable — título de ventana) encoge en su celda.
   it('.audio-app-add label puede encoger (min-width: 0)', () => {
     expect(rule('.audio-app-add label')).toMatch(/min-width:\s*0/);
   });
