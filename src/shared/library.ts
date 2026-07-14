@@ -152,6 +152,25 @@ export function formatStorage(bytes: number): string {
   return `${Number.isInteger(redondeado) ? redondeado : redondeado.toFixed(1)} GB`;
 }
 
+/**
+ * Formatea el tamaño de **un archivo** para la UI: `340 KB`, `12.4 MB`, `3.2 GB`. A diferencia de
+ * `formatStorage` (totales de disco, solo MB/GB), baja hasta KB/B para que las capturas de pocos
+ * KB no salgan como "0 MB". Un decimal solo cuando aporta (no en `20 MB`).
+ */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 KB';
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const unidades = ['KB', 'MB', 'GB', 'TB'];
+  let valor = bytes / 1024;
+  let i = 0;
+  while (valor >= 1024 && i < unidades.length - 1) {
+    valor /= 1024;
+    i++;
+  }
+  const redondeado = Math.round(valor * 10) / 10;
+  return `${Number.isInteger(redondeado) ? redondeado : redondeado.toFixed(1)} ${unidades[i]}`;
+}
+
 /** Formatea segundos como m:ss (o h:mm:ss). Para la UI. */
 export function formatDuration(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '–:––';

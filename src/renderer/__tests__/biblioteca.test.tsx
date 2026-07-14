@@ -54,6 +54,44 @@ describe('Biblioteca — grilla', () => {
   });
 });
 
+describe('Biblioteca — card: tamaño, tooltips y basurero', () => {
+  it('muestra el tamaño del archivo bajo la meta (vídeo y captura)', async () => {
+    mock().library.list.mockResolvedValue([
+      crearClip({ title: 'Vídeo', sizeBytes: 13_002_342 }),
+      crearClip({ title: 'Captura', kind: 'image', sizeBytes: 348_160 }),
+    ]);
+    render(<Biblioteca />);
+
+    expect(await screen.findByText('12.4 MB')).toBeInTheDocument();
+    expect(screen.getByText('340 KB')).toBeInTheDocument();
+  });
+
+  it('los iconos de acción llevan tooltip (title)', async () => {
+    mock().library.list.mockResolvedValue([crearClip({ title: 'Con tooltips' })]);
+    render(<Biblioteca />);
+
+    expect(await screen.findByRole('button', { name: 'Eliminar' })).toHaveAttribute(
+      'title',
+      'Eliminar',
+    );
+    expect(screen.getByRole('button', { name: 'Abrir carpeta' })).toHaveAttribute(
+      'title',
+      'Abrir carpeta',
+    );
+    expect(screen.getByRole('button', { name: 'Renombrar y etiquetar' })).toHaveAttribute('title');
+  });
+
+  it('el botón de eliminar es un basurero (svg), no la ✕, y conserva su aria-label', async () => {
+    mock().library.list.mockResolvedValue([crearClip({ title: 'Con basurero' })]);
+    render(<Biblioteca />);
+
+    const btn = await screen.findByRole('button', { name: 'Eliminar' });
+    expect(btn).toHaveClass('clip-trash');
+    expect(btn.querySelector('svg')).toBeInTheDocument();
+    expect(btn.textContent).not.toContain('✕');
+  });
+});
+
 describe('Biblioteca — búsqueda y filtros', () => {
   it('la búsqueda consulta con el texto escrito', async () => {
     const user = userEvent.setup();

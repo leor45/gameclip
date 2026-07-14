@@ -376,6 +376,9 @@ body {
   padding: 9px 12px;
   color: var(--text);
   font-size: 14px;
+  /* Deja que el control encoja dentro de su columna flex: sin esto, un <select> con opciones muy
+     largas (proceso — título de ventana) impone su ancho de contenido y desborda el panel. */
+  min-width: 0;
 }
 
 .settings-form .settings-check {
@@ -579,6 +582,14 @@ body {
   margin-top: 2px;
 }
 
+/* Tamaño del archivo bajo la meta: un escalón más tenue que la línea de juego·fecha. */
+.clip-size {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
 .clip-tags {
   display: flex;
   flex-wrap: wrap;
@@ -657,8 +668,16 @@ body {
   color: var(--accent);
 }
 
-.clip-actions .danger:hover {
-  color: #ff6b6b;
+/* Botón de eliminar: basurero rojo (SVG con currentColor), en el lenguaje del basurero de Ajustes. */
+.clip-actions .clip-trash {
+  display: inline-flex;
+  align-items: center;
+  color: #e5484d;
+}
+
+.clip-actions .clip-trash:hover {
+  background: rgba(229, 72, 77, 0.14);
+  color: #ff6b60;
 }
 
 .clip-actions button:disabled {
@@ -1397,11 +1416,15 @@ body {
 .audio-app-add {
   display: flex;
   align-items: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
+/* min-width: 0 es el fix del estirón: el flex-item debe poder encoger por debajo del ancho de
+   contenido del <select> (opciones larguísimas), o la fila crece hasta salirse del panel. */
 .audio-app-add label {
-  flex: 1;
+  flex: 1 1 150px;
+  min-width: 0;
 }
 
 .settings-hint {

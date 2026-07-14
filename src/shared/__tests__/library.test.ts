@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLIP_TAGS_LIMIT,
   formatDuration,
+  formatFileSize,
   normalizeClipPatch,
   normalizeTags,
   titleFromFileName,
@@ -67,5 +68,25 @@ describe('formatDuration', () => {
   it('null o inválido devuelve marcador', () => {
     expect(formatDuration(null)).toBe('–:––');
     expect(formatDuration(-3)).toBe('–:––');
+  });
+});
+
+describe('formatFileSize', () => {
+  it('usa B / KB / MB / GB según el tamaño', () => {
+    expect(formatFileSize(500)).toBe('500 B');
+    expect(formatFileSize(1024)).toBe('1 KB');
+    expect(formatFileSize(348_160)).toBe('340 KB');
+    expect(formatFileSize(13_002_342)).toBe('12.4 MB');
+    expect(formatFileSize(3.2 * 1024 ** 3)).toBe('3.2 GB');
+  });
+
+  it('sin decimal cuando es entero', () => {
+    expect(formatFileSize(20 * 1024 ** 2)).toBe('20 MB');
+  });
+
+  it('0, negativos o no finitos caen a 0 KB', () => {
+    expect(formatFileSize(0)).toBe('0 B');
+    expect(formatFileSize(-5)).toBe('0 KB');
+    expect(formatFileSize(NaN)).toBe('0 KB');
   });
 });

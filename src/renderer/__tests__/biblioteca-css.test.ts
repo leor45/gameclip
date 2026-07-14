@@ -39,3 +39,12 @@ describe('Biblioteca: cards uniformes (regresión)', () => {
     expect(preview).toMatch(/object-fit:\s*contain/);
   });
 });
+
+describe('Ajustes: el alta de juego no desborda (regresión)', () => {
+  // El bug: el <select> de "Proceso en ejecución" tiene opciones larguísimas
+  // (ejecutable — título de ventana). Sin min-width:0 el flex-item no encoge y la fila se sale
+  // del panel ("se estira a la derecha"). El fix es que el label pueda encoger.
+  it('.audio-app-add label puede encoger (min-width: 0)', () => {
+    expect(rule('.audio-app-add label')).toMatch(/min-width:\s*0/);
+  });
+});
