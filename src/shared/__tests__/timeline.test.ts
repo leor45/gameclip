@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampTime,
   clampZoom,
+  effectivePxPerSecond,
   MIN_TRIM_SECONDS,
   pxToSeconds,
   secondsToPx,
@@ -30,6 +31,15 @@ describe('conversión tiempo↔px y zoom', () => {
     expect(clampTime(-5, 10)).toBe(0);
     expect(clampTime(50, 10)).toBe(10);
     expect(clampTime(4, 10)).toBe(4);
+  });
+
+  it('escala efectiva: clip corto se ajusta al ancho; largo respeta el zoom', () => {
+    // Clip de 28 s en 1264 px: el fit (45,1) supera al zoom (24) → llena el ancho.
+    expect(effectivePxPerSecond(24, 1264, 28)).toBeCloseTo(1264 / 28);
+    // Clip de 300 s en 1264 px: el fit (4,2) es menor que el zoom → se usa el zoom (scroll).
+    expect(effectivePxPerSecond(24, 1264, 300)).toBe(24);
+    // Sin ancho medido aún, cae al zoom.
+    expect(effectivePxPerSecond(24, 0, 28)).toBe(24);
   });
 });
 

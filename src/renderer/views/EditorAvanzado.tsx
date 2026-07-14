@@ -35,6 +35,9 @@ export default function EditorAvanzado() {
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
+  // Alto del panel inferior (transporte + timeline). Redimensionable arrastrando el divisor; el
+  // vídeo (flex) ocupa el resto.
+  const [panelH, setPanelH] = useState(300);
 
   const [showRender, setShowRender] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -141,6 +144,24 @@ export default function EditorAvanzado() {
     setPlayhead(0);
   }
 
+  // Arrastre del divisor: sube/baja el alto del panel inferior (acotado). Arrastrar hacia ARRIBA
+  // agranda el panel de pistas (deltaY negativo → más alto).
+  function onResizeDown(e: React.PointerEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = panelH;
+    const max = window.innerHeight - 160; // deja sitio para la barra superior y algo de preview
+    const move = (ev: PointerEvent) => {
+      setPanelH(Math.min(max, Math.max(140, startH + (startY - ev.clientY))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
   function setGain(key: string, gain: number) {
     setVolumes((prev) => setTrackVolume(prev, key, gain));
   }
@@ -236,7 +257,16 @@ export default function EditorAvanzado() {
         )}
       </div>
 
-      <div className="eav-toolbar">
+      <div
+        className="eav-resizer"
+        onPointerDown={onResizeDown}
+        role="separator"
+        aria-label="Redimensionar el panel de pistas"
+        aria-orientation="horizontal"
+      />
+
+      <div className="eav-bottom" style={{ height: panelH }}>
+        <div className="eav-toolbar">
         <button type="button" className="eav-btn" onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
           {playing ? '❚❚' : '▶'}
         </button>
@@ -290,6 +320,7 @@ export default function EditorAvanzado() {
           {tracks.length === 0 && <li className="eav-audio-empty">Este clip no tiene pistas de audio editables.</li>}
         </ul>
       </Timeline>
+      </div>
 
       {showRender && (
         <RenderDialog

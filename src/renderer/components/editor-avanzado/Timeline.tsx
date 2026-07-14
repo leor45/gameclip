@@ -1,10 +1,16 @@
-import { useRef, type ReactNode } from 'react';
-import { clampTime, pxToSeconds, secondsToPx, type Trim } from '@shared/timeline';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  clampTime,
+  effectivePxPerSecond,
+  pxToSeconds,
+  secondsToPx,
+  type Trim,
+} from '@shared/timeline';
 import { formatDuration } from '@shared/library';
 
 interface Props {
   duration: number;
-  /** Píxeles por segundo. */
+  /** Píxeles por segundo pedidos (zoom del usuario). El timeline nunca baja del "fit" al ancho. */
   zoom: number;
   playhead: number;
   trim: Trim;
@@ -19,8 +25,8 @@ interface Props {
 const TICK_TARGET_PX = 80;
 const PASOS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 
-function tickStep(zoom: number): number {
-  const objetivo = TICK_TARGET_PX / zoom; // segundos por marca deseados
+function tickStep(pxPerSecond: number): number {
+  const objetivo = TICK_TARGET_PX / pxPerSecond; // segundos por marca deseados
   return PASOS.find((p) => p >= objetivo) ?? PASOS[PASOS.length - 1];
 }
 
@@ -35,7 +41,24 @@ export default function Timeline({
   children,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const width = Math.max(1, secondsToPx(duration, zoom));
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Mide el ancho visible del timeline para poder "ajustar" clips cortos a todo el ancho.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const medir = () => setContainerWidth(el.clientWidth);
+    medir();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Escala efectiva: nunca por debajo del "fit" al ancho. Clip corto → llena el ancho (regla,
+  // pistas, playhead y asas comparten la MISMA escala, así que alinean). Clip largo → scroll.
+  const pps = effectivePxPerSecond(zoom, containerWidth, duration);
+  const width = Math.max(1, secondsToPx(duration, pps));
 
   /** clientX del ratón → segundos en el clip (contando el scroll horizontal). */
   function xToSeconds(clientX: number): number {
@@ -43,7 +66,7 @@ export default function Timeline({
     if (!cont) return 0;
     const rect = cont.getBoundingClientRect();
     const x = clientX - rect.left + cont.scrollLeft;
-    return clampTime(pxToSeconds(x, zoom), duration);
+    return clampTime(pxToSeconds(x, pps), duration);
   }
 
   /** Arrastre genérico: captura el puntero y reporta segundos mientras se mueve. */
@@ -61,13 +84,13 @@ export default function Timeline({
     };
   }
 
-  const step = tickStep(zoom);
+  const step = tickStep(pps);
   const ticks: number[] = [];
   for (let t = 0; t <= duration + 0.001; t += step) ticks.push(t);
 
-  const startPx = secondsToPx(trim.start, zoom);
-  const endPx = secondsToPx(trim.end, zoom);
-  const playPx = secondsToPx(playhead, zoom);
+  const startPx = secondsToPx(trim.start, pps);
+  const endPx = secondsToPx(trim.end, pps);
+  const playPx = secondsToPx(playhead, pps);
 
   return (
     <div className="eav-timeline" ref={scrollRef}>
@@ -84,7 +107,7 @@ export default function Timeline({
           tabIndex={0}
         >
           {ticks.map((t) => (
-            <span key={t} className="eav-tick" style={{ left: secondsToPx(t, zoom) }}>
+            <span key={t} className="eav-tick" style={{ left: secondsToPx(t, pps) }}>
               {formatDuration(t)}
             </span>
           ))}

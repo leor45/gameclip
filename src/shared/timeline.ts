@@ -29,6 +29,16 @@ export function secondsToPx(seconds: number, pxPerSecond: number): number {
   return seconds * pxPerSecond;
 }
 
+/**
+ * Escala efectiva del timeline en px/segundo: nunca por debajo del "fit" al ancho del contenedor.
+ * Clip corto → llena el ancho (regla, pistas, playhead y asas comparten escala y alinean). Clip
+ * largo → se usa el zoom del usuario y aparece scroll. Sin ancho medido aún, cae al zoom.
+ */
+export function effectivePxPerSecond(zoom: number, containerWidth: number, duration: number): number {
+  const fit = duration > 0 && containerWidth > 0 ? containerWidth / duration : zoom;
+  return Math.max(zoom, fit);
+}
+
 export function pxToSeconds(px: number, pxPerSecond: number): number {
   return pxPerSecond > 0 ? px / pxPerSecond : 0;
 }

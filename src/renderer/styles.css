@@ -1861,6 +1861,42 @@ body {
   font-weight: 600;
 }
 
+/* Divisor arrastrable entre la preview y el panel de pistas. */
+.eav-resizer {
+  height: 7px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  cursor: ns-resize;
+  position: relative;
+  touch-action: none;
+}
+
+.eav-resizer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.eav-resizer:hover::after {
+  background: var(--accent);
+}
+
+/* Panel inferior (transporte + timeline): alto controlado por el divisor; la preview ocupa el resto. */
+.eav-bottom {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
 /* Barra de transporte */
 .eav-toolbar {
   display: flex;
@@ -1868,7 +1904,7 @@ body {
   gap: 8px;
   padding: 8px 16px;
   background: var(--bg-panel);
-  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .eav-time {
@@ -1888,7 +1924,8 @@ body {
 
 /* Timeline */
 .eav-timeline {
-  height: 240px;
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
   background: var(--bg);
@@ -1897,7 +1934,6 @@ body {
 
 .eav-timeline-inner {
   position: relative;
-  min-width: 100%;
   padding-bottom: 8px;
 }
 
