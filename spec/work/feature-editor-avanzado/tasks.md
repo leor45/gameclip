@@ -40,13 +40,13 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Verificación (gates)
 
-- [x] Type-check · lint · tests verdes (640).
+- [x] Type-check · lint · tests verdes (642).
 - [x] Bump de versión a 0.8.0 en `package.json`.
-- [ ] Comprobación manual/visual: abrir editor avanzado, ver espectros, ajustar volumen, recortar,
+- [x] Comprobación manual/visual: abrir editor avanzado, ver espectros, ajustar volumen, recortar,
       renderizar a archivo nuevo dejando el original intacto.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada
+- [x] `spec/constitution/roadmap.md` actualizado
