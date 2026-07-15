@@ -51,8 +51,23 @@ La edición pasa a ser una lista de **segmentos conservados** `Segment[] = { sta
 **Fuera de la Fase 3 (explícito):**
 - **Reordenar** o mover segmentos (arrastrarlos a otra posición): los cortes solo **quitan**, no
   reordenan.
-- Vista "de salida" **compactada** (la timeline sigue en tiempo de origen, con huecos; el ripple solo
-  ocurre en la salida/preview).
+
+## Revisión durante la E2E (2026-07-14)
+
+El owner probó los cortes y pidió dos cosas:
+1. **Bug:** al reproducir sobre un hueco, el vídeo se quedaba pegado y el audio distorsionado. Causa:
+   el `rAF` re-emitía `video.currentTime = next` cada frame mientras el seek se asentaba (varios
+   frames), reiniciando también el motor de audio en bucle. Arreglado: el salto se emite **una sola
+   vez** por hueco (`skipTargetRef`).
+2. **Cerrar el hueco (ripple):** el owner eligió que borrar un segmento **cierre el hueco solo**. Esto
+   mueve a **dentro de alcance** la "vista de salida compactada" que este spec había dejado fuera: la
+   timeline pasa a mostrarse en **tiempo de salida** (segmentos contiguos, sin huecos), y el export ya
+   concatenaba (sin cambios). El playhead, la regla, las ondas y las asas de recorte trabajan en tiempo
+   de salida; el recorte de bordes se arrastra por **delta** con la escala congelada (sin re-escalar
+   bajo el cursor). El `<video>` sigue en tiempo de origen y el salto de límite de segmento lo maneja
+   el mismo ripple de reproducción.
+
+Lo que sigue **fuera**: reordenar segmentos, propiedades por segmento, y el resto de fases (F4/F5).
 - Propiedades por segmento (velocidad, transiciones, fundidos).
 - Deshacer/rehacer de los cambios de **volumen** o de **eliminar pista** (solo de los cortes).
 - **Reencuadre/aspecto** (Fase 4) y **extras** (Fase 5).

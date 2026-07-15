@@ -16,6 +16,7 @@ import {
   setSegmentsEnd,
   setSegmentsStart,
   setTrackVolume,
+  sourceToOutput,
   splitAt,
   ZOOM_FACTOR_MAX,
   ZOOM_FACTOR_MIN,
@@ -80,6 +81,14 @@ export default function EditorAvanzado() {
   selectedRef.current = selectedSegment;
   // Objetivo del salto de hueco en curso: evita re-emitir el seek cada frame mientras se asienta.
   const skipTargetRef = useRef<number | null>(null);
+  // Borde inicial/final al empezar a recortar: el arrastre reporta un delta sobre esta base (robusto
+  // frente al re-escalado de la timeline compactada).
+  const trimBaseRef = useRef({ firstStart: 0, lastEnd: 0 });
+  function beginTrim() {
+    const segs = segmentsRef.current;
+    trimBaseRef.current = { firstStart: segs[0].start, lastEnd: segs[segs.length - 1].end };
+    dispatch({ type: 'beginDrag' });
+  }
 
   // Operaciones de corte (entran en el historial). Estables: leen el estado vivo por refs.
   const splitAtPlayhead = useCallback(() => {
@@ -449,7 +458,7 @@ export default function EditorAvanzado() {
           ■
         </button>
         <span className="eav-time">
-          {formatDuration(playhead)} / {formatDuration(duration)}
+          {formatDuration(sourceToOutput(segments, playhead))} / {formatDuration(keptDuration(segments))}
         </span>
         {audioLoading && <span className="eav-audio-loading">Cargando audio…</span>}
         <span className="eav-toolbar-sep" />
@@ -512,17 +521,26 @@ export default function EditorAvanzado() {
       </div>
 
       <Timeline
-        duration={duration}
         zoomFactor={zoomFactor}
         playhead={playhead}
         segments={segments}
         selectedSegment={selectedSegment}
         onSeek={seek}
         onSelectSegment={(i) => setSelectedSegment((prev) => (prev === i ? null : i))}
-        onTrimBegin={() => dispatch({ type: 'beginDrag' })}
+        onTrimBegin={beginTrim}
         onTrimCommit={() => dispatch({ type: 'endDrag' })}
-        onTrimStart={(s) => dispatch({ type: 'live', segments: setSegmentsStart(segmentsRef.current, s, duration) })}
-        onTrimEnd={(s) => dispatch({ type: 'live', segments: setSegmentsEnd(segmentsRef.current, s, duration) })}
+        onTrimStartBy={(delta) =>
+          dispatch({
+            type: 'live',
+            segments: setSegmentsStart(segmentsRef.current, trimBaseRef.current.firstStart + delta, duration),
+          })
+        }
+        onTrimEndBy={(delta) =>
+          dispatch({
+            type: 'live',
+            segments: setSegmentsEnd(segmentsRef.current, trimBaseRef.current.lastEnd + delta, duration),
+          })
+        }
       >
         <div className="eav-track eav-track-video">
           <div className="eav-track-head">
@@ -541,6 +559,8 @@ export default function EditorAvanzado() {
                 gain={trackGain(volumes, key)}
                 peaks={waveforms.find((w) => w.key === key)?.peaks ?? []}
                 removed={removed.has(key)}
+                segments={segments}
+                duration={duration}
                 onSetGain={setGain}
                 onToggleRemove={toggleRemove}
               />

@@ -7,11 +7,14 @@ import {
   keptDuration,
   MIN_TRIM_SECONDS,
   nextKeptTime,
+  outputStarts,
+  outputToSource,
   pxToSeconds,
   secondsToPx,
   segmentAt,
   setSegmentsEnd,
   setSegmentsStart,
+  sourceToOutput,
   setTrackVolume,
   splitAt,
   timelinePxPerSecond,
@@ -112,6 +115,37 @@ describe('segmentos — dividir / borrar', () => {
     expect(nextKeptTime(segs, 1)).toBe(1); // dentro de un segmento
     expect(nextKeptTime(segs, 4)).toBe(6); // en un hueco → siguiente inicio
     expect(nextKeptTime(segs, 10)).toBeNull(); // pasado el final
+  });
+});
+
+describe('segmentos — tiempo de salida (timeline compactada)', () => {
+  const segs = [
+    { start: 0, end: 10 },
+    { start: 30, end: 60 },
+  ]; // hueco 10-30 borrado; salida = 40 s
+
+  it('sourceToOutput compacta los huecos', () => {
+    expect(sourceToOutput(segs, 0)).toBe(0);
+    expect(sourceToOutput(segs, 5)).toBe(5); // dentro del primero
+    expect(sourceToOutput(segs, 20)).toBe(10); // en el hueco → borde (fin del primero)
+    expect(sourceToOutput(segs, 30)).toBe(10); // inicio del segundo
+    expect(sourceToOutput(segs, 45)).toBe(25); // 10 + (45-30)
+    expect(sourceToOutput(segs, 100)).toBe(40); // pasado el final → duración de salida
+  });
+
+  it('outputToSource es el inverso y salta al origen correcto', () => {
+    expect(outputToSource(segs, 0)).toBe(0);
+    expect(outputToSource(segs, 5)).toBe(5);
+    expect(outputToSource(segs, 10)).toBe(10); // borde: fin del primero
+    expect(outputToSource(segs, 25)).toBe(45); // 30 + (25-10)
+    expect(outputToSource(segs, 999)).toBe(60); // acota al fin
+  });
+
+  it('outputStarts da los offsets contiguos de salida', () => {
+    expect(outputStarts(segs)).toEqual([0, 10]);
+    expect(outputStarts([{ start: 0, end: 3 }, { start: 3, end: 5 }, { start: 8, end: 10 }])).toEqual([
+      0, 3, 5,
+    ]);
   });
 });
 

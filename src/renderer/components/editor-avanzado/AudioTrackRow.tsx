@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { wheelToGain } from '@shared/timeline';
+import { wheelToGain, type Segment } from '@shared/timeline';
 import { MAX_TRACK_GAIN } from '@shared/tracks';
 import Waveform from './Waveform';
 
@@ -9,6 +9,9 @@ interface Props {
   gain: number;
   peaks: number[];
   removed: boolean;
+  /** Segmentos conservados y duración de origen: la onda se dibuja compactada. */
+  segments: Segment[];
+  duration: number;
   onSetGain: (key: string, gain: number) => void;
   onToggleRemove: (key: string) => void;
 }
@@ -37,6 +40,8 @@ export default function AudioTrackRow({
   gain,
   peaks,
   removed,
+  segments,
+  duration,
   onSetGain,
   onToggleRemove,
 }: Props) {
@@ -105,7 +110,7 @@ export default function AudioTrackRow({
         {removed ? (
           <p className="eav-track-removed-note">Pista eliminada — no entra en el render.</p>
         ) : (
-          <Waveform peaks={peaks} gain={gain} />
+          <Waveform peaks={peaks} gain={gain} segments={segments} duration={duration} />
         )}
       </div>
     </li>

@@ -26,6 +26,44 @@ export function keptDuration(segments: Segment[]): number {
   return segments.reduce((total, s) => total + Math.max(0, s.end - s.start), 0);
 }
 
+/**
+ * Tiempo de origen → tiempo de **salida** (la timeline compactada, sin huecos). Si `t` cae dentro de
+ * un segmento, su posición acumulada; si cae en un hueco, el borde del hueco (los huecos tienen ancho
+ * cero en la salida); pasado el final, la duración conservada. Puro y testeable.
+ */
+export function sourceToOutput(segments: Segment[], t: number): number {
+  let acc = 0;
+  for (const s of segments) {
+    if (t < s.start) return acc; // antes de este segmento (en un hueco o antes del primero)
+    if (t <= s.end) return acc + (t - s.start); // dentro
+    acc += s.end - s.start;
+  }
+  return acc; // pasado el último → keptDuration
+}
+
+/** Tiempo de **salida** → tiempo de origen. Inverso de `sourceToOutput` (acota a la salida válida). */
+export function outputToSource(segments: Segment[], o: number): number {
+  const clamped = Math.max(0, Math.min(o, keptDuration(segments)));
+  let acc = 0;
+  for (const s of segments) {
+    const d = s.end - s.start;
+    if (clamped <= acc + d) return s.start + (clamped - acc);
+    acc += d;
+  }
+  return segments[segments.length - 1]?.end ?? 0;
+}
+
+/** Offset de salida (acumulado) de cada segmento, para dibujarlos contiguos en la timeline. */
+export function outputStarts(segments: Segment[]): number[] {
+  const starts: number[] = [];
+  let acc = 0;
+  for (const s of segments) {
+    starts.push(acc);
+    acc += Math.max(0, s.end - s.start);
+  }
+  return starts;
+}
+
 /** Índice del segmento que contiene `t` (`start ≤ t < end`), o −1 si cae en un hueco o fuera. */
 export function segmentAt(segments: Segment[], t: number): number {
   return segments.findIndex((s) => t >= s.start && t < s.end);
