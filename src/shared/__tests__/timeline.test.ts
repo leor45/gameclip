@@ -2,12 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   clampTime,
   clampZoomFactor,
+  deleteSegment,
+  initialSegments,
+  keptDuration,
   MIN_TRIM_SECONDS,
+  nextKeptTime,
+  outputStarts,
+  outputToSource,
   pxToSeconds,
   secondsToPx,
+  segmentAt,
+  setSegmentsEnd,
+  setSegmentsStart,
+  sourceToOutput,
   setTrackVolume,
-  setTrimEnd,
-  setTrimStart,
+  splitAt,
   timelinePxPerSecond,
   wheelToGain,
   ZOOM_FACTOR_MAX,
@@ -46,19 +55,116 @@ describe('conversión tiempo↔px y zoom', () => {
   });
 });
 
-describe('recorte', () => {
-  const trim = { start: 2, end: 8 };
-
-  it('mover el inicio no cruza el fin (deja el mínimo)', () => {
-    expect(setTrimStart(trim, 5, 10).start).toBe(5);
-    expect(setTrimStart(trim, 9, 10).start).toBe(8 - MIN_TRIM_SECONDS);
-    expect(setTrimStart(trim, -3, 10).start).toBe(0);
+describe('segmentos — dividir / borrar', () => {
+  it('empieza con un único segmento que cubre todo el clip', () => {
+    expect(initialSegments(10)).toEqual([{ start: 0, end: 10 }]);
+    expect(keptDuration(initialSegments(10))).toBe(10);
   });
 
-  it('mover el fin no cruza el inicio ni pasa la duración', () => {
-    expect(setTrimEnd(trim, 6, 10).end).toBe(6);
-    expect(setTrimEnd(trim, 1, 10).end).toBe(2 + MIN_TRIM_SECONDS);
-    expect(setTrimEnd(trim, 50, 10).end).toBe(10);
+  it('divide en el punto dado el segmento que lo contiene', () => {
+    expect(splitAt([{ start: 0, end: 10 }], 4)).toEqual([
+      { start: 0, end: 4 },
+      { start: 4, end: 10 },
+    ]);
+  });
+
+  it('no divide si un trozo quedaría bajo el mínimo, o si el punto está fuera', () => {
+    const seg = [{ start: 0, end: 10 }];
+    expect(splitAt(seg, MIN_TRIM_SECONDS / 2)).toEqual(seg); // trozo izquierdo muy corto
+    expect(splitAt(seg, 10 - MIN_TRIM_SECONDS / 2)).toEqual(seg); // trozo derecho muy corto
+    expect(splitAt([{ start: 0, end: 3 }, { start: 6, end: 10 }], 4)).toHaveLength(2); // 4 en hueco
+  });
+
+  it('borra un segmento (incluido el del medio) pero nunca deja la lista vacía', () => {
+    const tres = [
+      { start: 0, end: 3 },
+      { start: 3, end: 6 },
+      { start: 6, end: 10 },
+    ];
+    expect(deleteSegment(tres, 1)).toEqual([
+      { start: 0, end: 3 },
+      { start: 6, end: 10 },
+    ]);
+    expect(deleteSegment([{ start: 0, end: 10 }], 0)).toEqual([{ start: 0, end: 10 }]); // no vacía
+  });
+
+  it('keptDuration suma solo lo conservado', () => {
+    expect(
+      keptDuration([
+        { start: 0, end: 3 },
+        { start: 6, end: 10 },
+      ]),
+    ).toBe(7);
+  });
+
+  it('segmentAt localiza el segmento o devuelve -1 en un hueco', () => {
+    const segs = [
+      { start: 0, end: 3 },
+      { start: 6, end: 10 },
+    ];
+    expect(segmentAt(segs, 1)).toBe(0);
+    expect(segmentAt(segs, 8)).toBe(1);
+    expect(segmentAt(segs, 4)).toBe(-1); // hueco
+  });
+
+  it('nextKeptTime salta huecos y avisa al pasar el final', () => {
+    const segs = [
+      { start: 0, end: 3 },
+      { start: 6, end: 10 },
+    ];
+    expect(nextKeptTime(segs, 1)).toBe(1); // dentro de un segmento
+    expect(nextKeptTime(segs, 4)).toBe(6); // en un hueco → siguiente inicio
+    expect(nextKeptTime(segs, 10)).toBeNull(); // pasado el final
+  });
+});
+
+describe('segmentos — tiempo de salida (timeline compactada)', () => {
+  const segs = [
+    { start: 0, end: 10 },
+    { start: 30, end: 60 },
+  ]; // hueco 10-30 borrado; salida = 40 s
+
+  it('sourceToOutput compacta los huecos', () => {
+    expect(sourceToOutput(segs, 0)).toBe(0);
+    expect(sourceToOutput(segs, 5)).toBe(5); // dentro del primero
+    expect(sourceToOutput(segs, 20)).toBe(10); // en el hueco → borde (fin del primero)
+    expect(sourceToOutput(segs, 30)).toBe(10); // inicio del segundo
+    expect(sourceToOutput(segs, 45)).toBe(25); // 10 + (45-30)
+    expect(sourceToOutput(segs, 100)).toBe(40); // pasado el final → duración de salida
+  });
+
+  it('outputToSource es el inverso y salta al origen correcto', () => {
+    expect(outputToSource(segs, 0)).toBe(0);
+    expect(outputToSource(segs, 5)).toBe(5);
+    expect(outputToSource(segs, 10)).toBe(10); // borde: fin del primero
+    expect(outputToSource(segs, 25)).toBe(45); // 30 + (25-10)
+    expect(outputToSource(segs, 999)).toBe(60); // acota al fin
+  });
+
+  it('outputStarts da los offsets contiguos de salida', () => {
+    expect(outputStarts(segs)).toEqual([0, 10]);
+    expect(outputStarts([{ start: 0, end: 3 }, { start: 3, end: 5 }, { start: 8, end: 10 }])).toEqual([
+      0, 3, 5,
+    ]);
+  });
+});
+
+describe('segmentos — recorte de bordes', () => {
+  const segs = [
+    { start: 2, end: 6 },
+    { start: 7, end: 8 },
+  ];
+
+  it('el inicio mueve el borde del primer segmento sin cruzar su fin', () => {
+    expect(setSegmentsStart(segs, 5, 10)[0]).toEqual({ start: 5, end: 6 });
+    expect(setSegmentsStart(segs, 9, 10)[0].start).toBe(6 - MIN_TRIM_SECONDS);
+    expect(setSegmentsStart(segs, -3, 10)[0].start).toBe(0);
+  });
+
+  it('el fin mueve el borde del último segmento sin cruzar su inicio ni pasar la duración', () => {
+    expect(setSegmentsEnd(segs, 7.5, 10)[1]).toEqual({ start: 7, end: 7.5 });
+    expect(setSegmentsEnd(segs, 7, 10)[1].end).toBe(7 + MIN_TRIM_SECONDS);
+    expect(setSegmentsEnd(segs, 50, 10)[1].end).toBe(10);
   });
 });
 

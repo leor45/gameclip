@@ -1,4 +1,5 @@
 import type { ExportFormat, ExportQuality } from '@shared/export';
+import type { Segment } from '@shared/timeline';
 import type { TrackGain } from '@shared/tracks';
 
 export interface FfmpegJob {
@@ -19,6 +20,12 @@ export interface FfmpegJob {
    * audio.
    */
   audioGains?: TrackGain[];
+  /**
+   * Segmentos conservados (editor avanzado, Fase 3). Con **≥2** segmentos la salida es su
+   * concatenación (ripple); con 1 (o sin definir) se usa la ruta rápida `-ss/-t` con
+   * `startSeconds/endSeconds`. Solo MP4.
+   */
+  segments?: Segment[];
 }
 
 // CRF de libx264 por preset (menor = mejor calidad).
@@ -33,6 +40,12 @@ const GIF_WIDTH: Record<ExportQuality, number> = { alta: 640, media: 480, baja: 
  * `out_time_ms` por stdout para la barra de progreso.
  */
 export function buildFfmpegArgs(job: FfmpegJob): string[] {
+  // Cortes múltiples (Fase 3): la salida concatena los segmentos conservados. Solo MP4; con 1
+  // segmento cae a la ruta rápida `-ss/-t` de abajo.
+  if (job.format === 'mp4' && job.segments && job.segments.length >= 2) {
+    return buildConcatArgs(job, job.segments);
+  }
+
   const duration = job.endSeconds - job.startSeconds;
   const base = [
     '-hide_banner',
@@ -77,6 +90,85 @@ export function buildFfmpegArgs(job: FfmpegJob): string[] {
 
 /** Bitrate del AAC de salida (export y mezcla de "guardar edit"). */
 export const AUDIO_BITRATE = '160k';
+
+const secs = (x: number): string => x.toFixed(3);
+
+/**
+ * Cadena de filtro que produce la mezcla completa `[mixfull]` para la ruta de concatenación, o `null`
+ * si la salida no lleva audio. Precedencia igual que `audioArgs`: `audioGains` (volumen por pista) →
+ * `audioTracks` (mute on/off) → la primera pista. Todas las ganancias en 0 / sin pistas → sin audio.
+ */
+function concatAudioSource(job: FfmpegJob): string | null {
+  if (job.audioGains !== undefined) {
+    if (job.audioGains.filter((g) => g.gain > 0).length === 0) return null;
+    return gainMixFilter(job.audioGains, 'mixfull');
+  }
+  const at = job.audioTracks;
+  if (at === undefined) return '[0:a:0]anull[mixfull]';
+  if (at.length === 0) return null;
+  return amixFilter(at, 'mixfull');
+}
+
+/**
+ * Args de ffmpeg para renderizar la **concatenación** de varios segmentos (Fase 3). Sin seek de
+ * input: el vídeo se `split`ea en N, cada copia se recorta con `trim`+`setpts`; el audio arma la
+ * mezcla completa, la duplica con `asplit=N` y recorta cada copia con `atrim`+`asetpts`; y `concat`
+ * une los N pares. Sin audio activo, concatena solo vídeo y sale con `-an`.
+ */
+function buildConcatArgs(job: FfmpegJob, segments: Segment[]): string[] {
+  const n = segments.length;
+  const filters: string[] = [];
+
+  // Vídeo: split explícito en N y un trim+setpts por segmento (no dependemos del auto-split).
+  const vsplit = Array.from({ length: n }, (_, i) => `[vs${i}]`).join('');
+  filters.push(`[0:v]split=${n}${vsplit}`);
+  for (let i = 0; i < n; i++) {
+    filters.push(`[vs${i}]trim=start=${secs(segments[i].start)}:end=${secs(segments[i].end)},setpts=PTS-STARTPTS[v${i}]`); // prettier-ignore
+  }
+
+  const audioSource = concatAudioSource(job);
+  if (audioSource) {
+    filters.push(audioSource); // …[mixfull]
+    const asplit = Array.from({ length: n }, (_, i) => `[as${i}]`).join('');
+    filters.push(`[mixfull]asplit=${n}${asplit}`);
+    for (let i = 0; i < n; i++) {
+      filters.push(`[as${i}]atrim=start=${secs(segments[i].start)}:end=${secs(segments[i].end)},asetpts=PTS-STARTPTS[a${i}]`); // prettier-ignore
+    }
+    const pairs = Array.from({ length: n }, (_, i) => `[v${i}][a${i}]`).join('');
+    filters.push(`${pairs}concat=n=${n}:v=1:a=1[vout][aout]`);
+  } else {
+    const vs = Array.from({ length: n }, (_, i) => `[v${i}]`).join('');
+    filters.push(`${vs}concat=n=${n}:v=1:a=0[vout]`);
+  }
+
+  const maps = audioSource
+    ? ['-map', '[vout]', '-map', '[aout]', '-c:a', 'aac', '-b:a', AUDIO_BITRATE]
+    : ['-map', '[vout]', '-an'];
+
+  return [
+    '-hide_banner',
+    '-nostdin',
+    '-y',
+    '-i',
+    job.inputPath,
+    '-filter_complex',
+    filters.join(';'),
+    ...maps,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    String(MP4_CRF[job.quality]),
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    '-progress',
+    'pipe:1',
+    job.outputPath,
+  ];
+}
 
 /**
  * Filtro que suma varias pistas en una. `normalize=0` (suma cruda, sin dividir por el número de
