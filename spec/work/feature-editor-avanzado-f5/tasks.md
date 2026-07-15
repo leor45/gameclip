@@ -46,12 +46,12 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`) — 742 tests (+2 regresión de los fixes)
-- [ ] Comprobación manual (E2E owner): editar→salir→retomar restaura; Restablecer descarta; 📷 deja el PNG
-      reencuadrado en la biblioteca; el filmstrip muestra miniaturas reales.
+- [x] Comprobación manual (E2E owner): editar→salir→retomar restaura; Restablecer descarta; 📷 deja el PNG
+      reencuadrado en la biblioteca; el filmstrip muestra miniaturas reales. (OK tras los fixes de la E2E.)
 
 ## Cierre
 
-- [ ] Aprobación del owner (E2E)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner (E2E)
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado
-- [ ] (Tras F5) **Release 0.8.0** — proceso aparte, cuando el owner lo pida.
+- [x] (Tras F5) **Release 0.8.0** — las cinco fases del editor avanzado.
