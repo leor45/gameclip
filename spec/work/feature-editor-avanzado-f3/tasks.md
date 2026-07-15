@@ -48,7 +48,8 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] **Detenerse** — el owner prueba E2E (dividir, borrar del medio, reproducir con saltos, render,
-      undo/redo) y da el OK.
-- [ ] Merge a `main` con `--no-ff` y rama borrada (sin release; el 0.8.0 se publica al final).
-- [ ] `spec/constitution/roadmap.md` actualizado.
+- [x] **Detenerse** — el owner probó E2E (dividir, borrar del medio, reproducir con saltos, render,
+      undo/redo) y dio el OK. Durante la E2E se añadió el ripple (auto-cerrar hueco), el fix del salto
+      de hueco (una sola vez) y el fix del audio "doble" en el corte (silencio durante el seek).
+- [x] Merge a `main` con `--no-ff` y rama borrada (sin release; el 0.8.0 se publica al final).
+- [x] `spec/constitution/roadmap.md` actualizado.

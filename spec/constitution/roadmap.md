@@ -161,6 +161,22 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > (sin Web Audio, o ninguna pista decodifica), cae a la mezcla original del `<video>` — nunca silencio
 > total. Verificado el grafo en Chromium real (ganancia 1 = señal, 0 = silencio, 0.5 = mitad) y E2E por
 > el owner ("funcionando perfectamente").
+>
+> **Editor avanzado — Fase 3 (2026-07-14, `feature/editor-avanzado-f3`, en `main` sin release):**
+> **cortes múltiples** — de "un recorte" a `Segment[]` en tiempo de origen (`@shared/timeline`):
+> **dividir** en el playhead (botón/`S`, no divide bajo el mínimo), **borrar** un segmento —incluido
+> uno del medio— (clic + basurero/`Supr`, deja ≥1) y **deshacer/rehacer** (botones y
+> `Ctrl+Z`/`Ctrl+Y`/`Ctrl+Shift+Z`) sobre un reducer puro con historial. El **render** concatena los
+> segmentos conservados (ffmpeg `trim`/`atrim`+`setpts`/`asetpts`→`concat`) manteniendo la mezcla por
+> ganancias; con un solo segmento se conserva la ruta rápida `-ss/-t`. El original **no se toca**.
+> Durante la E2E el owner pidió **ripple**: borrar **cierra el hueco solo** → la timeline pasa a
+> **tiempo de salida** (segmentos contiguos, sin huecos; playhead/regla/ondas/asas en salida, recorte
+> de bordes por delta con escala congelada), mientras el `<video>` sigue en origen y el salto de límite
+> lo maneja el ripple de reproducción. Dos fixes de reproducción: el salto de hueco se emite **una sola
+> vez** (`skipTargetRef`; antes el `rAF` re-emitía el seek en bucle y el vídeo se quedaba pegado con el
+> audio distorsionado) y **sin audio "doble"** en el corte (se **silencia el audio durante el seek** del
+> vídeo y se re-arranca solo cuando termina de buscar, así imagen y sonido reanudan juntos). Verificado
+> render real de 2 segmentos (7.00 s = 3+4, H.264+AAC) y E2E por el owner. 677 tests verdes.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
