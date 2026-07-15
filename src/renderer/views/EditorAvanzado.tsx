@@ -39,6 +39,7 @@ import Timeline from '../components/editor-avanzado/Timeline';
 import AudioTrackRow from '../components/editor-avanzado/AudioTrackRow';
 import RenderDialog from '../components/editor-avanzado/RenderDialog';
 import ReframeControls from '../components/editor-avanzado/ReframeControls';
+import { clampPanelHeight, loadPanelHeight, panelMax, savePanelHeight } from '../lib/editor-prefs';
 
 /** Mayor caja de aspecto `ratioW:ratioH` que cabe (letterbox) en `cw × ch`. Base del marco de la previa. */
 function fitBox(cw: number, ch: number, ratioW: number, ratioH: number): { w: number; h: number } {
@@ -80,8 +81,8 @@ export default function EditorAvanzado() {
   const [playing, setPlaying] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   // Alto del panel inferior (transporte + timeline). Redimensionable arrastrando el divisor; el
-  // vídeo (flex) ocupa el resto.
-  const [panelH, setPanelH] = useState(300);
+  // vídeo (flex) ocupa el resto. Se recuerda entre sesiones/clips (localStorage).
+  const [panelH, setPanelH] = useState(loadPanelHeight);
 
   const [showRender, setShowRender] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -94,6 +95,10 @@ export default function EditorAvanzado() {
   // Ancho efectivo del marco reencuadrado (px), para convertir el arrastre a offset. Se actualiza en
   // cada render con el valor calculado abajo, para que el listener de pan lea siempre el último.
   const frameWRef = useRef(0);
+  // El alto guardado pudo hacerse con una ventana más grande: se acota a la actual al abrir.
+  useEffect(() => {
+    setPanelH((h) => clampPanelHeight(h, panelMax()));
+  }, []);
   // Mide el área de previa (contenedor estable). El marco se dimensiona a partir de aquí.
   useEffect(() => {
     const el = previewRef.current;
@@ -402,11 +407,14 @@ export default function EditorAvanzado() {
     e.preventDefault();
     const startY = e.clientY;
     const startH = panelH;
-    const max = window.innerHeight - 160; // deja sitio para la barra superior y algo de preview
+    const max = panelMax(); // deja sitio para la barra superior y algo de preview
+    let latest = startH;
     const move = (ev: PointerEvent) => {
-      setPanelH(Math.min(max, Math.max(140, startH + (startY - ev.clientY))));
+      latest = clampPanelHeight(startH + (startY - ev.clientY), max);
+      setPanelH(latest);
     };
     const up = () => {
+      savePanelHeight(latest); // recuerda el alto elegido entre sesiones/clips
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
