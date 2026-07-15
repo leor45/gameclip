@@ -87,6 +87,8 @@ const editor: EditorApi = {
     ipcRenderer.invoke(IpcChannel.ClipGetTrackAudio, { id, trackIndex }),
   saveAudioEdit: (clipId: number, mutedTracks: string[]) =>
     ipcRenderer.invoke(IpcChannel.ClipSaveAudioEdit, { clipId, mutedTracks }),
+  captureFrame: (clipId: number, pngBase64: string) =>
+    ipcRenderer.invoke(IpcChannel.ClipCaptureFrame, { clipId, pngBase64 }),
 };
 
 const overlay: OverlayApi = {

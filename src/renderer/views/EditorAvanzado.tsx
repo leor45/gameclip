@@ -39,7 +39,15 @@ import Timeline from '../components/editor-avanzado/Timeline';
 import AudioTrackRow from '../components/editor-avanzado/AudioTrackRow';
 import RenderDialog from '../components/editor-avanzado/RenderDialog';
 import ReframeControls from '../components/editor-avanzado/ReframeControls';
+import Filmstrip from '../components/editor-avanzado/Filmstrip';
 import { clampPanelHeight, loadPanelHeight, panelMax, savePanelHeight } from '../lib/editor-prefs';
+import {
+  deleteDraft,
+  loadDraft,
+  sameEdit,
+  saveDraft,
+  type EditSnapshot,
+} from '../lib/editor-drafts';
 
 /** Mayor caja de aspecto `ratioW:ratioH` que cabe (letterbox) en `cw × ch`. Base del marco de la previa. */
 function fitBox(cw: number, ch: number, ratioW: number, ratioH: number): { w: number; h: number } {
@@ -84,6 +92,7 @@ export default function EditorAvanzado() {
   // vídeo (flex) ocupa el resto. Se recuerda entre sesiones/clips (localStorage).
   const [panelH, setPanelH] = useState(loadPanelHeight);
 
+  const [frameNotice, setFrameNotice] = useState<string | null>(null);
   const [showRender, setShowRender] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -130,6 +139,12 @@ export default function EditorAvanzado() {
   selectedRef.current = selectedSegment;
   // Objetivo del salto de hueco en curso: evita re-emitir el seek cada frame mientras se asienta.
   const skipTargetRef = useRef<number | null>(null);
+  // Estado "recién abierto" del clip (sin tocar nada): base para saber si hay cambios que guardar como
+  // edición sin terminar. Se fija al cargar el clip; hasta entonces no se auto-guarda nada.
+  const baselineRef = useRef<EditSnapshot | null>(null);
+  // Última edición ya persistida (o la base): evita re-escribir/bumpear al abrir sin cambios.
+  const lastPersistedRef = useRef<EditSnapshot | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Borde inicial/final al empezar a recortar: el arrastre reporta un delta sobre esta base (robusto
   // frente al re-escalado de la timeline compactada).
   const trimBaseRef = useRef({ firstStart: 0, lastEnd: 0 });
@@ -208,8 +223,32 @@ export default function EditorAvanzado() {
         if (c) {
           const d = c.durationSeconds ?? 0;
           setDuration(d);
-          dispatch({ type: 'reset', segments: initialSegments(d) });
-          setVolumes(mutedToVolumes(c.mutedTracks));
+          // Estado base del clip recién abierto (sin cambios); referencia para el auto-guardado.
+          const baseVolumes = mutedToVolumes(c.mutedTracks);
+          baselineRef.current = {
+            segments: initialSegments(d),
+            volumes: baseVolumes,
+            removed: [],
+            reframe: DEFAULT_REFRAME,
+          };
+          // Si hay una edición sin terminar guardada, se restaura; si no, el estado base.
+          const draft = loadDraft(c.id);
+          if (draft) {
+            dispatch({ type: 'reset', segments: draft.segments });
+            setVolumes(draft.volumes);
+            setRemoved(new Set(draft.removed));
+            setReframe(draft.reframe);
+            lastPersistedRef.current = {
+              segments: draft.segments,
+              volumes: draft.volumes,
+              removed: draft.removed,
+              reframe: draft.reframe,
+            };
+          } else {
+            dispatch({ type: 'reset', segments: initialSegments(d) });
+            setVolumes(baseVolumes);
+            lastPersistedRef.current = baselineRef.current;
+          }
         }
       })
       .catch(() => setNoEncontrado(true));
@@ -228,6 +267,56 @@ export default function EditorAvanzado() {
 
   // Progreso del render (evento del main).
   useEffect(() => window.gameclip.exporter.onProgress(({ ratio }) => setProgress(ratio)), []);
+
+  // Estado de edición actual (para comparar/guardar como edición sin terminar).
+  const currentSnapshot = useCallback(
+    (): EditSnapshot => ({ segments, volumes, removed: [...removed], reframe }),
+    [segments, volumes, removed, reframe],
+  );
+
+  // Persiste (o borra, si se vuelve al estado base) la edición sin terminar del clip.
+  const persistDraft = useCallback(
+    (snapshot: EditSnapshot) => {
+      const base = baselineRef.current;
+      if (!id || !base) return;
+      if (sameEdit(snapshot, base)) deleteDraft(id);
+      else saveDraft({ clipId: id, updatedAt: Date.now(), ...snapshot });
+      lastPersistedRef.current = snapshot;
+    },
+    [id],
+  );
+
+  // Auto-guarda la edición al cambiar (debounce; no re-escribe si no cambió respecto a lo ya guardado).
+  useEffect(() => {
+    if (!id || baselineRef.current === null) return;
+    const snapshot = currentSnapshot();
+    if (lastPersistedRef.current && sameEdit(snapshot, lastPersistedRef.current)) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => persistDraft(snapshot), 300);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [id, currentSnapshot, persistDraft]);
+
+  // El aviso de captura de fotograma se va solo a los pocos segundos.
+  useEffect(() => {
+    if (frameNotice === null) return;
+    const t = setTimeout(() => setFrameNotice(null), 2500);
+    return () => clearTimeout(t);
+  }, [frameNotice]);
+
+  // Descarta la edición sin terminar y vuelve al estado del clip recién abierto.
+  function resetEdit() {
+    const base = baselineRef.current;
+    if (!base || !id) return;
+    dispatch({ type: 'reset', segments: base.segments });
+    setVolumes(base.volumes);
+    setRemoved(new Set(base.removed));
+    setReframe(base.reframe);
+    setSelectedSegment(null);
+    deleteDraft(id);
+    lastPersistedRef.current = base;
+  }
 
   // El playhead sigue al vídeo mientras suena; y salta los huecos borrados (ripple en la preview).
   useEffect(() => {
@@ -301,7 +390,11 @@ export default function EditorAvanzado() {
     );
   }
 
-  function onMetadata() {
+  // Dimensiones de origen y duración del <video>. Se engancha a `loadedmetadata` Y a `loadeddata`: en
+  // `loadedmetadata` algunos contenedores aún reportan `videoWidth === 0`, y si se llega al editor con la
+  // metadata ya en caché ese evento puede no re-emitirse; `loadeddata` (primer frame decodificado)
+  // garantiza dimensiones. Sin esto `sourceDims` quedaba nulo → 📷 deshabilitado y reencuadre inestable.
+  function syncVideoInfo() {
     const v = videoRef.current;
     if (v && v.videoWidth > 0 && v.videoHeight > 0 && !sourceDims) {
       setSourceDims({ w: v.videoWidth, h: v.videoHeight });
@@ -474,7 +567,49 @@ export default function EditorAvanzado() {
     // 'canceled' (el usuario cerró el diálogo de guardado o canceló): sin mensaje, se queda el modal.
   }
 
+  // Captura el fotograma actual (con el reencuadre aplicado) y lo guarda como captura en la biblioteca.
+  async function captureFrame() {
+    const v = videoRef.current;
+    if (!v || !id) return;
+    // Refuerzo: si `sourceDims` aún no se fijó (evento de metadata perdido), se leen del <video>.
+    const dims =
+      sourceDims ??
+      (v.videoWidth > 0 && v.videoHeight > 0 ? { w: v.videoWidth, h: v.videoHeight } : null);
+    if (!dims) return;
+    const canvas = document.createElement('canvas');
+    const g = hasReframe(reframe) ? reframeGeometry(reframe, dims.w, dims.h) : null;
+    canvas.width = g ? g.outputW : dims.w;
+    canvas.height = g ? g.outputH : dims.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    if (g && g.kind === 'cover' && g.crop) {
+      // Recorte: se dibuja solo el rectángulo de origen elegido, escalado a la salida.
+      ctx.drawImage(v, g.crop.x, g.crop.y, g.crop.w, g.crop.h, 0, 0, g.outputW, g.outputH);
+    } else if (g && g.kind === 'contain' && g.pad) {
+      // Barras: fondo negro + la imagen entera centrada.
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, g.outputW, g.outputH);
+      ctx.drawImage(v, 0, 0, dims.w, dims.h, g.pad.padX, g.pad.padY, g.pad.scaledW, g.pad.scaledH); // prettier-ignore
+    } else {
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    }
+    let pngBase64: string;
+    try {
+      pngBase64 = canvas.toDataURL('image/png');
+    } catch {
+      setFrameNotice('No se pudo capturar el fotograma.');
+      return;
+    }
+    const res = await window.gameclip.editor.captureFrame(id, pngBase64);
+    setFrameNotice(res.ok ? 'Fotograma guardado ✓' : (res.message ?? 'No se pudo guardar el fotograma.'));
+  }
+
   const fecha = clip ? new Date(clip.createdAt).toLocaleString() : '';
+
+  // ¿Hay cambios respecto al clip recién abierto? Habilita "Restablecer".
+  const hasEdits = baselineRef.current
+    ? !sameEdit({ segments, volumes, removed: [...removed], reframe }, baselineRef.current)
+    : false;
 
   // Geometría del reencuadre para la previa (solo con reencuadre activo y dimensiones conocidas). El
   // marco toma el aspecto de salida (dimensionado en px dentro del área de previa) y el <video> se
@@ -516,7 +651,14 @@ export default function EditorAvanzado() {
         </span>
         <div className="eav-topbar-center">
           <ReframeControls reframe={reframe} onChange={setReframe} />
-          <button type="button" className="eav-btn eav-btn-ghost" disabled title="Próximamente" aria-label="Captura de frame">
+          <button
+            type="button"
+            className="eav-btn eav-btn-ghost"
+            onClick={() => void captureFrame()}
+            disabled={!sourceDims}
+            title="Guardar el fotograma actual como captura"
+            aria-label="Capturar fotograma"
+          >
             📷
           </button>
         </div>
@@ -550,7 +692,8 @@ export default function EditorAvanzado() {
             className="eav-video"
             style={videoStyle}
             src={clipMediaUrl(id)}
-            onLoadedMetadata={onMetadata}
+            onLoadedMetadata={syncVideoInfo}
+            onLoadedData={syncVideoInfo}
             onEnded={() => {
               engineRef.current?.stop();
               setPlaying(false);
@@ -565,6 +708,7 @@ export default function EditorAvanzado() {
             </button>
           </div>
         )}
+        {frameNotice && <div className="eav-frame-notice">{frameNotice}</div>}
       </div>
 
       <div
@@ -627,6 +771,16 @@ export default function EditorAvanzado() {
         >
           ↷
         </button>
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={resetEdit}
+          disabled={!hasEdits}
+          aria-label="Restablecer"
+          title="Descartar los cambios y volver al vídeo original"
+        >
+          ⟲ Restablecer
+        </button>
         <span className="eav-toolbar-spacer" />
         <span className="eav-trim-info">
           Duración: {formatDuration(keptDuration(segments))}
@@ -678,7 +832,7 @@ export default function EditorAvanzado() {
           <div className="eav-track-head">
             <span className="eav-track-name">🎬 {clip?.game ?? 'Vídeo'}</span>
           </div>
-          <div className="eav-track-video-bar" />
+          <Filmstrip clipId={id} segments={segments} duration={duration} />
         </div>
         <ul className="eav-audio-list">
           {tracks.map((t) => {

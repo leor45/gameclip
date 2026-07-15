@@ -653,7 +653,8 @@ body {
   padding: 6px 8px 10px;
 }
 
-.clip-actions button {
+.clip-actions button,
+.clip-actions .clip-action-link {
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -661,9 +662,13 @@ body {
   color: var(--text-dim);
   font-size: 14px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
-.clip-actions button:hover {
+.clip-actions button:hover,
+.clip-actions .clip-action-link:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
 }
@@ -2212,6 +2217,45 @@ body {
   border-radius: 6px;
   background: linear-gradient(90deg, rgba(91, 127, 219, 0.25), rgba(91, 127, 219, 0.1));
   border: 1px solid rgba(91, 127, 219, 0.4);
+}
+
+/* Filmstrip: miniaturas reales estiradas para llenar la barra de la pista de vídeo. */
+.eav-filmstrip {
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+}
+
+.eav-filmstrip-frame {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  border-right: 1px solid rgba(0, 0, 0, 0.35);
+  user-select: none;
+}
+
+.eav-filmstrip-frame:last-child {
+  border-right: none;
+}
+
+/* Aviso breve tras capturar un fotograma (misma esquina que el de render). */
+.eav-frame-notice {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Título de la sección "Ediciones sin terminar" (tarjetas reutilizan el diseño de la Biblioteca). */
+.eav-drafts-title {
+  font-size: 15px;
+  margin: 0 0 12px;
 }
 
 .eav-audio-list {

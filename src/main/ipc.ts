@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, app, desktopCapturer, dialog, ipcMain, screen, shell } from 'electron';
 import { IpcChannel } from '@shared/ipc';
-import type { IpcContract } from '@shared/ipc';
+import type { CaptureFrameResult, IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings } from '@shared/capture';
 import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
@@ -17,6 +17,7 @@ import {
 } from '@shared/tracks';
 import type { GameIndex } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
+import { saveClipFrame } from './capture/frame-capture';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { checkForUpdates } from './updates';
 import type { CaptureManager } from './capture/manager';
@@ -260,6 +261,28 @@ export function registerIpcHandlers(
       }
       lib.setAudioEdit(clip.id, request.mutedTracks);
       return { status: 'done' };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannel.ClipCaptureFrame,
+    async (_event, req: { clipId: number; pngBase64: string }): Promise<CaptureFrameResult> => {
+      const clip = lib.getClip(mustId(req?.clipId));
+      if (!clip) return { ok: false, message: 'Este vídeo ya no está en tu biblioteca.' };
+      if (typeof req?.pngBase64 !== 'string' || req.pngBase64.length === 0) {
+        return { ok: false, message: 'No se pudo leer el fotograma.' };
+      }
+      try {
+        const path = await saveClipFrame({
+          outputDir: capture.outputDir(),
+          gameName: clip.game,
+          pngBase64: req.pngBase64,
+          library: lib,
+        });
+        return path ? { ok: true } : { ok: false, message: 'No se pudo guardar el fotograma.' };
+      } catch {
+        return { ok: false, message: 'No se pudo guardar el fotograma.' };
+      }
     },
   );
 

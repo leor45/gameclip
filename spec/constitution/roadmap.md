@@ -215,6 +215,38 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > **acota** al alto de la ventana actual (un valor de una ventana mayor no deja el panel fuera de
 > pantalla). 715 tests verdes (+6). Fuera: persistir otras prefs del editor (zoom, volúmenes, reencuadre)
 > y sincronizar entre máquinas.
+>
+> **Editor avanzado — Fase 5 (2026-07-15, `feature/editor-avanzado-f5`, en `main` sin release):**
+> **extras** que cierran el editor (últimas de las cinco fases). Tres piezas:
+> — **Ediciones sin terminar ("drafts"):** el estado de edición (cortes + volúmenes + pistas quitadas +
+> reencuadre) se **auto-guarda por clip** en `localStorage` (`gameclip.editor.draft.<id>`) en cuanto
+> difiere del estado recién abierto, y se **restaura** al reabrir; volver al estado base (o **Restablecer**)
+> lo borra. Lógica pura en `renderer/lib/editor-drafts.ts` (`sameEdit`, `save/load/delete/listDrafts`,
+> tolera corruptos). La pestaña **Editor** (sin clip) lista las ediciones sin terminar con **Retomar** y
+> **Quitar** (si el vídeo ya no está en la biblioteca, lo dice en lenguaje sencillo); sin ninguna, mensaje
+> mejorado. **Toda la copy es sencilla** — "draft" solo vive en el código.
+> — **Captura de fotograma (📷):** guarda el frame actual **con el reencuadre aplicado** (canvas con la
+> misma geometría de `@shared/reframe`: crop/pad/original) como PNG en la carpeta **Capturas** del juego y
+> lo **da de alta en la biblioteca** (canal `ClipCaptureFrame` → helper `frame-capture.ts` con
+> `targetPathFor`+`registerSavedClip`), sin diálogo, con aviso breve.
+> — **Filmstrip real:** la pista de vídeo muestra ~16 **miniaturas** muestreadas en tiempo de **salida**
+> (`filmstripSampleTimes`, respeta los cortes) y mapeadas a origen, extraídas perezosamente (un `<video>`
+> oculto + `canvas`, serie) y **cacheadas por clip**; best-effort (barra vacía si falla). No re-muestrea al
+> hacer zoom (se estira). Verificado el helper del main con PNG real a disco; 736 tests verdes (+21).
+> Fuera: filmstrip denso por zoom, diálogo "Guardar como" del frame, drafts en el main/entre máquinas,
+> anotaciones.
+>
+> **Fixes tras la E2E del owner (15 jul):** durante la validación, 📷 y el filmstrip fallaban en la app
+> real (no en los tests). (1) **📷:** `sourceDims` se fijaba solo en `onLoadedMetadata` —evento que se
+> pierde si la metadata ya estaba en caché (se llega desde el visor simple) o reporta `videoWidth 0`—,
+> dejándolo nulo → botón deshabilitado → clic muerto. Ahora se fija también en `onLoadedData` (+ fallback
+> leyendo las dimensiones del `<video>` al capturar). (2) **Filmstrip:** al montar, con duración 0, los
+> tiempos de muestreo salían vacíos y se **cacheaba vacío** sin reintentar; ahora espera la duración real
+> (dep `[clipId, duration]`), no cachea vacíos y reintenta. Regresión para ambos. 742 tests verdes.
+>
+> **Editor avanzado COMPLETO — release 0.8.0 (2026-07-15).** Las cinco fases (F1 esqueleto · F2 audio en
+> vivo por pista · F3 cortes múltiples + undo/redo · F4 reencuadre/aspecto · F5 extras) más el alto del
+> panel persistente, entregadas y publicadas como **v0.8.0** (portable). Verificado E2E por el owner.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
