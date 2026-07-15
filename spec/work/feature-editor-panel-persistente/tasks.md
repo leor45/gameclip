@@ -22,11 +22,11 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`) — 715 tests (+6)
-- [ ] Comprobación manual: arrastrar el divisor, cerrar y reabrir el editor (y con otro clip) mantiene el
-      alto; un alto imposible en una ventana chica se acota. **(E2E del owner)**
+- [x] Comprobación manual: arrastrar el divisor, cerrar y reabrir el editor (y con otro clip) mantiene el
+      alto; un alto imposible en una ventana chica se acota. **E2E OK del owner ("está funcionando").**
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado
