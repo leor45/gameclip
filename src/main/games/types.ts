@@ -1,5 +1,5 @@
 /** Launcher del que salió un juego instalado. Solo informativo (logs, diagnóstico). */
-export type GameSourceId = 'steam' | 'epic' | 'xbox' | 'gog' | 'registry';
+export type GameSourceId = 'steam' | 'epic' | 'xbox' | 'gog' | 'riot' | 'registry';
 
 /** Un juego instalado, tal como lo declara su launcher. */
 export interface InstalledGame {
