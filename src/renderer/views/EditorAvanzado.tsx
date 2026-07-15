@@ -201,17 +201,24 @@ export default function EditorAvanzado() {
             setPlayhead(segs[segs.length - 1].end);
             return; // no reprograma: al pasar playing a false, el efecto se limpia
           }
-          // Emite el salto UNA sola vez: el seek del <video> tarda varios frames en asentarse; sin
-          // este guard se re-emite cada frame (vídeo pegado + audio distorsionado por reiniciar las
-          // fuentes). Los frames siguientes, aún en el hueco, esperan a que aterrice.
+          // Emite el salto UNA sola vez. Además SILENCIA el audio durante el seek del <video>: el
+          // seek tarda ~100-300 ms en asentarse y, si el audio siguiera sonando, adelantaría al vídeo
+          // y el resync lo devolvería atrás — se oiría "doble" al reanudar. Se re-arranca al aterrizar.
           if (skipTargetRef.current !== next) {
             skipTargetRef.current = next;
             v.currentTime = next;
-            engine?.seek(next);
+            engine?.stop();
             setPlayhead(next);
           }
+        } else if (skipTargetRef.current !== null) {
+          // Acabamos de aterrizar tras un salto: re-arranca el audio SOLO cuando el vídeo dejó de
+          // buscar, para que imagen y sonido reanuden juntos (sin desfase ni eco).
+          setPlayhead(t);
+          if (!v.seeking) {
+            skipTargetRef.current = null;
+            engine?.play(t);
+          }
         } else {
-          skipTargetRef.current = null;
           setPlayhead(t);
           // El vídeo manda: si el audio se separó del vídeo, se re-sincroniza (raro con relojes cerca).
           if (engine && shouldResync(engine.audioTime(), t)) engine.seek(t);
