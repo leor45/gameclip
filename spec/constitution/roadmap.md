@@ -149,6 +149,18 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > undo/redo · **F4** reencuadre/aspecto · **F5** extras (captura de frame, filmstrip, drafts). Las fases
 > se mergean a `main` según se entregan; **el release (0.8.0) se hace una sola vez al terminar las
 > cinco.** Verificado E2E por el owner (F1). Versión de la app en desarrollo → `0.8.0`.
+> **Editor avanzado — Fase 2 (2026-07-14, `feature/editor-avanzado-f2`, en `main` sin release):**
+> **audio en vivo por pista** al reproducir. Antes sonaba la mezcla `default` (lo que oías no reflejaba
+> tus cambios); ahora se **reconstruye la mezcla en vivo** con la Web Audio API (una pista → `GainNode`
+> → master), colgada del reloj del `<video>` (mudo). Cada pista suena a su volumen actual, las
+> eliminadas en silencio, y el cambio de volumen se oye al instante — lo que oyes = lo que se renderiza
+> (misma ganancia efectiva). El navegador solo decodifica la mezcla `default`, así que el audio por
+> pista lo **extrae el main con ffmpeg a AAC/ADTS** (streamable por stdout, decodificable por Chromium;
+> canal `ClipGetTrackAudio`), cargado perezosamente en el primer play. Sincronía por el reloj del vídeo
+> con corrección de deriva (umbral 150 ms). **Red de seguridad:** si el audio en vivo no puede sonar
+> (sin Web Audio, o ninguna pista decodifica), cae a la mezcla original del `<video>` — nunca silencio
+> total. Verificado el grafo en Chromium real (ganancia 1 = señal, 0 = silencio, 0.5 = mitad) y E2E por
+> el owner ("funcionando perfectamente").
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 

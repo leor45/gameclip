@@ -44,7 +44,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] **Detenerse** — el owner prueba E2E (oír la mezcla en vivo, volumen al momento, eliminar, seek,
-      clip de 1 pista) y da el OK.
-- [ ] Merge a `main` con `--no-ff` y rama borrada (sin release; el 0.8.0 se publica al final).
-- [ ] `spec/constitution/roadmap.md` actualizado.
+- [x] **Detenerse** — el owner prueba E2E (oír la mezcla en vivo, volumen al momento, eliminar, seek,
+      clip de 1 pista) y da el OK. ("está funcionando perfectamente")
+- [x] Merge a `main` con `--no-ff` y rama borrada (sin release; el 0.8.0 se publica al final).
+- [x] `spec/constitution/roadmap.md` actualizado.
