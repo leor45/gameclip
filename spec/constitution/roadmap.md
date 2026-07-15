@@ -742,20 +742,49 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > (GameInput, en segundo plano), DualSense 12/12 (HID), y el owner confirmó el guardado de clip en la
 > app con ambos mandos.
 
+## Fase 18 · Detección en vivo, Riot y visor del índice — ✅ entregado
+
+- [x] **Re-índice reactivo**: un juego instalado con la app abierta se detecta solo, sin reiniciar ni
+      re-escanear a mano. El sondeo de procesos (que ya corre cada 5 s) fija una **línea base** al
+      arrancar y, si luego aparece un `.exe` que la app no reconoce, pide reconstruir el índice
+      (evento `'unknown-executable'`), con set de vistos y **cooldown de 30 s**. Barato: reusa
+      `refreshGameIndex` (la huella evita el escaneo de carpetas si nada cambió).
+- [x] **Fuente Riot** (`riot`): lee el almacén unificado de Riot Client
+      (`%ProgramData%\Riot Games\Metadata\<producto>\*.product_settings.yaml` → `product_install_full_path`
+      + `shortcut_name`, con un regex por línea, sin dependencia de YAML). Cubre Valorant, LoL, LoR,
+      2XKO… de una pasada; la **presencia del yaml** marca "instalado".
+- [x] **Visor del índice**: el contador de Ajustes → Grabación pasa a contar **juegos** distintos (no
+      ejecutables), y el detalle técnico (mapa `ejecutable → juego`) va a Ajustes → **Desarrollo** en un
+      desplegable colapsado por defecto.
+- [x] Publicado como **v0.8.1** (portable): https://github.com/leor45/gameclip/releases/tag/v0.8.1
+
+> Release 0.8.1 (2026-07-15). Tres ramas: `fix/reindice-automatico-juegos`, `feature/fuente-riot` y
+> `feature/deteccion-info-desarrollo`. El síntoma de partida —"no detecta los juegos de GOG/Ubisoft"—
+> resultó **no ser un bug de las fuentes**: funcionaban, pero el índice solo se reconstruía al arrancar,
+> así que un juego instalado con la app abierta no aparecía hasta reiniciar o re-escanear a mano. La
+> pieza clave es que el re-índice se cuelga del **sondeo de procesos que ya existía** (no añade ningún
+> bucle nuevo), como hace Discord. Verificado en vivo ocultando/restaurando las carpetas: Moonlighter
+> (GOG) y Child of Light (Ubisoft) se detectan sin reiniciar. La fuente Riot, verificada E2E con 2XKO
+> (`Lion.exe` → `2XKO`, que ni está en la lista curada ni se parece al nombre). El contador de
+> "ejecutables" confundía (un juego mete varios `.exe`; Wallpaper Engine ~25), así que pasa a contar
+> juegos. 756 tests verdes.
+
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
-### 🔍 Detección de juegos de Ubisoft, EA, GOG, Battle.net y Xbox
+### 🔍 Detección de juegos de EA, Battle.net y Xbox
 
-Las fuentes del índice para esos cinco launchers (`src/main/games/sources/`) están **escritas y
-probadas con fixtures, pero nunca ejecutadas contra un juego real**: en la máquina del owner los cinco
-launchers están instalados y **vacíos** (ni un juego), así que no hubo con qué comprobarlas. Steam y
-Epic sí están verificados de extremo a extremo.
+Las fuentes del índice para esos tres launchers (`src/main/games/sources/`) están **escritas y
+probadas con fixtures, pero nunca ejecutadas contra un juego real**: en la máquina del owner están
+instalados y **vacíos** (ni un juego), así que no hubo con qué comprobarlas.
+
+**Ya verificados de extremo a extremo:** Steam, Epic, **GOG** (Moonlighter), **Ubisoft** (Child of
+Light) y **Riot** (2XKO) — estos tres últimos en la 0.8.1. Quedan EA App, Battle.net y Xbox/Game Pass.
 
 **Qué hay que hacer:** instalar **un** juego en cada launcher y comprobar que (a) aparece en el índice
 con su nombre de catálogo, (b) se detecta al abrirlo, y (c) no mete falsos positivos (el caso
 `EpicWebHelper.exe` de Fortnite: helpers del launcher que corren aunque el juego esté cerrado). Basta
-con arrancar la app y mirar el log `[games]`, o el contador de "ejecutables reconocidos" en
-Ajustes → Grabación.
+con arrancar la app y mirar el log `[games]`, el contador de **juegos reconocidos** en Ajustes →
+Grabación, o el desplegable del índice en Ajustes → Desarrollo.
 
 **Riesgo si fallan:** acotado por diseño. Cada fuente está aislada y devuelve `[]` ante cualquier
 error, así que un formato inesperado deja el índice sin esos juegos —se siguen pudiendo añadir a
