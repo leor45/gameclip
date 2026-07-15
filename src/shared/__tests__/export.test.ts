@@ -48,6 +48,48 @@ describe('normalizeExportRequest', () => {
       { start: 6, end: 10 },
     ]);
   });
+
+  it('incluye reframe activo con dimensiones de la fuente', () => {
+    const req = normalizeExportRequest({
+      ...valido,
+      reframe: { aspect: '9:16', mode: 'cover', zoom: 1.5, offset: { x: -0.2, y: 0 } },
+      sourceWidth: 2560.4,
+      sourceHeight: 1440,
+    });
+    expect(req.reframe).toEqual({
+      aspect: '9:16',
+      mode: 'cover',
+      zoom: 1.5,
+      offset: { x: -0.2, y: 0 },
+    });
+    expect(req.sourceWidth).toBe(2560);
+    expect(req.sourceHeight).toBe(1440);
+  });
+
+  it('omite reframe si es original, o si faltan/ son inválidas las dimensiones', () => {
+    const original = normalizeExportRequest({
+      ...valido,
+      reframe: { aspect: 'original', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+    });
+    expect(original.reframe).toBeUndefined();
+    expect(original.sourceWidth).toBeUndefined();
+
+    const sinDims = normalizeExportRequest({
+      ...valido,
+      reframe: { aspect: '9:16', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+    });
+    expect(sinDims.reframe).toBeUndefined();
+
+    const dimsMalas = normalizeExportRequest({
+      ...valido,
+      reframe: { aspect: '9:16', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      sourceWidth: 0,
+      sourceHeight: -5,
+    });
+    expect(dimsMalas.reframe).toBeUndefined();
+  });
 });
 
 describe('normalizeSegments', () => {

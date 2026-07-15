@@ -1828,6 +1828,58 @@ body {
   background: transparent;
 }
 
+/* Controles de reencuadre (Fase 4) */
+.eav-reframe {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.eav-reframe-aspects,
+.eav-reframe-fit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.eav-reframe-fit {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.eav-chip {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.eav-chip:hover {
+  border-color: var(--accent);
+}
+
+.eav-chip.is-active {
+  background: var(--accent);
+  color: #1a1a1a;
+  border-color: var(--accent);
+}
+
+.eav-reframe-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.eav-reframe-zoom input[type='range'] {
+  width: 90px;
+  accent-color: var(--accent);
+}
+
 /* Previsualización */
 .eav-preview {
   flex: 1;
@@ -1839,10 +1891,43 @@ body {
   min-height: 0;
 }
 
-.eav-video {
-  max-width: 100%;
-  max-height: 100%;
+/* Marco de la previa: contiene el <video>, posicionado en absoluto para no depender del flex
+   (un <video> flex-item no encoge bajo su tamaño intrínseco). Sin reencuadre el marco llena la previa
+   y el vídeo va `object-fit: contain`; con reencuadre (`is-reframed`) el marco toma el tamaño explícito
+   del aspecto de salida (inline) y el vídeo (estilo inline con transform) se recorta por overflow. */
+.eav-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.eav-frame.is-reframed {
+  background: #000;
+}
+
+.eav-frame.can-pan {
+  cursor: grab;
+  touch-action: none;
+}
+
+.eav-frame.can-pan:active {
+  cursor: grabbing;
+}
+
+/* Sin reencuadre: el vídeo llena el marco y se contiene (media centrada, sin desbordar). */
+.eav-frame .eav-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+}
+
+/* Con reencuadre el <video> lleva estilo inline (posición/tamaño/transform); no se contiene. */
+.eav-frame.is-reframed .eav-video {
+  inset: auto;
+  object-fit: fill;
 }
 
 .eav-done {

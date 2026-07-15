@@ -177,6 +177,34 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > audio distorsionado) y **sin audio "doble"** en el corte (se **silencia el audio durante el seek** del
 > vídeo y se re-arranca solo cuando termina de buscar, así imagen y sonido reanudan juntos). Verificado
 > render real de 2 segmentos (7.00 s = 3+4, H.264+AAC) y E2E por el owner. 677 tests verdes.
+>
+> **Editor avanzado — Fase 4 (2026-07-14, `feature/editor-avanzado-f4`, en `main` sin release):**
+> **reencuadre por relación de aspecto + reposición** — sacar de un clip 16:9 un vertical 9:16 (o 1:1,
+> 4:5, 16:9) encuadrando la acción, sin regrabar. Toda la geometría en `@shared/reframe` (puro): de una
+> **geometría canónica única** (rectángulo en píxeles de origen) derivan las **dos** salidas —el
+> `transform` CSS de la previa y el filtro de vídeo de ffmpeg—, así **previa = render** por
+> construcción. Dos modos de encaje: **recorte** (`cover`: `crop`+`scale`, reposicionable arrastrando +
+> zoom con rueda/slider, offset normalizado al margen y clampado) y **barras** (`contain`:
+> `scale`+`pad` negro, letter/pillarbox). La previa envuelve el `<video>` en un marco con el aspecto de
+> salida (medido con `ResizeObserver`) y lo escala/posiciona para mostrar el mismo rectángulo que
+> renderizará ffmpeg; dims de la fuente leídas del `<video>` (`videoWidth/Height`, sin ffprobe).
+> **Render:** el reencuadre **fuerza el filtergraph de vídeo** (antes el vídeo iba `-c copy` por
+> libx264); se compone con lo de F3 —en concat se recorta **una vez** antes del `split`— y con la mezcla
+> por ganancias de F1/2. **Sin reencuadre (`original`) las rutas de render quedan intactas.** Dimensiones
+> de salida **pares** (libx264/yuv420p) en el módulo puro; salida conserva la dimensión limitante de la
+> fuente (16:9 1280×720 → 9:16 404×720). El reencuadre es **estático** (uno por clip, sin keyframes) y
+> no entra en el undo/redo de cortes (ajuste continuo, como el volumen). El editor **simple** no se toca.
+> Verificado headless con el ffmpeg de osn: cover 9:16 (404×720), cover 1:1 (720×720), contain 9:16
+> (1280×2276) y **concat 2 cortes + reframe** (404×720, 5.00 s). 709 tests verdes (+32). Durante la E2E
+> el owner cazó **dos bugs de previa**, ambos por el marco que envuelve el `<video>`: (1) el marco medía
+> su ancho del propio `<video>`, que pasa a `position:absolute` al reencuadrar → colapsaba a 0 y oscilaba
+> (parpadeo negro/imagen) y el recorte no se aplicaba; arreglado dimensionando el marco desde el **área de
+> previa** (contenedor estable, `ResizeObserver`) vía `fitBox`. (2) Con aspecto `original` el `<video>`
+> (flex-item, `min-width:auto`) no encogía bajo su tamaño intrínseco y **desbordaba la ventana**;
+> arreglado con el `<video>` en `position:absolute`+`inset:0`+`object-fit:contain` (no depende del flex),
+> verificado en Chromium headless. **E2E OK por el owner ("funcionando perfecto").** Fuera: rotación,
+> pan/zoom animado, reframe por segmento, aspectos libres, GIF (→ nada; el resto es F5: captura de frame,
+> filmstrip, drafts).
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
