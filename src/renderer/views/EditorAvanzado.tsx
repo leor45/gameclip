@@ -78,6 +78,8 @@ export default function EditorAvanzado() {
   playheadRef.current = playhead;
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selectedSegment;
+  // Objetivo del salto de hueco en curso: evita re-emitir el seek cada frame mientras se asienta.
+  const skipTargetRef = useRef<number | null>(null);
 
   // Operaciones de corte (entran en el historial). Estables: leen el estado vivo por refs.
   const splitAtPlayhead = useCallback(() => {
@@ -183,16 +185,24 @@ export default function EditorAvanzado() {
         if (segs.length > 0 && segmentAt(segs, t) < 0) {
           const next = nextKeptTime(segs, t);
           if (next === null) {
+            skipTargetRef.current = null;
             v.pause();
             engine?.stop();
             setPlaying(false);
             setPlayhead(segs[segs.length - 1].end);
             return; // no reprograma: al pasar playing a false, el efecto se limpia
           }
-          v.currentTime = next;
-          engine?.seek(next);
-          setPlayhead(next);
+          // Emite el salto UNA sola vez: el seek del <video> tarda varios frames en asentarse; sin
+          // este guard se re-emite cada frame (vídeo pegado + audio distorsionado por reiniciar las
+          // fuentes). Los frames siguientes, aún en el hueco, esperan a que aterrice.
+          if (skipTargetRef.current !== next) {
+            skipTargetRef.current = next;
+            v.currentTime = next;
+            engine?.seek(next);
+            setPlayhead(next);
+          }
         } else {
+          skipTargetRef.current = null;
           setPlayhead(t);
           // El vídeo manda: si el audio se separó del vídeo, se re-sincroniza (raro con relojes cerca).
           if (engine && shouldResync(engine.audioTime(), t)) engine.seek(t);
