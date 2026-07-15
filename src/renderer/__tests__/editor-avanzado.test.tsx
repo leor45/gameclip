@@ -114,6 +114,17 @@ describe('EditorAvanzado — render', () => {
   });
 });
 
+describe('EditorAvanzado — reproducción', () => {
+  it('play alterna a Pausar; sin AudioContext (jsdom) no pide audio por pista', async () => {
+    await prepararClip();
+    fireEvent.click(screen.getByRole('button', { name: 'Reproducir' }));
+    // togglePlay es async (carga perezosa del audio); el botón pasa a Pausar sin romperse.
+    await screen.findByRole('button', { name: 'Pausar' });
+    // El motor es no-op sin Web Audio: no se extrae audio del main.
+    expect(mock().editor.getTrackAudio).not.toHaveBeenCalled();
+  });
+});
+
 describe('EditorAvanzado — zoom', () => {
   it('el zoom parte de 1× (alejar deshabilitado) y acercar lo habilita', async () => {
     await prepararClip();

@@ -7,6 +7,7 @@ import { runAudioEdit } from './audio-edit';
 import { buildFfmpegArgs, type FfmpegJob } from './ffmpeg-args';
 import { probeAudioTracks } from './probe';
 import { defaultSpawn, type FfmpegProcess, type SpawnFfmpeg } from './spawn';
+import { extractTrackAudio } from './track-audio';
 import { extractWaveform } from './waveform';
 
 export type { FfmpegProcess, SpawnFfmpeg } from './spawn';
@@ -50,6 +51,18 @@ export class ExportManager extends EventEmitter {
         peaks: await extractWaveform(this.spawnFn, this.ffmpegPath, file, t.index),
       })),
     );
+  }
+
+  /**
+   * Bytes (AAC/ADTS) de UNA pista seleccionable del clip, para reproducirla en vivo en el editor
+   * avanzado (Fase 2). El `trackIndex` es el ordinal `-map 0:a:N`; se valida contra las pistas
+   * seleccionables (no se sirve la mezcla `default`). Best-effort: `Buffer` vacío si el índice no es
+   * seleccionable o la extracción falla.
+   */
+  async trackAudio(file: string, trackIndex: number): Promise<Buffer> {
+    const selectable = selectableTracks(await this.probeTracks(file));
+    if (!selectable.some((t) => t.index === trackIndex)) return Buffer.alloc(0);
+    return extractTrackAudio(this.spawnFn, this.ffmpegPath, file, trackIndex);
   }
 
   /**

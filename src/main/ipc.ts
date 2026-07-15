@@ -217,6 +217,18 @@ export function registerIpcHandlers(
     return clip ? exp.waveforms(clip.filePath) : [];
   });
   ipcMain.handle(
+    IpcChannel.ClipGetTrackAudio,
+    async (_event, req: { id: number; trackIndex: number }): Promise<ArrayBuffer> => {
+      const clip = lib.getClip(mustId(req?.id));
+      const trackIndex = Number(req?.trackIndex);
+      if (!clip || !Number.isInteger(trackIndex) || trackIndex < 0) return new ArrayBuffer(0);
+      const buf = await exp.trackAudio(clip.filePath, trackIndex);
+      // Copia a un ArrayBuffer propio (el Buffer de Node puede compartir un pool más grande). El
+      // Buffer siempre está respaldado por un ArrayBuffer (no Shared), de ahí el cast.
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+    },
+  );
+  ipcMain.handle(
     IpcChannel.ClipSaveAudioEdit,
     async (_event, rawRequest: unknown): Promise<SaveAudioEditResult> => {
       const request = normalizeSaveAudioEditRequest(rawRequest);
