@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFfmpegArgs } from '../export/ffmpeg-args';
+import { buildFfmpegArgs, gainMixFilter } from '../export/ffmpeg-args';
 
 const base = {
   inputPath: 'C:\\Videos\\GameClip\\clip.mp4',
@@ -69,6 +69,53 @@ describe('buildFfmpegArgs — pistas de audio marcadas', () => {
 
     expect(args).toContain('-an');
     expect(args).not.toContain('aac');
+  });
+});
+
+describe('gainMixFilter — volumen por pista (editor avanzado)', () => {
+  it('una sola pista activa: volume directo, sin amix', () => {
+    expect(gainMixFilter([{ index: 1, gain: 1.5 }], 'aout')).toBe('[0:a:1]volume=1.5[aout]');
+  });
+
+  it('varias pistas: volume por fuente y luego amix normalize=0', () => {
+    expect(
+      gainMixFilter([{ index: 1, gain: 1 }, { index: 2, gain: 0.5 }], 'aout'),
+    ).toBe('[0:a:1]volume=1[g0];[0:a:2]volume=0.5[g1];[g0][g1]amix=inputs=2:normalize=0[aout]');
+  });
+
+  it('las pistas en 0 (muteadas) quedan fuera de la mezcla', () => {
+    expect(
+      gainMixFilter([{ index: 1, gain: 1 }, { index: 2, gain: 0 }, { index: 3, gain: 2 }], 'aout'),
+    ).toBe('[0:a:1]volume=1[g0];[0:a:3]volume=2[g1];[g0][g1]amix=inputs=2:normalize=0[aout]');
+  });
+
+  it('sin pistas activas lanza (el llamador debe cortar a -an antes)', () => {
+    expect(() => gainMixFilter([{ index: 1, gain: 0 }], 'aout')).toThrow(/activas/i);
+  });
+});
+
+describe('buildFfmpegArgs — ganancias por pista', () => {
+  it('mezcla con volumen por pista tiene precedencia y mapea [aout]', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      format: 'mp4',
+      quality: 'media',
+      audioGains: [{ index: 1, gain: 1 }, { index: 2, gain: 0.5 }],
+    });
+    expect(args[args.indexOf('-filter_complex') + 1]).toContain('volume=0.5');
+    expect(args.join(' ')).toContain('-map 0:v:0 -map [aout]');
+    expect(args).toContain('aac');
+  });
+
+  it('todas las pistas en 0 → MP4 sin audio', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      format: 'mp4',
+      quality: 'media',
+      audioGains: [{ index: 1, gain: 0 }, { index: 2, gain: 0 }],
+    });
+    expect(args).toContain('-an');
+    expect(args).not.toContain('-filter_complex');
   });
 });
 

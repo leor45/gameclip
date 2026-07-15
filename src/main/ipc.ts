@@ -11,7 +11,9 @@ import {
   activeTrackIndexes,
   hasRoleTracks,
   normalizeSaveAudioEditRequest,
+  selectableTrackGains,
   type SaveAudioEditResult,
+  type TrackGain,
 } from '@shared/tracks';
 import type { GameIndex } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
@@ -176,10 +178,15 @@ export function registerIpcHandlers(
         : await dialog.showSaveDialog(opciones);
       if (eleccion.canceled || !eleccion.filePath) return { status: 'canceled' };
 
-      // Las pistas marcadas viajan por nombre: el main sondea el archivo y las traduce a los
-      // ordinales (`0:a:N`) que entiende ffmpeg. Sin sondeo (o clip sin audio) no se mapea nada.
+      // La selección de audio viaja por nombre: el main sondea el archivo y lo traduce a ordinales
+      // (`0:a:N`). El editor avanzado manda volúmenes por pista (`trackVolumes`), que tienen
+      // precedencia y se traducen a ganancias; el editor simple manda `mutedTracks` (mute on/off).
       let audioTracks: number[] | undefined;
-      if (request.mutedTracks && request.format === 'mp4') {
+      let audioGains: TrackGain[] | undefined;
+      if (request.trackVolumes && request.format === 'mp4') {
+        const tracks = await exporter.probeTracks(clip.filePath);
+        if (tracks.length > 0) audioGains = selectableTrackGains(tracks, request.trackVolumes);
+      } else if (request.mutedTracks && request.format === 'mp4') {
         const tracks = await exporter.probeTracks(clip.filePath);
         if (tracks.length > 0) audioTracks = activeTrackIndexes(tracks, request.mutedTracks);
       }
@@ -192,6 +199,7 @@ export function registerIpcHandlers(
         format: request.format,
         quality: request.quality,
         audioTracks,
+        audioGains,
       });
       if (resultado.status === 'done' && resultado.outputPath) {
         lastExportPath = resultado.outputPath;
@@ -203,6 +211,10 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.ClipGetAudioTracks, (_event, req: { id: number }) => {
     const clip = lib.getClip(mustId(req?.id));
     return clip ? exp.probeTracks(clip.filePath) : [];
+  });
+  ipcMain.handle(IpcChannel.ClipGetAudioWaveforms, (_event, req: { id: number }) => {
+    const clip = lib.getClip(mustId(req?.id));
+    return clip ? exp.waveforms(clip.filePath) : [];
   });
   ipcMain.handle(
     IpcChannel.ClipSaveAudioEdit,

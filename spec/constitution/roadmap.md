@@ -135,6 +135,20 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > async y **solo borra el registro si el archivo se fue**, reintentando ante EPERM/EACCES/EBUSY con
 > backoff; si persiste, avisa en español y no toca la DB. La tarjeta suelta la preview antes de borrar
 > y muestra el error; el auto-borrado por límite salta un clip en uso sin abortar la poda.
+> **Editor avanzado (NLE) — Fase 1 (2026-07-14, `feature/editor-avanzado`, en `main` sin release):**
+> editor nuevo y aislado (el simple queda igual) en `#/editor-avanzado/:clipId`, abierto desde un botón
+> en el editor actual. Timeline con regla, playhead arrastrable y zoom por factor sobre el "fit" al
+> ancho (1× llena el timeline; más, scroll). Una fila de vídeo y **una fila por pista de audio
+> desglosada** con su **espectro real** (el main extrae cada pista a PCM mono 8 kHz con ffmpeg y reduce
+> a picos; canal `ClipGetAudioWaveforms`, best-effort) — la mezcla `default` no se muestra ni se
+> renderiza; si el clip no tiene multi-audio, se muestra su única pista. **Volumen 0–200 % por pista**
+> (rueda sobre el espectro + slider en cabecera fija que no atenúa el recorte) y **eliminar pista**.
+> **Recorte simple** (un rango, zona fuera atenuada) y **render a MP4 nuevo** (calidad/destino, ganancia
+> por pista antes del `amix normalize=0`) **sin tocar el original**. Lógica pura en `@shared/timeline`.
+> Es la base de un editor multi-fase: **F2** audio en vivo por pista · **F3** cortes múltiples +
+> undo/redo · **F4** reencuadre/aspecto · **F5** extras (captura de frame, filmstrip, drafts). Las fases
+> se mergean a `main` según se entregan; **el release (0.8.0) se hace una sola vez al terminar las
+> cinco.** Verificado E2E por el owner (F1). Versión de la app en desarrollo → `0.8.0`.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 

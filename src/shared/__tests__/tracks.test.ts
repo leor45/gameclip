@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { ClipAudioTrack } from '../tracks';
 import {
   activeTrackIndexes,
+  clampTrackGain,
   hasRoleTracks,
+  mutedToVolumes,
   normalizeMutedTracks,
   normalizeSaveAudioEditRequest,
+  normalizeTrackVolumes,
+  selectableTrackGains,
   selectableTracks,
+  trackGain,
   trackKey,
   trackLabel,
 } from '../tracks';
@@ -90,5 +95,43 @@ describe('normalización desde el IPC', () => {
 
   it('sin lista de muteadas, no hay ninguna muteada', () => {
     expect(normalizeSaveAudioEditRequest({ clipId: 1 }).mutedTracks).toEqual([]);
+  });
+});
+
+describe('volumen por pista (editor avanzado)', () => {
+  it('la ganancia de una pista sin ajuste es 1 (100 %)', () => {
+    expect(trackGain({}, 'game')).toBe(1);
+    expect(trackGain({ mic: 0.5 }, 'game')).toBe(1);
+  });
+
+  it('devuelve la ganancia guardada, acotada a [0, 2]', () => {
+    expect(trackGain({ game: 1.5 }, 'game')).toBe(1.5);
+    expect(trackGain({ game: 0 }, 'game')).toBe(0);
+    expect(clampTrackGain(5)).toBe(2);
+    expect(clampTrackGain(-3)).toBe(0);
+    expect(clampTrackGain(NaN)).toBe(1);
+  });
+
+  it('mapea las pistas seleccionables a su ganancia (la default nunca entra)', () => {
+    expect(selectableTrackGains(porRol, { mic: 0, opera: 2 })).toEqual([
+      { index: 1, gain: 1 },
+      { index: 2, gain: 0 },
+      { index: 3, gain: 2 },
+    ]);
+  });
+
+  it('normaliza volúmenes del IPC: claves válidas, ganancias finitas y acotadas', () => {
+    expect(normalizeTrackVolumes({ game: 1.2, mic: 5, bad: 'x', '': 1, spotify: -1 })).toEqual({
+      game: 1.2,
+      mic: 2,
+      spotify: 0,
+    });
+    expect(normalizeTrackVolumes(null)).toEqual({});
+    expect(normalizeTrackVolumes([1, 2])).toEqual({});
+  });
+
+  it('proyecta las muteadas del editor simple como volumen 0 (compat)', () => {
+    expect(mutedToVolumes(['mic', 'game'])).toEqual({ mic: 0, game: 0 });
+    expect(mutedToVolumes([])).toEqual({});
   });
 });

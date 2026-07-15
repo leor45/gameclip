@@ -13,6 +13,12 @@ export interface ClipAudioTrack {
   name: string | null;
 }
 
+/** Onda (espectro) de una pista para la UI: picos normalizados 0..1, indexados por `trackKey`. */
+export interface TrackWaveform {
+  key: string;
+  peaks: number[];
+}
+
 /** Nombre de la pista que lleva la mezcla completa (la única que oyen los reproductores). */
 export const DEFAULT_TRACK_NAME = 'default';
 
@@ -68,6 +74,68 @@ export function activeTracks(tracks: ClipAudioTrack[], muted: string[]): ClipAud
 /** Ordinales (`-map 0:a:N`) de las pistas marcadas. */
 export function activeTrackIndexes(tracks: ClipAudioTrack[], muted: string[]): number[] {
   return activeTracks(tracks, muted).map((t) => t.index);
+}
+
+/**
+ * Volumen (ganancia lineal) por pista: clave de `trackKey` → ganancia `0..MAX_TRACK_GAIN`, donde
+ * `1` = 100 % (sin tocar). Ausencia de una clave ⇒ 1. Muteada ≡ 0. Lo usa el editor avanzado; el
+ * editor simple sigue con `mutedTracks` intacto.
+ */
+export type TrackVolumes = Record<string, number>;
+
+/** Ganancia máxima por pista (200 %). `volume` de ffmpeg es lineal: 2 = ×2. */
+export const MAX_TRACK_GAIN = 2;
+
+/** Ganancia por defecto de una pista sin ajuste: 100 % (no la toca). */
+export const DEFAULT_TRACK_GAIN = 1;
+
+/** Acota la ganancia al rango permitido `[0, MAX_TRACK_GAIN]`. */
+export function clampTrackGain(gain: number): number {
+  if (!Number.isFinite(gain)) return DEFAULT_TRACK_GAIN;
+  return Math.min(MAX_TRACK_GAIN, Math.max(0, gain));
+}
+
+/** Ganancia de una pista: la guardada (acotada), o 1 (100 %) si no tiene ajuste. */
+export function trackGain(volumes: TrackVolumes, key: string): number {
+  const g = volumes[key];
+  return typeof g === 'number' && Number.isFinite(g) ? clampTrackGain(g) : DEFAULT_TRACK_GAIN;
+}
+
+/** Ordinal (`0:a:N`) + ganancia de cada pista seleccionable, en el orden del archivo. */
+export interface TrackGain {
+  index: number;
+  gain: number;
+}
+
+/** Pistas seleccionables con su ganancia. Base del render con volúmenes del editor avanzado. */
+export function selectableTrackGains(
+  tracks: ClipAudioTrack[],
+  volumes: TrackVolumes,
+): TrackGain[] {
+  return selectableTracks(tracks).map((t) => ({
+    index: t.index,
+    gain: trackGain(volumes, trackKey(t)),
+  }));
+}
+
+/** Volúmenes de origen no confiable (IPC/DB): claves string no vacías, ganancias finitas y acotadas. */
+export function normalizeTrackVolumes(input: unknown): TrackVolumes {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return {};
+  const out: TrackVolumes = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    const key = k.trim();
+    if (!key) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    out[key] = clampTrackGain(v);
+  }
+  return out;
+}
+
+/** Compat: una selección de pistas muteadas se proyecta como volumen 0 (equivalencia mute ↔ 0 %). */
+export function mutedToVolumes(muted: string[]): TrackVolumes {
+  const out: TrackVolumes = {};
+  for (const key of normalizeMutedTracks(muted)) out[key] = 0;
+  return out;
 }
 
 /** Lista de claves muteadas de origen no confiable (IPC o columna de la DB). */
