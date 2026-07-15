@@ -243,6 +243,26 @@ describe('EditorAvanzado — reencuadre (Fase 4)', () => {
   });
 });
 
+describe('EditorAvanzado — alto del panel persistente', () => {
+  it('arrastrar el divisor guarda el alto y al reabrir el editor arranca con ese alto', async () => {
+    await prepararClip();
+    const divisor = screen.getByRole('separator', { name: /Redimensionar el panel/ });
+
+    // Arrastrar hacia arriba (clientY menor) agranda el panel: 300 + (500-400) = 400.
+    fireEvent.pointerDown(divisor, { clientY: 500 });
+    fireEvent.pointerMove(window, { clientY: 400 });
+    fireEvent.pointerUp(window, { clientY: 400 });
+
+    expect(localStorage.getItem('gameclip.editor.panelHeight')).toBe('400');
+
+    // Reabrir el editor (otro montaje): el panel arranca con el alto guardado.
+    renderEA();
+    await screen.findAllByText(/Jugada épica/);
+    const paneles = document.querySelectorAll('.eav-bottom');
+    expect((paneles[paneles.length - 1] as HTMLElement).style.height).toBe('400px');
+  });
+});
+
 describe('EditorAvanzado — zoom', () => {
   it('el zoom parte de 1× (alejar deshabilitado) y acercar lo habilita', async () => {
     await prepararClip();

@@ -205,6 +205,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > verificado en Chromium headless. **E2E OK por el owner ("funcionando perfecto").** Fuera: rotación,
 > pan/zoom animado, reframe por segmento, aspectos libres, GIF (→ nada; el resto es F5: captura de frame,
 > filmstrip, drafts).
+>
+> **Editor avanzado — alto del panel persistente (2026-07-14, `feature/editor-panel-persistente`, en
+> `main` sin release):** el alto del panel inferior (transporte + timeline), redimensionable arrastrando
+> el divisor, ahora **se recuerda entre sesiones y entre clips**. Es una pref de UI del renderer →
+> `localStorage` (clave `gameclip.editor.panelHeight`, igual que `gameclip.session`), sin tocar main/IPC
+> ni el settings de captura. Lógica pura en `renderer/lib/editor-prefs.ts` (`clampPanelHeight`,
+> `panelMax`, `load/savePanelHeight`, best-effort): se guarda al **soltar** el arrastre y al abrir se
+> **acota** al alto de la ventana actual (un valor de una ventana mayor no deja el panel fuera de
+> pantalla). 715 tests verdes (+6). Fuera: persistir otras prefs del editor (zoom, volúmenes, reencuadre)
+> y sincronizar entre máquinas.
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
