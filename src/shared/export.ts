@@ -1,5 +1,6 @@
 // Dominio de exportación de clips: tipos y validación pura (sin Electron ni ffmpeg).
 
+import { keptDuration, type Segment } from './timeline';
 import { normalizeMutedTracks, normalizeTrackVolumes, type TrackVolumes } from './tracks';
 
 export type ExportFormat = 'mp4' | 'gif';
@@ -21,6 +22,11 @@ export interface ExportRequest {
    * sobre `mutedTracks`; una pista en 0 equivale a muteada.
    */
   trackVolumes?: TrackVolumes;
+  /**
+   * Segmentos conservados (editor avanzado, Fase 3): la salida los concatena. Con ≥2 segmentos hay
+   * cortes; `startSeconds/endSeconds` quedan como el rango exterior (primer inicio / último fin).
+   */
+  segments?: Segment[];
 }
 
 export type ExportStatus = 'done' | 'canceled' | 'error';
@@ -40,6 +46,26 @@ export interface ExportProgress {
 
 /** Duración mínima exportable: evita pedidos sin sentido por redondeo de sliders. */
 export const EXPORT_MIN_SECONDS = 0.5;
+
+/**
+ * Valida segmentos de origen no confiable (IPC): cada uno un rango finito con `end > start ≥ 0`,
+ * redondeado a centésimas y ordenado por inicio. Devuelve `undefined` si no hay array, si algún
+ * rango es inválido, o si la duración conservada no llega al mínimo (→ el export cae al rango simple).
+ */
+export function normalizeSegments(input: unknown): Segment[] | undefined {
+  if (!Array.isArray(input) || input.length === 0) return undefined;
+  const out: Segment[] = [];
+  for (const item of input) {
+    if (typeof item !== 'object' || item === null) return undefined;
+    const { start, end } = item as Record<string, unknown>;
+    if (typeof start !== 'number' || !Number.isFinite(start) || start < 0) return undefined;
+    if (typeof end !== 'number' || !Number.isFinite(end) || end <= start) return undefined;
+    out.push({ start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100 });
+  }
+  out.sort((a, b) => a.start - b.start);
+  if (keptDuration(out) < EXPORT_MIN_SECONDS) return undefined;
+  return out;
+}
 
 /**
  * Valida un request de origen no confiable (IPC). Lanza con mensaje claro si algo
@@ -83,5 +109,6 @@ export function normalizeExportRequest(input: unknown): ExportRequest {
     quality,
     ...('mutedTracks' in raw ? { mutedTracks: normalizeMutedTracks(raw.mutedTracks) } : {}),
     ...('trackVolumes' in raw ? { trackVolumes: normalizeTrackVolumes(raw.trackVolumes) } : {}),
+    ...(normalizeSegments(raw.segments) ? { segments: normalizeSegments(raw.segments) } : {}),
   };
 }

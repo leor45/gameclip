@@ -119,6 +119,67 @@ describe('buildFfmpegArgs — ganancias por pista', () => {
   });
 });
 
+describe('buildFfmpegArgs — cortes múltiples (concat, Fase 3)', () => {
+  const segs = [
+    { start: 0, end: 3 },
+    { start: 6, end: 10 },
+  ];
+
+  it('un solo segmento mantiene la ruta rápida -ss/-t (sin concat)', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      format: 'mp4',
+      quality: 'media',
+      segments: [{ start: 3.5, end: 10 }],
+    });
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+    expect(args.join(' ')).not.toContain('concat');
+  });
+
+  it('dos o más segmentos: split/trim de vídeo, asplit/atrim de audio y concat', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      format: 'mp4',
+      quality: 'media',
+      segments: segs,
+      audioGains: [
+        { index: 1, gain: 1 },
+        { index: 2, gain: 0.5 },
+      ],
+    });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+
+    // Sin seek de input (el trim del filtro selecciona los rangos).
+    expect(args).not.toContain('-ss');
+    expect(graph).toContain('[0:v]split=2[vs0][vs1]');
+    expect(graph).toContain('[vs0]trim=start=0.000:end=3.000,setpts=PTS-STARTPTS[v0]');
+    expect(graph).toContain('[vs1]trim=start=6.000:end=10.000,setpts=PTS-STARTPTS[v1]');
+    // La mezcla por ganancias se duplica y se recorta por segmento.
+    expect(graph).toContain('[mixfull]asplit=2[as0][as1]');
+    expect(graph).toContain('[as0]atrim=start=0.000:end=3.000,asetpts=PTS-STARTPTS[a0]');
+    expect(graph).toContain('[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]');
+    expect(args.join(' ')).toContain('-map [vout] -map [aout]');
+    expect(args).toContain('aac');
+  });
+
+  it('sin audio activo, concatena solo vídeo y sale con -an', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      format: 'mp4',
+      quality: 'media',
+      segments: segs,
+      audioGains: [
+        { index: 1, gain: 0 },
+        { index: 2, gain: 0 },
+      ],
+    });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('[v0][v1]concat=n=2:v=1:a=0[vout]');
+    expect(graph).not.toContain('amix');
+    expect(args).toContain('-an');
+  });
+});
+
 describe('buildFfmpegArgs — GIF', () => {
   it('usa paleta optimizada y fps/ancho del preset', () => {
     const args = buildFfmpegArgs({ ...base, format: 'gif', quality: 'media' });

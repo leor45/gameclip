@@ -1922,6 +1922,14 @@ body {
   flex: 1;
 }
 
+/* Separador vertical entre grupos de la barra de herramientas. */
+.eav-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--border);
+}
+
 .eav-trim-info {
   font-size: 12px;
   color: var(--text-dim);
@@ -1959,6 +1967,34 @@ body {
   border-left: 1px solid var(--border);
   height: 18px;
   pointer-events: none;
+}
+
+/* Barra de cortes: un bloque por segmento conservado (Fase 3). */
+.eav-segbar {
+  position: relative;
+  height: 16px;
+  margin: 4px 0 2px;
+}
+
+.eav-seg {
+  position: absolute;
+  top: 0;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(91, 127, 219, 0.5);
+  border-radius: 4px;
+  background: rgba(91, 127, 219, 0.28);
+  cursor: pointer;
+}
+
+.eav-seg:hover {
+  background: rgba(91, 127, 219, 0.42);
+}
+
+.eav-seg.is-selected {
+  border-color: var(--accent);
+  background: rgba(245, 197, 24, 0.3);
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .eav-tracks {

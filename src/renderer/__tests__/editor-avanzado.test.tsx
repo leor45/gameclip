@@ -5,6 +5,12 @@ import EditorAvanzado from '../views/EditorAvanzado';
 import { crearClip } from './helpers';
 import { crearGameclipMock } from './setup';
 
+// jsdom no implementa PointerEvent; sin él los eventos de puntero pierden clientX (y el seek por la
+// regla no movería el playhead). MouseEvent sí lleva coordenadas.
+if (typeof (globalThis as unknown as { PointerEvent?: unknown }).PointerEvent === 'undefined') {
+  (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = MouseEvent;
+}
+
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
 const mock = () => window.gameclip as unknown as GameclipMock;
 
@@ -122,6 +128,63 @@ describe('EditorAvanzado — reproducción', () => {
     await screen.findByRole('button', { name: 'Pausar' });
     // El motor es no-op sin Web Audio: no se extrae audio del main.
     expect(mock().editor.getTrackAudio).not.toHaveBeenCalled();
+  });
+});
+
+describe('EditorAvanzado — cortes múltiples (Fase 3)', () => {
+  // Sin layout real (jsdom), el timeline cae a 24 px/s: clientX 240 → 10 s, 720 → 30 s.
+  function seekRuler(clientX: number) {
+    fireEvent.pointerDown(screen.getByLabelText('Posición de reproducción'), { clientX });
+  }
+
+  it('dividir crea segmentos y deshacer/rehacer los revierte y reaplica', async () => {
+    await prepararClip(); // duración 60 s
+    seekRuler(240); // playhead a 10 s
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    expect(screen.getByText(/2 segmentos/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deshacer' }));
+    expect(screen.queryByText(/segmentos/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rehacer' }));
+    expect(screen.getByText(/2 segmentos/)).toBeInTheDocument();
+  });
+
+  it('borrar un segmento del medio y renderizar manda esos segmentos (con un hueco)', async () => {
+    await prepararClip();
+    seekRuler(240); // 10 s
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    seekRuler(720); // 30 s
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    // Tres segmentos: [0,10] [10,30] [30,60]. Borra el del medio.
+    fireEvent.click(screen.getByRole('button', { name: 'Segmento 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Borrar segmento' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const botones = screen.getAllByRole('button', { name: 'Renderizar vídeo' });
+    fireEvent.click(botones[botones.length - 1]);
+
+    await waitFor(() => expect(mock().exporter.run).toHaveBeenCalled());
+    expect(mock().exporter.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clipId: 7,
+        startSeconds: 0,
+        endSeconds: 60,
+        segments: [
+          { start: 0, end: 10 },
+          { start: 30, end: 60 },
+        ],
+      }),
+    );
+  });
+
+  it('sin cortes (un solo segmento) el render no manda segments', async () => {
+    await prepararClip();
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const botones = screen.getAllByRole('button', { name: 'Renderizar vídeo' });
+    fireEvent.click(botones[botones.length - 1]);
+    await waitFor(() => expect(mock().exporter.run).toHaveBeenCalled());
+    expect(mock().exporter.run.mock.calls[0][0]).not.toHaveProperty('segments');
   });
 });
 

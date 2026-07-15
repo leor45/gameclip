@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeExportRequest } from '../export';
+import { normalizeExportRequest, normalizeSegments } from '../export';
 
 const valido = {
   clipId: 3,
@@ -33,5 +33,42 @@ describe('normalizeExportRequest', () => {
     expect(() => normalizeExportRequest({ ...valido, format: 'avi' })).toThrow(/formato/i);
     expect(() => normalizeExportRequest({ ...valido, quality: 'ultra' })).toThrow(/calidad/i);
     expect(() => normalizeExportRequest(null)).toThrow(/inválido/i);
+  });
+
+  it('incluye segmentos válidos (ordenados y redondeados) cuando vienen', () => {
+    const req = normalizeExportRequest({
+      ...valido,
+      segments: [
+        { start: 6, end: 10 },
+        { start: 0, end: 3.004 },
+      ],
+    });
+    expect(req.segments).toEqual([
+      { start: 0, end: 3 },
+      { start: 6, end: 10 },
+    ]);
+  });
+});
+
+describe('normalizeSegments', () => {
+  it('ordena por inicio y redondea a centésimas', () => {
+    expect(
+      normalizeSegments([
+        { start: 6, end: 10 },
+        { start: 0, end: 3.006 },
+      ]),
+    ).toEqual([
+      { start: 0, end: 3.01 },
+      { start: 6, end: 10 },
+    ]);
+  });
+
+  it('descarta entradas inválidas o duración conservada bajo el mínimo', () => {
+    expect(normalizeSegments([])).toBeUndefined();
+    expect(normalizeSegments('nope')).toBeUndefined();
+    expect(normalizeSegments([{ start: 5, end: 5 }])).toBeUndefined(); // end <= start
+    expect(normalizeSegments([{ start: -1, end: 4 }])).toBeUndefined(); // start < 0
+    expect(normalizeSegments([{ start: 0, end: 0.2 }])).toBeUndefined(); // muy corto
+    expect(normalizeSegments([{ start: 0, end: 'x' }])).toBeUndefined();
   });
 });

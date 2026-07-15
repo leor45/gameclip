@@ -3,14 +3,86 @@
 
 import { clampTrackGain, type TrackVolumes } from './tracks';
 
-/** Recorte: un único rango [start, end] en segundos (Fase 1; Fase 3 pasará a varios segmentos). */
-export interface Trim {
+/**
+ * Un segmento **conservado** de la edición, en tiempo de origen (Fase 3). La edición es una lista
+ * ordenada y sin solape de segmentos; los huecos entre ellos son lo borrado. La salida (preview y
+ * render) es la concatenación de los segmentos. Un recorte simple = un único segmento.
+ */
+export interface Segment {
   start: number;
   end: number;
 }
 
-/** Duración mínima de un recorte, para que los sliders/arrastres no dejen un rango sin sentido. */
+/** Duración mínima de un segmento, para que dividir/arrastrar no deje un trozo sin sentido. */
 export const MIN_TRIM_SECONDS = 0.5;
+
+/** Edición inicial: todo el clip como un único segmento. */
+export function initialSegments(duration: number): Segment[] {
+  return [{ start: 0, end: Math.max(0, duration) }];
+}
+
+/** Suma de las longitudes de los segmentos: la duración de la salida (lo conservado). */
+export function keptDuration(segments: Segment[]): number {
+  return segments.reduce((total, s) => total + Math.max(0, s.end - s.start), 0);
+}
+
+/** Índice del segmento que contiene `t` (`start ≤ t < end`), o −1 si cae en un hueco o fuera. */
+export function segmentAt(segments: Segment[], t: number): number {
+  return segments.findIndex((s) => t >= s.start && t < s.end);
+}
+
+/**
+ * Divide en `t` el segmento que lo contiene. No divide (devuelve la lista igual) si `t` no cae dentro
+ * de ningún segmento o si algún trozo quedaría por debajo de `MIN_TRIM_SECONDS`.
+ */
+export function splitAt(segments: Segment[], t: number): Segment[] {
+  const i = segments.findIndex((s) => t > s.start && t < s.end);
+  if (i < 0) return segments;
+  const s = segments[i];
+  if (t - s.start < MIN_TRIM_SECONDS || s.end - t < MIN_TRIM_SECONDS) return segments;
+  return [
+    ...segments.slice(0, i),
+    { start: s.start, end: t },
+    { start: t, end: s.end },
+    ...segments.slice(i + 1),
+  ];
+}
+
+/** Borra el segmento en `index` (crea un hueco). Nunca deja la lista vacía. */
+export function deleteSegment(segments: Segment[], index: number): Segment[] {
+  if (index < 0 || index >= segments.length || segments.length <= 1) return segments;
+  return segments.filter((_, i) => i !== index);
+}
+
+/**
+ * Siguiente tiempo **conservado** ≥ `t`, para el ripple en reproducción: si `t` está dentro de un
+ * segmento, `t`; si cae en un hueco, el inicio del siguiente segmento; si pasó el último, `null`.
+ */
+export function nextKeptTime(segments: Segment[], t: number): number | null {
+  for (const s of segments) {
+    if (t < s.start) return s.start; // t está antes de este segmento (en un hueco)
+    if (t < s.end) return t; // t está dentro de este segmento
+  }
+  return null; // pasado el último segmento
+}
+
+/** Mueve el inicio del recorte (borde del primer segmento), sin cruzar su fin (deja el mínimo). */
+export function setSegmentsStart(segments: Segment[], value: number, duration: number): Segment[] {
+  const first = segments[0];
+  if (!first) return segments;
+  const tope = Math.max(0, Math.min(first.end, duration) - MIN_TRIM_SECONDS);
+  const start = Math.max(0, Math.min(value, tope));
+  return [{ start, end: first.end }, ...segments.slice(1)];
+}
+
+/** Mueve el fin del recorte (borde del último segmento), sin cruzar su inicio ni pasar la duración. */
+export function setSegmentsEnd(segments: Segment[], value: number, duration: number): Segment[] {
+  const last = segments[segments.length - 1];
+  if (!last) return segments;
+  const piso = Math.min(duration, last.start + MIN_TRIM_SECONDS);
+  const end = Math.min(duration, Math.max(value, piso));
+  return [...segments.slice(0, -1), { start: last.start, end }];
+}
 
 /**
  * Zoom como **factor sobre el "fit"** al ancho: 1× = el clip llena todo el ancho; 2× = el doble
@@ -58,18 +130,6 @@ export function pxToSeconds(px: number, pxPerSecond: number): number {
 export function clampTime(seconds: number, duration: number): number {
   if (!Number.isFinite(seconds)) return 0;
   return Math.min(Math.max(0, duration), Math.max(0, seconds));
-}
-
-/** Mueve el inicio del recorte, sin cruzar el fin (deja al menos MIN_TRIM_SECONDS). */
-export function setTrimStart(trim: Trim, value: number, duration: number): Trim {
-  const tope = Math.max(0, Math.min(trim.end, duration) - MIN_TRIM_SECONDS);
-  return { start: Math.max(0, Math.min(value, tope)), end: trim.end };
-}
-
-/** Mueve el fin del recorte, sin cruzar el inicio (deja al menos MIN_TRIM_SECONDS). */
-export function setTrimEnd(trim: Trim, value: number, duration: number): Trim {
-  const piso = Math.min(duration, trim.start + MIN_TRIM_SECONDS);
-  return { start: trim.start, end: Math.min(duration, Math.max(value, piso)) };
 }
 
 /** Fija el volumen (ganancia acotada) de una pista, devolviendo un mapa nuevo. */

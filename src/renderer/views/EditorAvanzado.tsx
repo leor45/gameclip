@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Clip } from '@shared/library';
 import { formatDuration } from '@shared/library';
@@ -8,14 +8,20 @@ import { mutedToVolumes, selectableTracks, trackGain, trackKey, trackLabel } fro
 import {
   clampTime,
   clampZoomFactor,
+  deleteSegment,
+  initialSegments,
+  keptDuration,
+  nextKeptTime,
+  segmentAt,
+  setSegmentsEnd,
+  setSegmentsStart,
   setTrackVolume,
-  setTrimEnd,
-  setTrimStart,
+  splitAt,
   ZOOM_FACTOR_MAX,
   ZOOM_FACTOR_MIN,
   ZOOM_FACTOR_STEP,
-  type Trim,
 } from '@shared/timeline';
+import { editReducer, initEditState } from './editor-avanzado-edit';
 import { clipMediaUrl } from '../lib/media';
 import { LivePreviewAudio, effectiveGain, shouldResync } from '../lib/live-audio';
 import Timeline from '../components/editor-avanzado/Timeline';
@@ -30,7 +36,10 @@ export default function EditorAvanzado() {
   const [clip, setClip] = useState<Clip | null>(null);
   const [noEncontrado, setNoEncontrado] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [trim, setTrim] = useState<Trim>({ start: 0, end: 0 });
+  // Edición por segmentos (Fase 3) con historial de deshacer/rehacer.
+  const [edit, dispatch] = useReducer(editReducer, initEditState(initialSegments(0)));
+  const segments = edit.segments;
+  const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
   const [tracks, setTracks] = useState<ClipAudioTrack[]>([]);
   const [waveforms, setWaveforms] = useState<TrackWaveform[]>([]);
   const [volumes, setVolumes] = useState<TrackVolumes>({});
@@ -62,6 +71,71 @@ export default function EditorAvanzado() {
     };
   }, []);
 
+  // Refs con el estado vivo, para que los listeners (rueda del teclado, rAF) no se re-suscriban.
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const playheadRef = useRef(0);
+  playheadRef.current = playhead;
+  const selectedRef = useRef<number | null>(null);
+  selectedRef.current = selectedSegment;
+
+  // Operaciones de corte (entran en el historial). Estables: leen el estado vivo por refs.
+  const splitAtPlayhead = useCallback(() => {
+    const cur = segmentsRef.current;
+    const next = splitAt(cur, playheadRef.current);
+    if (next !== cur) {
+      dispatch({ type: 'commit', segments: next });
+      setSelectedSegment(null);
+    }
+  }, []);
+
+  const deleteSelected = useCallback(() => {
+    const sel = selectedRef.current;
+    if (sel == null) return;
+    const cur = segmentsRef.current;
+    const next = deleteSegment(cur, sel);
+    if (next !== cur) {
+      dispatch({ type: 'commit', segments: next });
+      setSelectedSegment(null);
+    }
+  }, []);
+
+  const undo = useCallback(() => {
+    dispatch({ type: 'undo' });
+    setSelectedSegment(null);
+  }, []);
+  const redo = useCallback(() => {
+    dispatch({ type: 'redo' });
+    setSelectedSegment(null);
+  }, []);
+
+  // Atajos de teclado del editor: dividir (S), borrar (Supr), deshacer/rehacer (Ctrl+Z / Ctrl+Y /
+  // Ctrl+Shift+Z). Se ignora si el foco está en un control de texto.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (ctrl && k === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (ctrl && k === 'y') {
+        e.preventDefault();
+        redo();
+      } else if (!ctrl && k === 's') {
+        e.preventDefault();
+        splitAtPlayhead();
+      } else if (k === 'delete' || k === 'backspace') {
+        e.preventDefault();
+        deleteSelected();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [splitAtPlayhead, deleteSelected, undo, redo]);
+
   useEffect(() => {
     if (!id || !Number.isInteger(id) || id <= 0) return;
     let vivo = true;
@@ -74,7 +148,7 @@ export default function EditorAvanzado() {
         if (c) {
           const d = c.durationSeconds ?? 0;
           setDuration(d);
-          setTrim({ start: 0, end: d });
+          dispatch({ type: 'reset', segments: initialSegments(d) });
           setVolumes(mutedToVolumes(c.mutedTracks));
         }
       })
@@ -95,7 +169,7 @@ export default function EditorAvanzado() {
   // Progreso del render (evento del main).
   useEffect(() => window.gameclip.exporter.onProgress(({ ratio }) => setProgress(ratio)), []);
 
-  // El playhead sigue al vídeo mientras suena.
+  // El playhead sigue al vídeo mientras suena; y salta los huecos borrados (ripple en la preview).
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -103,9 +177,26 @@ export default function EditorAvanzado() {
       const v = videoRef.current;
       const engine = engineRef.current;
       if (v) {
-        setPlayhead(v.currentTime);
-        // El vídeo manda: si el audio se separó del vídeo, se re-sincroniza (raro con relojes cerca).
-        if (engine && shouldResync(engine.audioTime(), v.currentTime)) engine.seek(v.currentTime);
+        const t = v.currentTime;
+        const segs = segmentsRef.current;
+        // Ripple: si el playhead entró en un hueco, salta al siguiente segmento; si pasó el final, para.
+        if (segs.length > 0 && segmentAt(segs, t) < 0) {
+          const next = nextKeptTime(segs, t);
+          if (next === null) {
+            v.pause();
+            engine?.stop();
+            setPlaying(false);
+            setPlayhead(segs[segs.length - 1].end);
+            return; // no reprograma: al pasar playing a false, el efecto se limpia
+          }
+          v.currentTime = next;
+          engine?.seek(next);
+          setPlayhead(next);
+        } else {
+          setPlayhead(t);
+          // El vídeo manda: si el audio se separó del vídeo, se re-sincroniza (raro con relojes cerca).
+          if (engine && shouldResync(engine.audioTime(), t)) engine.seek(t);
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -139,7 +230,7 @@ export default function EditorAvanzado() {
     const d = videoRef.current?.duration;
     if (d && Number.isFinite(d) && duration === 0) {
       setDuration(d);
-      setTrim({ start: 0, end: d });
+      dispatch({ type: 'reset', segments: initialSegments(d) });
     }
   }
 
@@ -251,11 +342,13 @@ export default function EditorAvanzado() {
     }
     const res = await window.gameclip.exporter.run({
       clipId: clip.id,
-      startSeconds: trim.start,
-      endSeconds: trim.end,
+      startSeconds: segments[0].start,
+      endSeconds: segments[segments.length - 1].end,
       format: 'mp4',
       quality,
       trackVolumes,
+      // Solo se mandan segmentos si hay cortes (2+); con uno, el rango simple basta.
+      ...(segments.length >= 2 ? { segments } : {}),
     });
     setRendering(false);
     if (res.status === 'done') {
@@ -349,8 +442,45 @@ export default function EditorAvanzado() {
           {formatDuration(playhead)} / {formatDuration(duration)}
         </span>
         {audioLoading && <span className="eav-audio-loading">Cargando audio…</span>}
+        <span className="eav-toolbar-sep" />
+        <button type="button" className="eav-btn" onClick={splitAtPlayhead} aria-label="Dividir" title="Dividir en el cursor (S)">
+          ✂ Dividir
+        </button>
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={deleteSelected}
+          disabled={selectedSegment === null || segments.length <= 1}
+          aria-label="Borrar segmento"
+          title="Borrar el segmento seleccionado (Supr)"
+        >
+          🗑 Borrar
+        </button>
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={undo}
+          disabled={edit.past.length === 0}
+          aria-label="Deshacer"
+          title="Deshacer (Ctrl+Z)"
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={redo}
+          disabled={edit.future.length === 0}
+          aria-label="Rehacer"
+          title="Rehacer (Ctrl+Y)"
+        >
+          ↷
+        </button>
         <span className="eav-toolbar-spacer" />
-        <span className="eav-trim-info">Recorte: {formatDuration(Math.max(0, trim.end - trim.start))}</span>
+        <span className="eav-trim-info">
+          Duración: {formatDuration(keptDuration(segments))}
+          {segments.length > 1 && ` · ${segments.length} segmentos`}
+        </span>
         <button
           type="button"
           className="eav-btn"
@@ -375,10 +505,14 @@ export default function EditorAvanzado() {
         duration={duration}
         zoomFactor={zoomFactor}
         playhead={playhead}
-        trim={trim}
+        segments={segments}
+        selectedSegment={selectedSegment}
         onSeek={seek}
-        onTrimStart={(s) => setTrim((t) => setTrimStart(t, s, duration))}
-        onTrimEnd={(s) => setTrim((t) => setTrimEnd(t, s, duration))}
+        onSelectSegment={(i) => setSelectedSegment((prev) => (prev === i ? null : i))}
+        onTrimBegin={() => dispatch({ type: 'beginDrag' })}
+        onTrimCommit={() => dispatch({ type: 'endDrag' })}
+        onTrimStart={(s) => dispatch({ type: 'live', segments: setSegmentsStart(segmentsRef.current, s, duration) })}
+        onTrimEnd={(s) => dispatch({ type: 'live', segments: setSegmentsEnd(segmentsRef.current, s, duration) })}
       >
         <div className="eav-track eav-track-video">
           <div className="eav-track-head">

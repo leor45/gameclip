@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { rmSync } from 'node:fs';
 import type { ExportResult } from '@shared/export';
+import { keptDuration } from '@shared/timeline';
 import type { ClipAudioTrack, TrackWaveform } from '@shared/tracks';
 import { selectableTracks, trackKey } from '@shared/tracks';
 import { runAudioEdit } from './audio-edit';
@@ -99,7 +100,11 @@ export class ExportManager extends EventEmitter {
     }
     this.current = child;
 
-    const durationSeconds = job.endSeconds - job.startSeconds;
+    // Con cortes múltiples la salida dura la suma de los segmentos conservados; si no, el rango.
+    const durationSeconds =
+      job.segments && job.segments.length > 0
+        ? keptDuration(job.segments)
+        : job.endSeconds - job.startSeconds;
     let stderrTail = '';
 
     child.stdout.on('data', (chunk: Buffer | string) => {

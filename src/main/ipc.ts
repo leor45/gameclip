@@ -191,15 +191,21 @@ export function registerIpcHandlers(
         if (tracks.length > 0) audioTracks = activeTrackIndexes(tracks, request.mutedTracks);
       }
 
+      // Con cortes múltiples (Fase 3), el rango exterior sale del primer/último segmento.
+      const segments = request.segments;
+      const startSeconds = segments ? segments[0].start : request.startSeconds;
+      const endSeconds = segments ? segments[segments.length - 1].end : request.endSeconds;
+
       const resultado = await exporter.run({
         inputPath: clip.filePath,
         outputPath: eleccion.filePath,
-        startSeconds: request.startSeconds,
-        endSeconds: request.endSeconds,
+        startSeconds,
+        endSeconds,
         format: request.format,
         quality: request.quality,
         audioTracks,
         audioGains,
+        segments,
       });
       if (resultado.status === 'done' && resultado.outputPath) {
         lastExportPath = resultado.outputPath;
