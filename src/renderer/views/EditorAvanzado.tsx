@@ -17,6 +17,7 @@ import {
   type Trim,
 } from '@shared/timeline';
 import { clipMediaUrl } from '../lib/media';
+import { LivePreviewAudio, effectiveGain, shouldResync } from '../lib/live-audio';
 import Timeline from '../components/editor-avanzado/Timeline';
 import AudioTrackRow from '../components/editor-avanzado/AudioTrackRow';
 import RenderDialog from '../components/editor-avanzado/RenderDialog';
@@ -37,6 +38,7 @@ export default function EditorAvanzado() {
   const [zoomFactor, setZoomFactor] = useState(ZOOM_FACTOR_MIN);
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
   // Alto del panel inferior (transporte + timeline). Redimensionable arrastrando el divisor; el
   // vídeo (flex) ocupa el resto.
   const [panelH, setPanelH] = useState(300);
@@ -48,6 +50,17 @@ export default function EditorAvanzado() {
   const [done, setDone] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Motor de audio en vivo (Fase 2): reconstruye la mezcla desde las pistas desglosadas, colgado del
+  // reloj del <video> mudo. No-op sin AudioContext (jsdom/tests).
+  const engineRef = useRef<LivePreviewAudio | null>(null);
+  useEffect(() => {
+    const engine = new LivePreviewAudio();
+    engineRef.current = engine;
+    return () => {
+      engine.dispose();
+      engineRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!id || !Number.isInteger(id) || id <= 0) return;
@@ -88,7 +101,12 @@ export default function EditorAvanzado() {
     let raf = 0;
     const tick = () => {
       const v = videoRef.current;
-      if (v) setPlayhead(v.currentTime);
+      const engine = engineRef.current;
+      if (v) {
+        setPlayhead(v.currentTime);
+        // El vídeo manda: si el audio se separó del vídeo, se re-sincroniza (raro con relojes cerca).
+        if (engine && shouldResync(engine.audioTime(), v.currentTime)) engine.seek(v.currentTime);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -100,6 +118,7 @@ export default function EditorAvanzado() {
       const s = clampTime(seconds, duration);
       const v = videoRef.current;
       if (v) v.currentTime = s;
+      engineRef.current?.seek(s);
       setPlayhead(s);
     },
     [duration],
@@ -124,14 +143,51 @@ export default function EditorAvanzado() {
     }
   }
 
-  function togglePlay() {
+  // Carga (perezosa, en el primer play) el audio por pista y devuelve si el audio EN VIVO va a sonar.
+  // Si no (sin Web Audio, sin pistas, o ninguna decodificó), el editor cae a la mezcla original del
+  // <video> — nunca queda en silencio total.
+  async function ensureAudioLoaded(): Promise<boolean> {
+    const engine = engineRef.current;
+    if (!engine || !engine.enabled || tracks.length === 0) return false;
+    if (!engine.isLoaded) {
+      setAudioLoading(true);
+      try {
+        await engine.load(
+          tracks.map((t) => trackKey(t)),
+          (key) => {
+            const track = tracks.find((t) => trackKey(t) === key);
+            return track && id
+              ? window.gameclip.editor.getTrackAudio(id, track.index)
+              : Promise.resolve(new ArrayBuffer(0));
+          },
+        );
+      } finally {
+        setAudioLoading(false);
+      }
+    }
+    // Aplica los volúmenes actuales antes de que suene (removed → 0).
+    for (const t of tracks) {
+      const key = trackKey(t);
+      engine.setGain(key, effectiveGain(trackGain(volumes, key), removed.has(key)));
+    }
+    return engine.hasBuffers();
+  }
+
+  async function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
-      void v.play().catch(() => undefined);
+      engineRef.current?.resume(); // dentro del gesto de usuario (política de autoplay)
+      const live = await ensureAudioLoaded();
+      // Con audio en vivo, el <video> va mudo (lo pone el motor). Si no, suena la mezcla original.
+      v.muted = live;
+      // `play()` puede devolver undefined en algunos entornos (jsdom): se envuelve para no romper.
+      void Promise.resolve(v.play()).catch(() => undefined);
+      if (live) engineRef.current?.play(v.currentTime);
       setPlaying(true);
     } else {
       v.pause();
+      engineRef.current?.stop();
       setPlaying(false);
     }
   }
@@ -142,6 +198,7 @@ export default function EditorAvanzado() {
       v.pause();
       v.currentTime = 0;
     }
+    engineRef.current?.stop();
     setPlaying(false);
     setPlayhead(0);
   }
@@ -166,15 +223,18 @@ export default function EditorAvanzado() {
 
   function setGain(key: string, gain: number) {
     setVolumes((prev) => setTrackVolume(prev, key, gain));
+    engineRef.current?.setGain(key, effectiveGain(gain, removed.has(key)));
   }
 
   function toggleRemove(key: string) {
+    const willRemove = !removed.has(key);
     setRemoved((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (willRemove) next.add(key);
+      else next.delete(key);
       return next;
     });
+    engineRef.current?.setGain(key, willRemove ? 0 : trackGain(volumes, key));
   }
 
   async function render(quality: ExportQuality) {
@@ -183,10 +243,11 @@ export default function EditorAvanzado() {
     setProgress(0);
     setRenderError(null);
     setDone(false);
+    // Misma ganancia efectiva que oye la preview en vivo (Fase 2): garantiza preview = render.
     const trackVolumes: TrackVolumes = {};
     for (const t of tracks) {
       const k = trackKey(t);
-      trackVolumes[k] = removed.has(k) ? 0 : trackGain(volumes, k);
+      trackVolumes[k] = effectiveGain(trackGain(volumes, k), removed.has(k));
     }
     const res = await window.gameclip.exporter.run({
       clipId: clip.id,
@@ -247,7 +308,10 @@ export default function EditorAvanzado() {
           className="eav-video"
           src={clipMediaUrl(id)}
           onLoadedMetadata={onMetadata}
-          onEnded={() => setPlaying(false)}
+          onEnded={() => {
+            engineRef.current?.stop();
+            setPlaying(false);
+          }}
         />
         {done && (
           <div className="eav-done">
@@ -269,7 +333,13 @@ export default function EditorAvanzado() {
 
       <div className="eav-bottom" style={{ height: panelH }}>
         <div className="eav-toolbar">
-        <button type="button" className="eav-btn" onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
+        <button
+          type="button"
+          className="eav-btn"
+          onClick={() => void togglePlay()}
+          disabled={audioLoading}
+          aria-label={playing ? 'Pausar' : 'Reproducir'}
+        >
           {playing ? '❚❚' : '▶'}
         </button>
         <button type="button" className="eav-btn" onClick={stop} aria-label="Detener">
@@ -278,6 +348,7 @@ export default function EditorAvanzado() {
         <span className="eav-time">
           {formatDuration(playhead)} / {formatDuration(duration)}
         </span>
+        {audioLoading && <span className="eav-audio-loading">Cargando audio…</span>}
         <span className="eav-toolbar-spacer" />
         <span className="eav-trim-info">Recorte: {formatDuration(Math.max(0, trim.end - trim.start))}</span>
         <button

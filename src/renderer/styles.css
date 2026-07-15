@@ -1913,6 +1913,11 @@ body {
   color: var(--text-dim);
 }
 
+.eav-audio-loading {
+  font-size: 12px;
+  color: var(--accent);
+}
+
 .eav-toolbar-spacer {
   flex: 1;
 }

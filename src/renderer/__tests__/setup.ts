@@ -117,6 +117,7 @@ export function crearGameclipMock() {
     editor: {
       getAudioTracks: vi.fn().mockResolvedValue([]),
       getWaveforms: vi.fn().mockResolvedValue([]),
+      getTrackAudio: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
       saveAudioEdit: vi.fn().mockResolvedValue({ status: 'done' }),
     },
     overlay: {

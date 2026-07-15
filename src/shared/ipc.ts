@@ -49,6 +49,7 @@ export const IpcChannel = {
   ExportShowLast: 'export:show-last',
   ClipGetAudioTracks: 'clip:get-audio-tracks',
   ClipGetAudioWaveforms: 'clip:get-audio-waveforms',
+  ClipGetTrackAudio: 'clip:get-track-audio',
   ClipSaveAudioEdit: 'clip:save-audio-edit',
 } as const;
 
@@ -139,6 +140,11 @@ export interface IpcContract {
   [IpcChannel.ClipGetAudioTracks]: { request: { id: number }; response: ClipAudioTrack[] };
   /** Ondas (espectros) por pista seleccionable del clip; best-effort (vacío o pistas sin picos). */
   [IpcChannel.ClipGetAudioWaveforms]: { request: { id: number }; response: TrackWaveform[] };
+  /** Bytes (AAC/ADTS) de una pista seleccionable, para oírla en vivo; vacío si no se pudo. */
+  [IpcChannel.ClipGetTrackAudio]: {
+    request: { id: number; trackIndex: number };
+    response: ArrayBuffer;
+  };
   /** Reescribe la mezcla del clip guardado con las pistas marcadas (no borra pistas). */
   [IpcChannel.ClipSaveAudioEdit]: {
     request: { clipId: number; mutedTracks: string[] };
@@ -215,6 +221,11 @@ export interface EditorApi {
   getAudioTracks(id: number): Promise<ClipAudioTrack[]>;
   /** Ondas por pista seleccionable (para el editor avanzado); best-effort. */
   getWaveforms(id: number): Promise<TrackWaveform[]>;
+  /**
+   * Bytes (AAC/ADTS) de una pista seleccionable, para reconstruir la mezcla en vivo (Fase 2). El
+   * `trackIndex` es el ordinal `-map 0:a:N`. Best-effort: `ArrayBuffer` vacío si no se pudo.
+   */
+  getTrackAudio(id: number, trackIndex: number): Promise<ArrayBuffer>;
   /**
    * Guarda el edit de audio sobre el clip de la biblioteca: su mezcla pasa a llevar solo las
    * pistas marcadas. Las muteadas siguen en el archivo (el edit es reversible).
