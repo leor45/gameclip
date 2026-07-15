@@ -1902,9 +1902,12 @@ body {
   justify-content: center;
 }
 
+/* Reencuadrado: tamaño explícito (inline), el <video> va posicionado en absoluto y se recorta. */
 .eav-frame.is-reframed {
+  display: block;
   overflow: hidden;
   background: #000;
+  flex: none;
 }
 
 .eav-frame.can-pan {
