@@ -1,6 +1,12 @@
 import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { GAME_POLL_INTERVAL_MS, findRunningGamesMatch } from '@shared/games';
+import {
+  GAME_POLL_INTERVAL_MS,
+  KNOWN_GAME_PROCESSES,
+  UNKNOWN_EXE_REFRESH_COOLDOWN_MS,
+  exeKey,
+  findRunningGamesMatch,
+} from '@shared/games';
 import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
 
 export interface GameDetectorOptions {
@@ -13,6 +19,8 @@ export interface GameDetectorOptions {
   customGames?: CustomGame[];
   /** Juegos instalados que encontró la app en los launchers (`pioneergame` → `ARC Raiders`). */
   index?: GameIndex;
+  /** Tope de frecuencia del re-índice por novedad; inyectable para tests. */
+  unknownRefreshCooldownMs?: number;
 }
 
 /**
@@ -37,6 +45,14 @@ export class GameDetector extends EventEmitter {
   /** Juegos vistos en el último estado confirmado (el que se emitió). */
   running: RunningGameMatch[] = [];
 
+  // Re-índice por novedad: la primera pasada solo fija la línea base; después, un ejecutable nuevo que
+  // la app no reconoce pide reconstruir el índice ('unknown-executable'), con throttle.
+  private readonly unknownCooldownMs: number;
+  private baselineTaken = false;
+  private readonly seenProcesses = new Set<string>();
+  private lastUnknownEmit = Number.NEGATIVE_INFINITY;
+  private pendingUnknown = false;
+
   constructor(options: GameDetectorOptions = {}) {
     super();
     this.list = options.listProcessNames ?? listProcessNamesWindows;
@@ -44,6 +60,7 @@ export class GameDetector extends EventEmitter {
     this.missesBeforeStop = options.missesBeforeStop ?? 2;
     this.customGames = options.customGames ?? [];
     this.index = options.index ?? {};
+    this.unknownCooldownMs = options.unknownRefreshCooldownMs ?? UNKNOWN_EXE_REFRESH_COOLDOWN_MS;
   }
 
   /** Actualiza los juegos manuales (los ajustes cambiaron); se aplican en el próximo sondeo. */
@@ -71,7 +88,9 @@ export class GameDetector extends EventEmitter {
     if (this.polling) return; // un sondeo lento no debe apilarse con el siguiente
     this.polling = true;
     try {
-      const matches = findRunningGamesMatch(await this.list(), {
+      const names = await this.list();
+      this.checkNovelty(names);
+      const matches = findRunningGamesMatch(names, {
         customGames: this.customGames,
         index: this.index,
       });
@@ -101,6 +120,52 @@ export class GameDetector extends EventEmitter {
     if (next.length !== this.running.length) return true;
     const prev = new Set(this.running.map((g) => g.name));
     return next.some((g) => !prev.has(g.name));
+  }
+
+  /**
+   * Novedad para el re-índice. La primera pasada solo fija la línea base: los procesos ya en marcha al
+   * arrancar los cubre el `refreshGameIndex()` de arranque, así que aquí solo interesa lo que aparece
+   * DESPUÉS —"lancé un juego con la app abierta"—. Un ejecutable nuevo que la app no reconoce (ni en el
+   * índice de launchers, ni en la lista curada, ni en los manuales) se trata como posible juego recién
+   * instalado y pide un re-índice con `'unknown-executable'`.
+   *
+   * Barato y acotado: cada ejecutable dispara como mucho una vez (set de vistos), y no se emite más de
+   * una vez por `unknownCooldownMs`. Un candidato que cae dentro del cooldown queda pendiente y dispara
+   * en cuanto expira, para no perderse un juego lanzado justo tras otro re-índice.
+   */
+  private checkNovelty(processNames: string[]): void {
+    const keys = processNames.map(exeKey).filter(Boolean);
+    if (!this.baselineTaken) {
+      for (const key of keys) this.seenProcesses.add(key);
+      this.baselineTaken = true;
+      return;
+    }
+
+    let candidato = this.pendingUnknown;
+    for (const key of keys) {
+      if (this.seenProcesses.has(key)) continue;
+      this.seenProcesses.add(key);
+      if (!this.esReconocido(key)) candidato = true;
+    }
+    if (!candidato) return;
+
+    const ahora = Date.now();
+    if (ahora - this.lastUnknownEmit < this.unknownCooldownMs) {
+      this.pendingUnknown = true; // sale al expirar el cooldown
+      return;
+    }
+    this.lastUnknownEmit = ahora;
+    this.pendingUnknown = false;
+    this.emit('unknown-executable');
+  }
+
+  /** ¿La app ya sabe que esta clave es un juego? Mismo criterio que `findRunningGamesMatch`. */
+  private esReconocido(key: string): boolean {
+    return (
+      key in this.index ||
+      key in KNOWN_GAME_PROCESSES ||
+      this.customGames.some((g) => exeKey(g.executable) === key)
+    );
   }
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CustomGame, RunningGameMatch } from '@shared/games';
+import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
 import { GameDetector } from '../capture/game-detector';
 
 // El sondeo es async: tras avanzar el timer hay que drenar las microtareas pendientes.
@@ -157,5 +157,109 @@ describe('GameDetector (multi-juego)', () => {
     const antes = llamadas;
     await avanzar(5000);
     expect(llamadas).toBe(antes);
+  });
+});
+
+describe('GameDetector — re-índice por novedad (unknown-executable)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function crear(
+    procesosPorSondeo: string[][],
+    opts: { cooldownMs?: number; customGames?: CustomGame[]; index?: GameIndex } = {},
+  ) {
+    let i = 0;
+    const detector = new GameDetector({
+      listProcessNames: () => {
+        const lista = procesosPorSondeo[Math.min(i, procesosPorSondeo.length - 1)];
+        i++;
+        return Promise.resolve(lista);
+      },
+      intervalMs: 1000,
+      missesBeforeStop: 2,
+      customGames: opts.customGames,
+      index: opts.index,
+      unknownRefreshCooldownMs: opts.cooldownMs ?? 0,
+    });
+    let unknowns = 0;
+    detector.on('unknown-executable', () => {
+      unknowns++;
+    });
+    return { detector, contar: () => unknowns };
+  }
+
+  it('un proceso nuevo no reconocido tras la línea base pide re-índice (regresión)', async () => {
+    // 2XKO (Riot) arranca `Lion.exe`: no está en la lista curada ni en el índice viejo. Se instaló y
+    // lanzó con la app abierta; hoy no se detecta hasta reiniciar. El detector debe pedir re-índice.
+    const { detector, contar } = crear([['explorer.exe'], ['explorer.exe', 'Lion.exe']]);
+    detector.start();
+    await avanzar(0); // primera pasada: solo línea base
+    expect(contar()).toBe(0);
+
+    await avanzar(1000); // Lion.exe: nuevo y desconocido → dispara
+    expect(contar()).toBe(1);
+    detector.stop();
+  });
+
+  it('la primera pasada solo fija la línea base: no dispara aunque haya desconocidos', async () => {
+    const { detector, contar } = crear([['explorer.exe', 'random.exe', 'otra.exe']]);
+    detector.start();
+    await avanzar(0);
+    expect(contar()).toBe(0);
+    detector.stop();
+  });
+
+  it('un proceso reconocido (curada / índice / manual) no pide re-índice', async () => {
+    const { detector, contar } = crear(
+      [['explorer.exe'], ['explorer.exe', 'cs2.exe', 'pioneergame.exe', 'MiJuego.exe']],
+      { index: { pioneergame: 'ARC Raiders' }, customGames: [{ executable: 'MiJuego.exe' }] },
+    );
+    detector.start();
+    await avanzar(0);
+    await avanzar(1000); // cs2 (curada), pioneergame (índice), MiJuego (manual): todos reconocidos
+    expect(contar()).toBe(0);
+    detector.stop();
+  });
+
+  it('un desconocido que ya disparó no vuelve a disparar mientras siga corriendo', async () => {
+    const { detector, contar } = crear([
+      ['explorer.exe'],
+      ['explorer.exe', 'foo.exe'],
+      ['explorer.exe', 'foo.exe'],
+    ]);
+    detector.start();
+    await avanzar(0); // línea base
+    await avanzar(1000); // foo nuevo → dispara
+    expect(contar()).toBe(1);
+    await avanzar(1000); // foo ya visto → no dispara
+    expect(contar()).toBe(1);
+    detector.stop();
+  });
+
+  it('cooldown: dos desconocidos seguidos → un emit; el pendiente dispara al expirar', async () => {
+    const { detector, contar } = crear(
+      [
+        ['explorer.exe'],
+        ['explorer.exe', 'foo.exe'],
+        ['explorer.exe', 'foo.exe', 'bar.exe'],
+        ['explorer.exe', 'foo.exe', 'bar.exe'],
+      ],
+      { cooldownMs: 5000 },
+    );
+    detector.start();
+    await avanzar(0); // t=0 línea base
+    await avanzar(1000); // t=1000 foo nuevo → emit (1)
+    expect(contar()).toBe(1);
+    await avanzar(1000); // t=2000 bar nuevo pero dentro del cooldown → pendiente, no emit
+    expect(contar()).toBe(1);
+    await avanzar(1000); // t=3000 sigue en cooldown, sin nuevos → pendiente sigue
+    expect(contar()).toBe(1);
+    await avanzar(3000); // t=6000 cooldown cumplido (desde t=1000) y pendiente → emit (2)
+    expect(contar()).toBe(2);
+    detector.stop();
   });
 });

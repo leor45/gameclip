@@ -70,6 +70,14 @@ export const KNOWN_GAME_PROCESSES: Record<string, string> = {
 /** Intervalo de sondeo de procesos por defecto. */
 export const GAME_POLL_INTERVAL_MS = 5000;
 
+/**
+ * Tope de frecuencia del re-índice por novedad: cuando el sondeo ve un ejecutable desconocido (posible
+ * juego recién instalado), pide reconstruir el índice, pero no más de una vez por esta ventana. No es
+ * una espera antes de detectar —el primer desconocido dispara al instante—, sino un throttle para que
+ * abrir varias apps de golpe no lance una ráfaga de PowerShell.
+ */
+export const UNKNOWN_EXE_REFRESH_COOLDOWN_MS = 30000;
+
 /** Juego añadido a mano: el ejecutable es la identidad; el nombre, opcional, es solo presentación. */
 export interface CustomGame {
   /** Ejecutable del juego (p. ej. `MilesMorales.exe`). */

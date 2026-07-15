@@ -291,6 +291,11 @@ function setupGameDetection(manager: CaptureManager): GameDetector {
     console.log('[games] en ejecución:', list.map((g) => g.name).join(', ') || '(ninguno)');
     void manager.setRunningGames(list);
   });
+  // Apareció un ejecutable desconocido (posible juego instalado con la app abierta): se reconstruye el
+  // índice. Barato por la huella; el detector ya trae throttle para no encadenar re-índices.
+  d.on('unknown-executable', () => {
+    void refreshGameIndex().catch((err) => console.error('[games] re-índice por novedad falló:', err));
+  });
   d.start();
   return d;
 }
