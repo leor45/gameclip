@@ -264,6 +264,23 @@ describe('Ajustes — Desarrollo', () => {
       expect.objectContaining({ hardwareAcceleration: false }),
     );
   });
+
+  it('el desplegable de detección lista el índice y arranca colapsado', async () => {
+    mock().games.getIndex.mockResolvedValue({
+      lion: '2XKO',
+      'lion-win64-shipping': '2XKO',
+      pioneergame: 'ARC Raiders',
+    });
+    const user = await irAAjustes();
+    await user.click(screen.getByRole('link', { name: 'Desarrollo' }));
+
+    // 2 juegos distintos (2XKO, ARC Raiders) de 3 ejecutables.
+    const resumen = await screen.findByText(/2 juegos · 3 ejecutables/);
+    expect(resumen.closest('details')).not.toHaveAttribute('open'); // colapsado por defecto
+    // La tabla se puebla con el mapa ejecutable → juego.
+    expect(screen.getByText('pioneergame.exe')).toBeInTheDocument();
+    expect(screen.getByText('ARC Raiders')).toBeInTheDocument();
+  });
 });
 
 describe('Ajustes — Almacenamiento', () => {

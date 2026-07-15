@@ -2398,3 +2398,46 @@ body {
   height: 10px;
   accent-color: var(--accent);
 }
+
+/* ── Ajustes › Desarrollo: visor del índice de detección ──────────────────── */
+.deteccion-detalle > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.deteccion-tabla-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.deteccion-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+
+.deteccion-tabla th,
+.deteccion-tabla td {
+  text-align: left;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.deteccion-tabla thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+}
+
+.deteccion-tabla tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.deteccion-tabla td:first-child {
+  font-family: ui-monospace, monospace;
+  color: var(--text-dim);
+}
