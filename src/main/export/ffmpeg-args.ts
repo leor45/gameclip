@@ -1,4 +1,11 @@
 import type { ExportFormat, ExportQuality } from '@shared/export';
+import {
+  hasReframe,
+  reframeGeometry,
+  reframeVideoFilter,
+  type Reframe,
+  type ReframeGeometry,
+} from '@shared/reframe';
 import type { Segment } from '@shared/timeline';
 import type { TrackGain } from '@shared/tracks';
 
@@ -26,10 +33,49 @@ export interface FfmpegJob {
    * `startSeconds/endSeconds`. Solo MP4.
    */
   segments?: Segment[];
+  /**
+   * Reencuadre de vídeo (editor avanzado, Fase 4): relación de aspecto de salida + recorte/barras.
+   * Con reencuadre activo el vídeo pasa por `filter_complex` (recorta/escala/rellena) en la ruta
+   * simple y en la concat; sin reencuadre (o `original`) las rutas quedan intactas. Necesita
+   * `sourceWidth/Height` para calcular la geometría en píxeles. Solo MP4.
+   */
+  reframe?: Reframe;
+  /** Ancho/alto de la fuente en píxeles (para calcular la geometría del reencuadre). */
+  sourceWidth?: number;
+  sourceHeight?: number;
+}
+
+/**
+ * Geometría del reencuadre del job, o `null` si no aplica (sin reframe, `original`, sin dimensiones de
+ * la fuente, o formato no-MP4). Centraliza la condición para que ruta simple y concat coincidan.
+ */
+function jobReframeGeometry(job: FfmpegJob): ReframeGeometry | null {
+  if (job.format !== 'mp4') return null;
+  if (!job.reframe || !hasReframe(job.reframe)) return null;
+  if (!job.sourceWidth || !job.sourceHeight) return null;
+  return reframeGeometry(job.reframe, job.sourceWidth, job.sourceHeight);
 }
 
 // CRF de libx264 por preset (menor = mejor calidad).
 const MP4_CRF: Record<ExportQuality, number> = { alta: 18, media: 23, baja: 28 };
+
+/** Cola común del vídeo MP4: códec, preset, CRF por calidad, pixfmt, faststart y progreso. */
+function mp4VideoTail(quality: ExportQuality): string[] {
+  return [
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    String(MP4_CRF[quality]),
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    '-progress',
+    'pipe:1',
+  ];
+}
 // GIF: cuadros por segundo y ancho máximo por preset.
 const GIF_FPS: Record<ExportQuality, number> = { alta: 20, media: 15, baja: 10 };
 const GIF_WIDTH: Record<ExportQuality, number> = { alta: 640, media: 480, baja: 320 };
@@ -40,10 +86,13 @@ const GIF_WIDTH: Record<ExportQuality, number> = { alta: 640, media: 480, baja: 
  * `out_time_ms` por stdout para la barra de progreso.
  */
 export function buildFfmpegArgs(job: FfmpegJob): string[] {
+  const geom = jobReframeGeometry(job);
+  const vf = geom ? reframeVideoFilter(geom) : null;
+
   // Cortes múltiples (Fase 3): la salida concatena los segmentos conservados. Solo MP4; con 1
-  // segmento cae a la ruta rápida `-ss/-t` de abajo.
+  // segmento cae a la ruta rápida `-ss/-t` de abajo. El reencuadre (Fase 4) se aplica antes del split.
   if (job.format === 'mp4' && job.segments && job.segments.length >= 2) {
-    return buildConcatArgs(job, job.segments);
+    return buildConcatArgs(job, job.segments, vf);
   }
 
   const duration = job.endSeconds - job.startSeconds;
@@ -60,21 +109,13 @@ export function buildFfmpegArgs(job: FfmpegJob): string[] {
   ];
 
   if (job.format === 'mp4') {
+    // Con reencuadre (Fase 4) el vídeo pasa por el filtergraph (recorta/escala/rellena); el audio se
+    // compone en el mismo `filter_complex`. Sin reencuadre, la ruta rápida de siempre queda intacta.
+    if (vf) return buildReframedFastArgs(job, base, vf);
     return [
       ...base,
       ...audioArgs(job),
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      String(MP4_CRF[job.quality]),
-      '-pix_fmt',
-      'yuv420p',
-      '-movflags',
-      '+faststart',
-      '-progress',
-      'pipe:1',
+      ...mp4VideoTail(job.quality),
       job.outputPath,
     ];
   }
@@ -113,15 +154,19 @@ function concatAudioSource(job: FfmpegJob): string | null {
  * Args de ffmpeg para renderizar la **concatenación** de varios segmentos (Fase 3). Sin seek de
  * input: el vídeo se `split`ea en N, cada copia se recorta con `trim`+`setpts`; el audio arma la
  * mezcla completa, la duplica con `asplit=N` y recorta cada copia con `atrim`+`asetpts`; y `concat`
- * une los N pares. Sin audio activo, concatena solo vídeo y sale con `-an`.
+ * une los N pares. Sin audio activo, concatena solo vídeo y sale con `-an`. Con reencuadre (Fase 4,
+ * `vf` no nulo) el vídeo se recorta/escala **una vez** antes del split, así los N segmentos parten de
+ * la imagen ya reencuadrada.
  */
-function buildConcatArgs(job: FfmpegJob, segments: Segment[]): string[] {
+function buildConcatArgs(job: FfmpegJob, segments: Segment[], vf: string | null): string[] {
   const n = segments.length;
   const filters: string[] = [];
 
-  // Vídeo: split explícito en N y un trim+setpts por segmento (no dependemos del auto-split).
+  // Vídeo: (reencuadre una vez →) split explícito en N y un trim+setpts por segmento.
+  const vsrc = vf ? '[vr]' : '[0:v]';
+  if (vf) filters.push(`[0:v]${vf}[vr]`);
   const vsplit = Array.from({ length: n }, (_, i) => `[vs${i}]`).join('');
-  filters.push(`[0:v]split=${n}${vsplit}`);
+  filters.push(`${vsrc}split=${n}${vsplit}`);
   for (let i = 0; i < n; i++) {
     filters.push(`[vs${i}]trim=start=${secs(segments[i].start)}:end=${secs(segments[i].end)},setpts=PTS-STARTPTS[v${i}]`); // prettier-ignore
   }
@@ -154,20 +199,53 @@ function buildConcatArgs(job: FfmpegJob, segments: Segment[]): string[] {
     '-filter_complex',
     filters.join(';'),
     ...maps,
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    String(MP4_CRF[job.quality]),
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    '-progress',
-    'pipe:1',
+    ...mp4VideoTail(job.quality),
     job.outputPath,
   ];
+}
+
+/**
+ * Ruta rápida `-ss/-t` **con reencuadre** (Fase 4): el vídeo se recorta/escala/rellena en un
+ * `filter_complex` (`[0:v]<vf>[vout]`) y el audio se compone en el mismo grafo. Sustituye al mapeo
+ * directo `0:v:0` de la ruta sin reencuadre. Un solo segmento (o recorte simple) sigue por aquí.
+ */
+function buildReframedFastArgs(job: FfmpegJob, base: string[], vf: string): string[] {
+  const filters = [`[0:v]${vf}[vout]`];
+  const audio = reframedAudioArgs(job, filters);
+  return [
+    ...base,
+    '-filter_complex',
+    filters.join(';'),
+    '-map',
+    '[vout]',
+    ...audio,
+    ...mp4VideoTail(job.quality),
+    job.outputPath,
+  ];
+}
+
+/**
+ * Mapeo/códec del audio para la ruta reencuadrada, empujando su cadena de filtro a `filters` (el
+ * mismo `filter_complex` que el vídeo). Misma precedencia que `audioArgs`: `audioGains` → `audioTracks`
+ * → audio del clip tal cual. Sin audio activo → `-an`.
+ */
+function reframedAudioArgs(job: FfmpegJob, filters: string[]): string[] {
+  const codec = ['-c:a', 'aac', '-b:a', AUDIO_BITRATE];
+
+  if (job.audioGains !== undefined) {
+    if (job.audioGains.filter((g) => g.gain > 0).length === 0) return ['-an'];
+    filters.push(gainMixFilter(job.audioGains, 'aout'));
+    return ['-map', '[aout]', ...codec];
+  }
+
+  const at = job.audioTracks;
+  // Sin selección: mapea la primera pista si existe (`?` la hace opcional; no se puede dejar que
+  // ffmpeg auto-seleccione porque el `-map [vout]` del vídeo ya desactiva la selección automática).
+  if (at === undefined) return ['-map', '0:a:0?', ...codec];
+  if (at.length === 0) return ['-an'];
+  if (at.length === 1) return ['-map', `0:a:${at[0]}`, ...codec];
+  filters.push(amixFilter(at, 'aout'));
+  return ['-map', '[aout]', ...codec];
 }
 
 /**

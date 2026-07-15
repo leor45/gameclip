@@ -188,6 +188,61 @@ describe('EditorAvanzado — cortes múltiples (Fase 3)', () => {
   });
 });
 
+describe('EditorAvanzado — reencuadre (Fase 4)', () => {
+  // jsdom no calcula videoWidth/Height; se inyectan y se dispara loadedMetadata para fijar la fuente.
+  function setVideoDims(w: number, h: number) {
+    const video = document.querySelector('video.eav-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'videoWidth', { configurable: true, value: w });
+    Object.defineProperty(video, 'videoHeight', { configurable: true, value: h });
+    fireEvent.loadedMetadata(video);
+  }
+
+  it('elegir un aspecto activa los controles de encaje (recorte/barras)', async () => {
+    await prepararClip();
+    // Con "original" no hay toggle de encaje.
+    expect(screen.queryByRole('button', { name: 'Barras' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '9:16' }));
+    expect(screen.getByRole('button', { name: 'Recorte' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Barras' })).toBeInTheDocument();
+    // En modo recorte aparece el control de zoom.
+    expect(screen.getByLabelText('Zoom')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Barras' }));
+    // En barras no hay zoom.
+    expect(screen.queryByLabelText('Zoom')).not.toBeInTheDocument();
+  });
+
+  it('el render manda el reframe elegido y las dimensiones de la fuente', async () => {
+    await prepararClip();
+    setVideoDims(2560, 1440);
+    fireEvent.click(screen.getByRole('button', { name: '9:16' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const botones = screen.getAllByRole('button', { name: 'Renderizar vídeo' });
+    fireEvent.click(botones[botones.length - 1]);
+
+    await waitFor(() => expect(mock().exporter.run).toHaveBeenCalled());
+    expect(mock().exporter.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reframe: { aspect: '9:16', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+        sourceWidth: 2560,
+        sourceHeight: 1440,
+      }),
+    );
+  });
+
+  it('sin reencuadre (original) el render no manda reframe', async () => {
+    await prepararClip();
+    setVideoDims(2560, 1440);
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const botones = screen.getAllByRole('button', { name: 'Renderizar vídeo' });
+    fireEvent.click(botones[botones.length - 1]);
+    await waitFor(() => expect(mock().exporter.run).toHaveBeenCalled());
+    expect(mock().exporter.run.mock.calls[0][0]).not.toHaveProperty('reframe');
+  });
+});
+
 describe('EditorAvanzado — zoom', () => {
   it('el zoom parte de 1× (alejar deshabilitado) y acercar lo habilita', async () => {
     await prepararClip();

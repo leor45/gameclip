@@ -206,6 +206,9 @@ export function registerIpcHandlers(
         audioTracks,
         audioGains,
         segments,
+        reframe: request.reframe,
+        sourceWidth: request.sourceWidth,
+        sourceHeight: request.sourceHeight,
       });
       if (resultado.status === 'done' && resultado.outputPath) {
         lastExportPath = resultado.outputPath;

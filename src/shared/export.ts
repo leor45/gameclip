@@ -1,5 +1,6 @@
 // Dominio de exportación de clips: tipos y validación pura (sin Electron ni ffmpeg).
 
+import { hasReframe, normalizeReframe, type Reframe } from './reframe';
 import { keptDuration, type Segment } from './timeline';
 import { normalizeMutedTracks, normalizeTrackVolumes, type TrackVolumes } from './tracks';
 
@@ -27,6 +28,14 @@ export interface ExportRequest {
    * cortes; `startSeconds/endSeconds` quedan como el rango exterior (primer inicio / último fin).
    */
   segments?: Segment[];
+  /**
+   * Reencuadre de vídeo (editor avanzado, Fase 4): relación de aspecto de salida + recorte/barras.
+   * Solo se manda cuando reencuadra (no `original`), junto con `sourceWidth/Height`.
+   */
+  reframe?: Reframe;
+  /** Dimensiones de la fuente en píxeles, para calcular la geometría del reencuadre (del `<video>`). */
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 export type ExportStatus = 'done' | 'canceled' | 'error';
@@ -110,5 +119,21 @@ export function normalizeExportRequest(input: unknown): ExportRequest {
     ...('mutedTracks' in raw ? { mutedTracks: normalizeMutedTracks(raw.mutedTracks) } : {}),
     ...('trackVolumes' in raw ? { trackVolumes: normalizeTrackVolumes(raw.trackVolumes) } : {}),
     ...(normalizeSegments(raw.segments) ? { segments: normalizeSegments(raw.segments) } : {}),
+    ...reframeFields(raw),
   };
+}
+
+/**
+ * Campos de reencuadre normalizados, solo si reencuadra de verdad (aspecto ≠ `original`) y llegan
+ * dimensiones de fuente válidas. Sin eso, no se añade `reframe` y el render va por la ruta de siempre.
+ */
+function reframeFields(raw: Record<string, unknown>): Partial<ExportRequest> {
+  if (!('reframe' in raw)) return {};
+  const reframe = normalizeReframe(raw.reframe);
+  if (!hasReframe(reframe)) return {};
+  const w = raw.sourceWidth;
+  const h = raw.sourceHeight;
+  if (typeof w !== 'number' || !Number.isFinite(w) || w <= 0) return {};
+  if (typeof h !== 'number' || !Number.isFinite(h) || h <= 0) return {};
+  return { reframe, sourceWidth: Math.round(w), sourceHeight: Math.round(h) };
 }

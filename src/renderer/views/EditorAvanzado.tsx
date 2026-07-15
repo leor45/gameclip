@@ -22,12 +22,23 @@ import {
   ZOOM_FACTOR_MIN,
   ZOOM_FACTOR_STEP,
 } from '@shared/timeline';
+import {
+  applyPan,
+  clampOffset,
+  DEFAULT_REFRAME,
+  hasReframe,
+  previewTransform,
+  reframeGeometry,
+  wheelToZoom,
+  type Reframe,
+} from '@shared/reframe';
 import { editReducer, initEditState } from './editor-avanzado-edit';
 import { clipMediaUrl } from '../lib/media';
 import { LivePreviewAudio, effectiveGain, shouldResync } from '../lib/live-audio';
 import Timeline from '../components/editor-avanzado/Timeline';
 import AudioTrackRow from '../components/editor-avanzado/AudioTrackRow';
 import RenderDialog from '../components/editor-avanzado/RenderDialog';
+import ReframeControls from '../components/editor-avanzado/ReframeControls';
 
 export default function EditorAvanzado() {
   const { clipId } = useParams();
@@ -46,6 +57,11 @@ export default function EditorAvanzado() {
   const [volumes, setVolumes] = useState<TrackVolumes>({});
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [zoomFactor, setZoomFactor] = useState(ZOOM_FACTOR_MIN);
+  // Reencuadre (Fase 4): aspecto de salida + recorte/barras. No entra en el historial de cortes (es un
+  // ajuste continuo, como el volumen). `sourceDims` sale del <video>; `frameW`, del marco de la previa.
+  const [reframe, setReframe] = useState<Reframe>(DEFAULT_REFRAME);
+  const [sourceDims, setSourceDims] = useState<{ w: number; h: number } | null>(null);
+  const [frameW, setFrameW] = useState(0);
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
@@ -60,6 +76,17 @@ export default function EditorAvanzado() {
   const [done, setDone] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  // El marco de la previa adopta el aspecto de salida; se mide su ancho para escalar el <video> de
+  // modo que muestre exactamente el recorte/encaje (previa = render).
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setFrameW(el.clientWidth));
+    ro.observe(el);
+    setFrameW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
   // Motor de audio en vivo (Fase 2): reconstruye la mezcla desde las pistas desglosadas, colgado del
   // reloj del <video> mudo. No-op sin AudioContext (jsdom/tests).
   const engineRef = useRef<LivePreviewAudio | null>(null);
@@ -253,11 +280,43 @@ export default function EditorAvanzado() {
   }
 
   function onMetadata() {
-    const d = videoRef.current?.duration;
+    const v = videoRef.current;
+    if (v && v.videoWidth > 0 && v.videoHeight > 0 && !sourceDims) {
+      setSourceDims({ w: v.videoWidth, h: v.videoHeight });
+    }
+    const d = v?.duration;
     if (d && Number.isFinite(d) && duration === 0) {
       setDuration(d);
       dispatch({ type: 'reset', segments: initialSegments(d) });
     }
+  }
+
+  // Arrastrar la imagen (modo recorte) reposiciona el encuadre; la rueda hace zoom. Solo con reencuadre
+  // en modo `cover`; en `contain`/`original` no hay reposición.
+  function onFramePanDown(e: React.PointerEvent) {
+    if (reframe.mode !== 'cover' || !hasReframe(reframe) || !sourceDims) return;
+    e.preventDefault();
+    let lastX = e.clientX;
+    let lastY = e.clientY;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - lastX;
+      const dy = ev.clientY - lastY;
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+      const width = frameRef.current?.clientWidth ?? frameW;
+      setReframe((r) => ({ ...r, offset: applyPan(r, sourceDims.w, sourceDims.h, width, dx, dy) }));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  function onFrameWheel(e: React.WheelEvent) {
+    if (reframe.mode !== 'cover' || !hasReframe(reframe)) return;
+    setReframe((r) => ({ ...r, zoom: wheelToZoom(r.zoom, e.deltaY), offset: clampOffset(r.offset) }));
   }
 
   // Carga (perezosa, en el primer play) el audio por pista y devuelve si el audio EN VIVO va a sonar.
@@ -375,6 +434,10 @@ export default function EditorAvanzado() {
       trackVolumes,
       // Solo se mandan segmentos si hay cortes (2+); con uno, el rango simple basta.
       ...(segments.length >= 2 ? { segments } : {}),
+      // Reencuadre (Fase 4): solo si reencuadra de verdad y conocemos las dimensiones de la fuente.
+      ...(hasReframe(reframe) && sourceDims
+        ? { reframe, sourceWidth: sourceDims.w, sourceHeight: sourceDims.h }
+        : {}),
     });
     setRendering(false);
     if (res.status === 'done') {
@@ -388,6 +451,30 @@ export default function EditorAvanzado() {
 
   const fecha = clip ? new Date(clip.createdAt).toLocaleString() : '';
 
+  // Geometría del reencuadre para la previa (solo con reencuadre activo y dimensiones conocidas). El
+  // marco toma el aspecto de salida y el <video> se escala/posiciona para mostrar el mismo rectángulo
+  // que renderizará ffmpeg. Sin reencuadre, la previa es la de siempre (object-fit: contain).
+  const geom = hasReframe(reframe) && sourceDims ? reframeGeometry(reframe, sourceDims.w, sourceDims.h) : null; // prettier-ignore
+  const transform = geom && frameW > 0 ? previewTransform(geom, frameW) : null;
+  const frameStyle: React.CSSProperties | undefined = geom
+    ? { aspectRatio: `${geom.outputW} / ${geom.outputH}` }
+    : undefined;
+  const videoStyle: React.CSSProperties | undefined =
+    geom && sourceDims && transform
+      ? {
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: `${sourceDims.w}px`,
+          height: `${sourceDims.h}px`,
+          maxWidth: 'none',
+          maxHeight: 'none',
+          transformOrigin: '0 0',
+          transform: `translate(${transform.translateX}px, ${transform.translateY}px) scale(${transform.scale})`,
+        }
+      : undefined;
+  const canPan = hasReframe(reframe) && reframe.mode === 'cover';
+
   return (
     <div className="editor-avanzado">
       <header className="eav-topbar">
@@ -396,9 +483,7 @@ export default function EditorAvanzado() {
           <span className="eav-topbar-date">{fecha}</span>
         </span>
         <div className="eav-topbar-center">
-          <button type="button" className="eav-btn eav-btn-ghost" disabled title="Próximamente">
-            Horizontal (16:9) ▾
-          </button>
+          <ReframeControls reframe={reframe} onChange={setReframe} />
           <button type="button" className="eav-btn eav-btn-ghost" disabled title="Próximamente" aria-label="Captura de frame">
             📷
           </button>
@@ -422,16 +507,25 @@ export default function EditorAvanzado() {
       </header>
 
       <div className="eav-preview">
-        <video
-          ref={videoRef}
-          className="eav-video"
-          src={clipMediaUrl(id)}
-          onLoadedMetadata={onMetadata}
-          onEnded={() => {
-            engineRef.current?.stop();
-            setPlaying(false);
-          }}
-        />
+        <div
+          ref={frameRef}
+          className={`eav-frame${geom ? ' is-reframed' : ''}${canPan ? ' can-pan' : ''}`}
+          style={frameStyle}
+          onPointerDown={onFramePanDown}
+          onWheel={onFrameWheel}
+        >
+          <video
+            ref={videoRef}
+            className="eav-video"
+            style={videoStyle}
+            src={clipMediaUrl(id)}
+            onLoadedMetadata={onMetadata}
+            onEnded={() => {
+              engineRef.current?.stop();
+              setPlaying(false);
+            }}
+          />
+        </div>
         {done && (
           <div className="eav-done">
             Render listo ✓

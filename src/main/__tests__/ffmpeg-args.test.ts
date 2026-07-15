@@ -180,6 +180,87 @@ describe('buildFfmpegArgs — cortes múltiples (concat, Fase 3)', () => {
   });
 });
 
+describe('buildFfmpegArgs — reencuadre (Fase 4)', () => {
+  const src = { sourceWidth: 2560, sourceHeight: 1440 } as const;
+
+  it('ruta simple con reframe cover: vídeo por filter_complex y map [vout]', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      ...src,
+      format: 'mp4',
+      quality: 'media',
+      reframe: { aspect: '9:16', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      audioGains: [{ index: 1, gain: 1 }],
+    });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    // 9:16 desde 16:9 → recorte 810×1440, escala a 810×1440.
+    expect(graph).toContain('[0:v]crop=810:1440:874:0,scale=810:1440[vout]');
+    expect(graph).toContain('volume=1[aout]');
+    expect(args.join(' ')).toContain('-map [vout]');
+    expect(args.join(' ')).toContain('-map [aout]');
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i')); // sigue siendo ruta rápida
+    expect(args).toContain('libx264');
+  });
+
+  it('ruta simple con reframe contain: scale + pad negro', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      format: 'mp4',
+      quality: 'media',
+      reframe: { aspect: '9:16', mode: 'contain', zoom: 1, offset: { x: 0, y: 0 } },
+      audioGains: [{ index: 1, gain: 1 }],
+    });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('scale=1920:1080,pad=1920:');
+    expect(graph).toContain(':black[vout]');
+  });
+
+  it('reframe original no toca el vídeo (ruta rápida intacta, sin filtro de vídeo)', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      ...src,
+      format: 'mp4',
+      quality: 'media',
+      reframe: { aspect: 'original', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      audioTracks: [2],
+    });
+    expect(args.join(' ')).toContain('-map 0:v:0 -map 0:a:2'); // como sin reframe
+    expect(args.join(' ')).not.toContain('crop=');
+  });
+
+  it('sin sourceWidth/Height no se puede calcular la geometría → sin reframe', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      format: 'mp4',
+      quality: 'media',
+      reframe: { aspect: '9:16', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      audioTracks: [2],
+    });
+    expect(args.join(' ')).not.toContain('crop=');
+  });
+
+  it('ruta concat con reframe: recorta una vez antes del split', () => {
+    const args = buildFfmpegArgs({
+      ...base,
+      ...src,
+      format: 'mp4',
+      quality: 'media',
+      reframe: { aspect: '9:16', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      segments: [
+        { start: 0, end: 3 },
+        { start: 6, end: 10 },
+      ],
+      audioGains: [{ index: 1, gain: 1 }],
+    });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('[0:v]crop=810:1440:874:0,scale=810:1440[vr]');
+    expect(graph).toContain('[vr]split=2[vs0][vs1]');
+    expect(graph).toContain('concat=n=2:v=1:a=1[vout][aout]');
+  });
+});
+
 describe('buildFfmpegArgs — GIF', () => {
   it('usa paleta optimizada y fps/ancho del preset', () => {
     const args = buildFfmpegArgs({ ...base, format: 'gif', quality: 'media' });
