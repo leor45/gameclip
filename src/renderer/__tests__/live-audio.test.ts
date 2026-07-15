@@ -33,6 +33,8 @@ describe('LivePreviewAudio sin AudioContext (jsdom)', () => {
   it('queda deshabilitado y ningún método lanza', async () => {
     const engine = new LivePreviewAudio();
     expect(engine.enabled).toBe(false);
+    expect(engine.isLoaded).toBe(false);
+    expect(engine.hasBuffers()).toBe(false);
 
     const fetchBytes = vi.fn().mockResolvedValue(new ArrayBuffer(0));
     await expect(engine.load(['game', 'mic'], fetchBytes)).resolves.toBeUndefined();
@@ -40,6 +42,7 @@ describe('LivePreviewAudio sin AudioContext (jsdom)', () => {
     expect(fetchBytes).not.toHaveBeenCalled();
 
     expect(() => {
+      engine.resume();
       engine.setGain('game', 1.5);
       engine.play(0);
       engine.seek(3);

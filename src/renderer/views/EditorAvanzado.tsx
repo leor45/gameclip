@@ -143,39 +143,47 @@ export default function EditorAvanzado() {
     }
   }
 
-  // Audio por pista cargado de forma perezosa en el primer play (no al abrir el editor).
-  async function ensureAudioLoaded() {
+  // Carga (perezosa, en el primer play) el audio por pista y devuelve si el audio EN VIVO va a sonar.
+  // Si no (sin Web Audio, sin pistas, o ninguna decodificó), el editor cae a la mezcla original del
+  // <video> — nunca queda en silencio total.
+  async function ensureAudioLoaded(): Promise<boolean> {
     const engine = engineRef.current;
-    if (!engine || !engine.enabled || tracks.length === 0 || audioLoading) return;
-    setAudioLoading(true);
-    try {
-      await engine.load(
-        tracks.map((t) => trackKey(t)),
-        (key) => {
-          const track = tracks.find((t) => trackKey(t) === key);
-          return track && id
-            ? window.gameclip.editor.getTrackAudio(id, track.index)
-            : Promise.resolve(new ArrayBuffer(0));
-        },
-      );
-    } finally {
-      setAudioLoading(false);
+    if (!engine || !engine.enabled || tracks.length === 0) return false;
+    if (!engine.isLoaded) {
+      setAudioLoading(true);
+      try {
+        await engine.load(
+          tracks.map((t) => trackKey(t)),
+          (key) => {
+            const track = tracks.find((t) => trackKey(t) === key);
+            return track && id
+              ? window.gameclip.editor.getTrackAudio(id, track.index)
+              : Promise.resolve(new ArrayBuffer(0));
+          },
+        );
+      } finally {
+        setAudioLoading(false);
+      }
     }
     // Aplica los volúmenes actuales antes de que suene (removed → 0).
     for (const t of tracks) {
       const key = trackKey(t);
       engine.setGain(key, effectiveGain(trackGain(volumes, key), removed.has(key)));
     }
+    return engine.hasBuffers();
   }
 
   async function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
-      await ensureAudioLoaded();
+      engineRef.current?.resume(); // dentro del gesto de usuario (política de autoplay)
+      const live = await ensureAudioLoaded();
+      // Con audio en vivo, el <video> va mudo (lo pone el motor). Si no, suena la mezcla original.
+      v.muted = live;
       // `play()` puede devolver undefined en algunos entornos (jsdom): se envuelve para no romper.
       void Promise.resolve(v.play()).catch(() => undefined);
-      engineRef.current?.play(v.currentTime);
+      if (live) engineRef.current?.play(v.currentTime);
       setPlaying(true);
     } else {
       v.pause();
@@ -299,7 +307,6 @@ export default function EditorAvanzado() {
           ref={videoRef}
           className="eav-video"
           src={clipMediaUrl(id)}
-          muted
           onLoadedMetadata={onMetadata}
           onEnded={() => {
             engineRef.current?.stop();

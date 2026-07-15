@@ -6,7 +6,7 @@ import { clampTrackGain } from '@shared/tracks';
 // pista lo extrae el main con ffmpeg y aquí se decodifica a un AudioBuffer por pista.
 //
 // Sin AudioContext (jsdom en tests, o un entorno raro) el motor es un no-op silencioso: guarda el
-// estado y sale, y el editor sigue funcionando sin audio en vivo.
+// estado y sale, y el editor cae a reproducir el audio propio del <video> (la mezcla original).
 
 /** Umbral de deriva (segundos) audio↔vídeo por encima del cual se re-sincroniza el audio. */
 export const RESYNC_THRESHOLD_SECONDS = 0.15;
@@ -50,8 +50,21 @@ interface TrackNode {
 /** Cómo obtener los bytes (AAC/ADTS) de una pista, por su clave. */
 export type FetchTrackAudio = (key: string) => Promise<ArrayBuffer>;
 
+/** Fábrica del contexto de audio; inyectable para tests (OfflineAudioContext). */
+export type AudioContextFactory = () => BaseAudioContext | null;
+
+const defaultFactory: AudioContextFactory = () => {
+  const Ctor = resolveAudioContextCtor();
+  if (!Ctor) return null;
+  try {
+    return new Ctor();
+  } catch {
+    return null;
+  }
+};
+
 export class LivePreviewAudio {
-  private readonly ctx: AudioContext | null;
+  private readonly ctx: BaseAudioContext | null;
   private readonly master: GainNode | null;
   private readonly nodes = new Map<string, TrackNode>();
   /** Ganancias deseadas por clave: se aplican al cargar y en cada cambio en vivo. */
@@ -62,17 +75,17 @@ export class LivePreviewAudio {
   /** Anclaje para medir el tiempo del audio: `ctx.currentTime` y el tiempo de medio al arrancar. */
   private anchor: { ctxStart: number; mediaStart: number } | null = null;
 
-  constructor() {
-    const Ctor = resolveAudioContextCtor();
-    if (!Ctor) {
+  constructor(factory: AudioContextFactory = defaultFactory) {
+    const ctx = factory();
+    if (!ctx) {
       this.ctx = null;
       this.master = null;
       return;
     }
     try {
-      this.ctx = new Ctor();
-      this.master = this.ctx.createGain();
-      this.master.connect(this.ctx.destination);
+      this.master = ctx.createGain();
+      this.master.connect(ctx.destination);
+      this.ctx = ctx;
     } catch {
       this.ctx = null;
       this.master = null;
@@ -82,6 +95,17 @@ export class LivePreviewAudio {
   /** ¿Hay motor real (Web Audio disponible)? */
   get enabled(): boolean {
     return this.ctx !== null;
+  }
+
+  /** ¿Ya terminó la carga perezosa de las pistas? (para no re-mostrar "cargando" en cada play). */
+  get isLoaded(): boolean {
+    return this.loaded;
+  }
+
+  /** ¿Se cargó al menos una pista con audio decodificado? Si no, el editor cae al audio del <video>. */
+  hasBuffers(): boolean {
+    for (const node of this.nodes.values()) if (node.buffer) return true;
+    return false;
   }
 
   /**
@@ -113,6 +137,15 @@ export class LivePreviewAudio {
     return this.loadingPromise;
   }
 
+  /** Reanuda el contexto (llamar dentro de un gesto de usuario: política de autoplay). */
+  resume(): void {
+    const ctx = this.ctx;
+    if (!ctx || 'startRendering' in ctx) return; // offline: lo maneja startRendering, no resume
+    if ('resume' in ctx && ctx.state === 'suspended') {
+      void (ctx as AudioContext).resume().catch(() => undefined);
+    }
+  }
+
   /** Fija la ganancia (0..2) de una pista, en vivo (con rampa corta para no dar clicks). */
   setGain(key: string, gain: number): void {
     this.targetGains.set(key, gain);
@@ -124,9 +157,9 @@ export class LivePreviewAudio {
   /** Arranca (o re-arranca) la reproducción desde `fromSeconds`. */
   play(fromSeconds: number): void {
     if (!this.ctx) return;
-    void this.ctx.resume().catch(() => undefined);
     this.playing = true;
     this.startSources(fromSeconds);
+    this.resume(); // por si el contexto nació suspendido; las fuentes ya están agendadas
   }
 
   /** Reposiciona el audio (seek). Solo actúa si está sonando; en pausa, el próximo play fija la pos. */
@@ -152,7 +185,8 @@ export class LivePreviewAudio {
   dispose(): void {
     this.stop();
     this.nodes.clear();
-    if (this.ctx) void this.ctx.close().catch(() => undefined);
+    const ctx = this.ctx;
+    if (ctx && 'close' in ctx) void (ctx as AudioContext).close().catch(() => undefined);
   }
 
   private startSources(fromSeconds: number): void {
