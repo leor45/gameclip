@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createGogSource, parseGogEntries } from '../sources/gog';
+import { createRiotSource, parseRiotProductSettings } from '../sources/riot';
 import { bibliotecasDe, createSteamSource, leerPar } from '../sources/steam';
 import {
   createUninstallRegistrySource,
@@ -171,5 +172,92 @@ describe('Xbox', () => {
 
   it('sin DefaultDisplayName devuelve null (se cae al nombre de la carpeta)', () => {
     expect(displayNameFromConfig('<Game/>')).toBeNull();
+  });
+});
+
+describe('Riot', () => {
+  /** Un product_settings.yaml como el real de 2XKO, con claves anidadas para que no confundan al parser. */
+  const yaml2xko = [
+    'patching_policy: "manual"',
+    'product_install_full_path: "E:/Riot Games/2XKO/Live"',
+    'product_install_root: "E:/Riot Games"',
+    'settings:',
+    '    create_shortcut: false',
+    '    create_uninstall_key: true',
+    'shortcut_name: "2XKO.lnk"',
+  ].join('\n');
+
+  it('parser: saca ruta + nombre (sin .lnk) sin pillar las claves anidadas', () => {
+    expect(parseRiotProductSettings(yaml2xko)).toEqual({
+      name: '2XKO',
+      installDir: 'E:/Riot Games/2XKO/Live',
+    });
+  });
+
+  it('parser: sin product_install_full_path devuelve null', () => {
+    expect(parseRiotProductSettings('shortcut_name: "X.lnk"')).toBeNull();
+  });
+
+  it('parser: sin shortcut_name se cae a la carpeta del juego (penúltimo segmento)', () => {
+    expect(parseRiotProductSettings('product_install_full_path: "E:/Riot Games/2XKO/Live"')).toEqual({
+      name: '2XKO',
+      installDir: 'E:/Riot Games/2XKO/Live',
+    });
+  });
+
+  /** Monta un Metadata de mentira; cada producto instalado lleva su carpeta de juego real en disco. */
+  function montarRiot(
+    productos: { producto: string; instalado?: boolean; name?: string; carpeta?: boolean }[],
+  ): string {
+    const metadata = join(raiz, 'Metadata');
+    for (const p of productos) {
+      const metaDir = join(metadata, p.producto);
+      mkdirSync(metaDir, { recursive: true });
+      if (p.instalado === false) continue; // producto con metadatos pero sin ajustes: no instalado
+      const install = join(raiz, 'games', p.producto, 'Live');
+      if (p.carpeta !== false) mkdirSync(install, { recursive: true });
+      const shortcut = p.name === undefined ? '' : `\nshortcut_name: "${p.name}.lnk"`;
+      writeFileSync(
+        join(metaDir, `${p.producto}.product_settings.yaml`),
+        `product_install_full_path: "${install.replace(/\\/g, '/')}"${shortcut}`,
+        'utf8',
+      );
+    }
+    return metadata;
+  }
+
+  it('devuelve los juegos instalados (yaml + carpeta) con su nombre', async () => {
+    const metadata = montarRiot([{ producto: 'lion.live', name: '2XKO' }]);
+    const source = createRiotSource(metadata);
+    expect(await source.listInstalledGames()).toEqual([
+      {
+        name: '2XKO',
+        installDir: join(raiz, 'games', 'lion.live', 'Live').replace(/\\/g, '/'),
+        source: 'riot',
+      },
+    ]);
+  });
+
+  it('un producto con carpeta de metadatos pero sin product_settings.yaml no entra', async () => {
+    const metadata = montarRiot([{ producto: 'valorant.live', instalado: false }]);
+    const source = createRiotSource(metadata);
+    expect(await source.listInstalledGames()).toEqual([]);
+  });
+
+  it('descarta un juego cuya carpeta de instalación ya no existe', async () => {
+    const metadata = montarRiot([{ producto: 'lion.live', name: '2XKO', carpeta: false }]);
+    const source = createRiotSource(metadata);
+    expect(await source.listInstalledGames()).toEqual([]);
+  });
+
+  it('se salta el subdir Riot Client (es el launcher, no un juego)', async () => {
+    const metadata = montarRiot([{ producto: 'Riot Client', name: 'Riot Client' }]);
+    const source = createRiotSource(metadata);
+    expect(await source.listInstalledGames()).toEqual([]);
+  });
+
+  it('si Metadata no existe (Riot no instalado), devuelve [] sin romper', async () => {
+    const source = createRiotSource(join(raiz, 'no-existe'));
+    expect(await source.listInstalledGames()).toEqual([]);
   });
 });
