@@ -46,10 +46,13 @@ Camino feliz **y** casos borde.
 - [x] Tests verdes (`npm run test`) — 709 tests (+32)
 - [x] Comprobación manual (headless): render real con el ffmpeg de osn — cover 9:16 (404×720), cover
       1:1 (720×720), contain 9:16 (1280×2276) y **concat 2 cortes + reframe 9:16** (404×720, 5.00 s).
-      Dimensiones exactamente las que predice el módulo puro. **Falta E2E final del owner.**
+      Dimensiones exactamente las que predice el módulo puro.
+- [x] E2E del owner: OK ("funcionando perfecto"). Dos bugs de previa cazados y arreglados (bucle de
+      tamaño del marco → parpadeo; desbordamiento del `<video>` con aspecto `original`), verificados en
+      Chromium headless.
 
 ## Cierre
 
-- [ ] Aprobación del owner (E2E)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner (E2E)
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado (nota de F4 en el bloque del editor avanzado)

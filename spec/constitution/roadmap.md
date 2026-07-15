@@ -195,9 +195,16 @@ Estado por fases. Cada tarea corre el flujo `spec → plan → tasks` en su prop
 > fuente (16:9 1280×720 → 9:16 404×720). El reencuadre es **estático** (uno por clip, sin keyframes) y
 > no entra en el undo/redo de cortes (ajuste continuo, como el volumen). El editor **simple** no se toca.
 > Verificado headless con el ffmpeg de osn: cover 9:16 (404×720), cover 1:1 (720×720), contain 9:16
-> (1280×2276) y **concat 2 cortes + reframe** (404×720, 5.00 s). 709 tests verdes (+32). **Falta E2E del
-> owner.** Fuera: rotación, pan/zoom animado, reframe por segmento, aspectos libres, GIF (→ nada; el resto
-> es F5: captura de frame, filmstrip, drafts).
+> (1280×2276) y **concat 2 cortes + reframe** (404×720, 5.00 s). 709 tests verdes (+32). Durante la E2E
+> el owner cazó **dos bugs de previa**, ambos por el marco que envuelve el `<video>`: (1) el marco medía
+> su ancho del propio `<video>`, que pasa a `position:absolute` al reencuadrar → colapsaba a 0 y oscilaba
+> (parpadeo negro/imagen) y el recorte no se aplicaba; arreglado dimensionando el marco desde el **área de
+> previa** (contenedor estable, `ResizeObserver`) vía `fitBox`. (2) Con aspecto `original` el `<video>`
+> (flex-item, `min-width:auto`) no encogía bajo su tamaño intrínseco y **desbordaba la ventana**;
+> arreglado con el `<video>` en `position:absolute`+`inset:0`+`object-fit:contain` (no depende del flex),
+> verificado en Chromium headless. **E2E OK por el owner ("funcionando perfecto").** Fuera: rotación,
+> pan/zoom animado, reframe por segmento, aspectos libres, GIF (→ nada; el resto es F5: captura de frame,
+> filmstrip, drafts).
 
 ## Fase 6 · Pulido de paridad — ✅ entregado
 
