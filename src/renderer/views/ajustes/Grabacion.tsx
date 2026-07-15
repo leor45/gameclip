@@ -209,8 +209,8 @@ export default function AjustesGrabacion() {
         <fieldset>
           <legend>Detección de juegos</legend>
           <p className="settings-hint">
-            Los juegos instalados (Steam, Epic…) se detectan solos: {Object.keys(index).length}{' '}
-            ejecutables reconocidos. ¿Falta alguno? Añádelo aquí.
+            Los juegos instalados (Steam, Epic…) se detectan solos:{' '}
+            {new Set(Object.values(index)).size} juegos reconocidos. ¿Falta alguno? Añádelo aquí.
           </p>
           <div className="audio-app-add">
             <label>

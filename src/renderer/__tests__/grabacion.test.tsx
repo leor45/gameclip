@@ -159,7 +159,7 @@ describe('Ajustes — Grabación', () => {
     );
 
     expect(mock().games.rescan).toHaveBeenCalledOnce();
-    expect(await screen.findByText(/1 ejecutables reconocidos/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 juegos reconocidos/)).toBeInTheDocument();
   });
 
   it('abre el modal de displays, muestra los mockeados y "Empezar a grabar" fija el monitor', async () => {
