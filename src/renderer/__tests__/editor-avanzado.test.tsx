@@ -313,6 +313,25 @@ describe('EditorAvanzado — capturar fotograma (Fase 5)', () => {
     );
     expect(await screen.findByText(/Fotograma guardado/)).toBeInTheDocument();
   });
+
+  it('📷 funciona aunque no llegue loadedMetadata (dimensiones vía loadedData)', async () => {
+    // Regresión F5-fix-1: llegando al editor desde el visor simple, la metadata del <video> ya estaba
+    // cargada y el evento `loadedmetadata` se pierde. Antes, `sourceDims` quedaba nulo y el botón 📷
+    // quedaba deshabilitado (clic muerto, sin mensaje). Debe bastar con `loadeddata`.
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      new Proxy({} as Record<string, unknown>, { get: () => () => undefined }) as unknown as CanvasRenderingContext2D, // prettier-ignore
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,ZZZ');
+
+    await prepararClip();
+    const video = document.querySelector('video.eav-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'videoWidth', { configurable: true, value: 1920 });
+    Object.defineProperty(video, 'videoHeight', { configurable: true, value: 1080 });
+    fireEvent.loadedData(video); // NO loadedMetadata
+
+    fireEvent.click(screen.getByRole('button', { name: 'Capturar fotograma' }));
+    await waitFor(() => expect(mock().editor.captureFrame).toHaveBeenCalledWith(7, 'data:image/png;base64,ZZZ')); // prettier-ignore
+  });
 });
 
 describe('EditorAvanzado — alto del panel persistente', () => {

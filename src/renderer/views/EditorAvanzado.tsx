@@ -390,7 +390,11 @@ export default function EditorAvanzado() {
     );
   }
 
-  function onMetadata() {
+  // Dimensiones de origen y duración del <video>. Se engancha a `loadedmetadata` Y a `loadeddata`: en
+  // `loadedmetadata` algunos contenedores aún reportan `videoWidth === 0`, y si se llega al editor con la
+  // metadata ya en caché ese evento puede no re-emitirse; `loadeddata` (primer frame decodificado)
+  // garantiza dimensiones. Sin esto `sourceDims` quedaba nulo → 📷 deshabilitado y reencuadre inestable.
+  function syncVideoInfo() {
     const v = videoRef.current;
     if (v && v.videoWidth > 0 && v.videoHeight > 0 && !sourceDims) {
       setSourceDims({ w: v.videoWidth, h: v.videoHeight });
@@ -566,11 +570,16 @@ export default function EditorAvanzado() {
   // Captura el fotograma actual (con el reencuadre aplicado) y lo guarda como captura en la biblioteca.
   async function captureFrame() {
     const v = videoRef.current;
-    if (!v || !id || !sourceDims) return;
+    if (!v || !id) return;
+    // Refuerzo: si `sourceDims` aún no se fijó (evento de metadata perdido), se leen del <video>.
+    const dims =
+      sourceDims ??
+      (v.videoWidth > 0 && v.videoHeight > 0 ? { w: v.videoWidth, h: v.videoHeight } : null);
+    if (!dims) return;
     const canvas = document.createElement('canvas');
-    const g = hasReframe(reframe) ? reframeGeometry(reframe, sourceDims.w, sourceDims.h) : null;
-    canvas.width = g ? g.outputW : sourceDims.w;
-    canvas.height = g ? g.outputH : sourceDims.h;
+    const g = hasReframe(reframe) ? reframeGeometry(reframe, dims.w, dims.h) : null;
+    canvas.width = g ? g.outputW : dims.w;
+    canvas.height = g ? g.outputH : dims.h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     if (g && g.kind === 'cover' && g.crop) {
@@ -580,7 +589,7 @@ export default function EditorAvanzado() {
       // Barras: fondo negro + la imagen entera centrada.
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, g.outputW, g.outputH);
-      ctx.drawImage(v, 0, 0, sourceDims.w, sourceDims.h, g.pad.padX, g.pad.padY, g.pad.scaledW, g.pad.scaledH); // prettier-ignore
+      ctx.drawImage(v, 0, 0, dims.w, dims.h, g.pad.padX, g.pad.padY, g.pad.scaledW, g.pad.scaledH); // prettier-ignore
     } else {
       ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
     }
@@ -683,7 +692,8 @@ export default function EditorAvanzado() {
             className="eav-video"
             style={videoStyle}
             src={clipMediaUrl(id)}
-            onLoadedMetadata={onMetadata}
+            onLoadedMetadata={syncVideoInfo}
+            onLoadedData={syncVideoInfo}
             onEnded={() => {
               engineRef.current?.stop();
               setPlaying(false);
@@ -822,7 +832,7 @@ export default function EditorAvanzado() {
           <div className="eav-track-head">
             <span className="eav-track-name">🎬 {clip?.game ?? 'Vídeo'}</span>
           </div>
-          <Filmstrip clipId={id} segments={segments} />
+          <Filmstrip clipId={id} segments={segments} duration={duration} />
         </div>
         <ul className="eav-audio-list">
           {tracks.map((t) => {

@@ -18,6 +18,8 @@ interface Props {
   clipId: number | null;
   /** Segmentos actuales: definen los tiempos de muestreo la primera vez que se extrae. */
   segments: Segment[];
+  /** Duración de ORIGEN del clip (s). El muestreo espera a conocerla (>0): al montar aún es 0. */
+  duration: number;
 }
 
 /**
@@ -25,20 +27,25 @@ interface Props {
  * recortar. Se extraen perezosamente en el renderer (un `<video>` oculto + `canvas`) y se cachean por
  * clip. **Best-effort:** si la extracción falla o no hay soporte de vídeo (tests), la barra queda vacía.
  */
-export default function Filmstrip({ clipId, segments }: Props) {
+export default function Filmstrip({ clipId, segments, duration }: Props) {
   const [frames, setFrames] = useState<string[]>(() => (clipId ? (cache.get(clipId) ?? []) : []));
 
   useEffect(() => {
-    if (!clipId || typeof document === 'undefined') return;
+    // Espera a conocer la duración (>0): al montar, el clip aún no cargó y `segments` tiene duración 0,
+    // con lo que los tiempos de muestreo saldrían vacíos. Extraer/cachear ahí dejaría la barra vacía
+    // para siempre (el efecto solo re-corre al cambiar clipId/duration, no en cada corte).
+    if (!clipId || duration <= 0 || typeof document === 'undefined') return;
     const cached = cache.get(clipId);
     if (cached) {
       setFrames(cached);
       return;
     }
     if (pending.has(clipId)) return;
+    const times = filmstripSampleTimes(segments, FRAME_COUNT);
+    if (times.length === 0) return; // aún sin tiempos válidos: no se cachea vacío, se reintenta luego
     pending.add(clipId);
-    const cancel = extractFrames(clipId, filmstripSampleTimes(segments, FRAME_COUNT), (imgs) => {
-      cache.set(clipId, imgs);
+    const cancel = extractFrames(clipId, times, (imgs) => {
+      if (imgs.length > 0) cache.set(clipId, imgs); // no cachear un fallo vacío: permite reintentar
       pending.delete(clipId);
       setFrames(imgs);
     });
@@ -46,9 +53,10 @@ export default function Filmstrip({ clipId, segments }: Props) {
       cancel();
       pending.delete(clipId);
     };
-    // Se extrae una sola vez por clip: cambiar los cortes no re-muestrea (se estira). Best-effort.
+    // Se extrae una sola vez por clip (al conocer la duración): cambiar los cortes no re-muestrea (se
+    // estira). `segments` se lee para los tiempos pero no dispara re-extracción. Best-effort.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clipId]);
+  }, [clipId, duration]);
 
   if (frames.length === 0) return <div className="eav-track-video-bar" />;
   return (

@@ -74,3 +74,31 @@ Observables y verificables uno a uno:
 - [ ] La pista de vídeo muestra **miniaturas reales** del clip a lo largo del tiempo (best-effort).
 - [ ] El editor **simple** y el resto de la app siguen igual.
 - [ ] Type-check, lint y tests verdes, con tests unitarios nuevos para la lógica pura añadida.
+
+## Fixes durante la E2E del owner (14–15 jul)
+
+La validación reveló que **📷 y el filmstrip no funcionaban** en la app real (sí en los tests). Causas raíz:
+
+### F5-fix-1 — 📷 no reaccionaba (`sourceDims` nulo → botón `disabled`)
+- **Síntoma:** al pulsar 📷 no pasa nada (ni mensaje ni PNG; verificado: sin PNG nuevo en `Capturas`).
+- **Causa raíz:** `sourceDims` (dimensiones de origen) se fijaba **solo** en `onLoadedMetadata`. Ese
+  evento se **pierde** cuando la metadata del `<video>` ya estaba cargada al montar (se llega al editor
+  avanzado desde el visor simple con el mismo clip) o reporta `videoWidth === 0` en ese instante. El
+  vídeo se ve igual (el frame se decodifica), pero `sourceDims` queda `null` → el botón 📷 está
+  `disabled={!sourceDims}` → el clic no dispara nada. (Por lo mismo, el reencuadre F4 solo funcionaba "a
+  veces", según el timing.) Descartado por eliminación: handler IPC presente en el build; `toDataURL` no
+  taintea (probado en Electron headless); preload correcto.
+- **Arreglo:** fijar `sourceDims` **y** `duration` también en `onLoadedData` (evento que sí llega —el
+  frame se ve—) además de `onLoadedMetadata`; y como refuerzo, leer las dimensiones del `<video>`
+  directamente al capturar. **Regresión:** 📷 funciona aunque solo llegue `loadedData`.
+
+### F5-fix-2 — filmstrip siempre vacío (se cachea vacío con duración 0)
+- **Síntoma:** la pista de vídeo queda azul, sin miniaturas.
+- **Causa raíz:** al montar, el clip aún no cargó → `segments` con **duración 0** →
+  `filmstripSampleTimes(...)` devuelve `[]` → `Filmstrip` "termina" con 0 frames y **cachea el array
+  vacío** para ese clip. Como el efecto depende **solo de `[clipId]`**, **nunca reintenta** cuando llega
+  la duración real (`StrictMode` lo agrava). La extracción en sí funciona (16 frames verificados en
+  Electron headless contra un clip real).
+- **Arreglo:** pasar la **duración real** a `Filmstrip`; **no extraer ni cachear con duración 0**;
+  reintentar cuando la duración pasa a >0 (efecto con dep `[clipId, duration]`), y **no cachear
+  resultados vacíos**. **Regresión** unit + verificación headless.

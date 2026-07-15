@@ -23,6 +23,13 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] 7. `Filmstrip.tsx`: extracción serial best-effort + cache por clip; reemplaza la barra vacía.
 - [x] 8. Estilos (drafts + filmstrip + aviso de frame) en `styles.css`.
 
+### Fixes tras E2E (causa raíz en el spec)
+- [x] F5-fix-1 — 📷: fijar `sourceDims`/`duration` también en `onLoadedData` (no solo `onLoadedMetadata`)
+      + fallback leyendo dimensiones del `<video>` al capturar. Regresión: `editor-avanzado.test.tsx`
+      "📷 funciona aunque no llegue loadedMetadata".
+- [x] F5-fix-2 — filmstrip: `Filmstrip` recibe la `duration`; no extrae ni cachea con duración 0;
+      reintenta al conocerla y no cachea resultados vacíos. Regresión: `filmstrip.test.tsx`.
+
 ## Tests unitarios (obligatorios)
 
 - [x] `editor-drafts`: `sameEdit` (defecto vs. con cortes/volumen/removed/reframe); `save`→`load`;
@@ -38,7 +45,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
-- [x] Tests verdes (`npm run test`) — 736 tests (+21)
+- [x] Tests verdes (`npm run test`) — 742 tests (+2 regresión de los fixes)
 - [ ] Comprobación manual (E2E owner): editar→salir→retomar restaura; Restablecer descarta; 📷 deja el PNG
       reencuadrado en la biblioteca; el filmstrip muestra miniaturas reales.
 
