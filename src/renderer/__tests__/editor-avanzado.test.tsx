@@ -243,6 +243,78 @@ describe('EditorAvanzado — reencuadre (Fase 4)', () => {
   });
 });
 
+describe('EditorAvanzado — ediciones sin terminar (drafts, Fase 5)', () => {
+  const DRAFT_KEY = 'gameclip.editor.draft.7';
+
+  it('editar auto-guarda la edición sin terminar', async () => {
+    await prepararClip();
+    fireEvent.change(screen.getByLabelText('Volumen de game'), { target: { value: '150' } });
+    await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull());
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY)!);
+    expect(draft.clipId).toBe(7);
+    expect(draft.volumes.game).toBe(1.5);
+  });
+
+  it('al abrir un clip con una edición guardada, se restaura', async () => {
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        clipId: 7,
+        updatedAt: 1,
+        segments: [{ start: 0, end: 60 }],
+        volumes: { game: 0.5 },
+        removed: [],
+        reframe: { aspect: 'original', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      }),
+    );
+    await prepararClip();
+    expect(screen.getByLabelText('Volumen de game')).toHaveValue('50');
+  });
+
+  it('Restablecer descarta los cambios y borra la edición guardada', async () => {
+    await prepararClip();
+    fireEvent.change(screen.getByLabelText('Volumen de game'), { target: { value: '150' } });
+    await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restablecer' }));
+    expect(screen.getByLabelText('Volumen de game')).toHaveValue('100');
+    await waitFor(() => expect(localStorage.getItem(DRAFT_KEY)).toBeNull());
+  });
+});
+
+describe('EditorAvanzado — capturar fotograma (Fase 5)', () => {
+  function setVideoDims(w: number, h: number) {
+    const video = document.querySelector('video.eav-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'videoWidth', { configurable: true, value: w });
+    Object.defineProperty(video, 'videoHeight', { configurable: true, value: h });
+    fireEvent.loadedMetadata(video);
+  }
+
+  it('el botón 📷 guarda el fotograma actual vía captureFrame', async () => {
+    // jsdom no implementa canvas: se stubea un contexto que hace no-op en cualquier método (sirve
+    // tanto para la captura como para el <canvas> de las ondas) y un toDataURL fijo.
+    const noop = () => undefined;
+    const ctx = new Proxy({} as Record<string, unknown>, {
+      get: (t, p) => (p in t ? t[p as string] : noop),
+      set: (t, p, v) => {
+        t[p as string] = v;
+        return true;
+      },
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D); // prettier-ignore
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,ZZZ');
+
+    await prepararClip();
+    setVideoDims(2560, 1440);
+    fireEvent.click(screen.getByRole('button', { name: 'Capturar fotograma' }));
+
+    await waitFor(() =>
+      expect(mock().editor.captureFrame).toHaveBeenCalledWith(7, 'data:image/png;base64,ZZZ'),
+    );
+    expect(await screen.findByText(/Fotograma guardado/)).toBeInTheDocument();
+  });
+});
+
 describe('EditorAvanzado — alto del panel persistente', () => {
   it('arrastrar el divisor guarda el alto y al reabrir el editor arranca con ese alto', async () => {
     await prepararClip();

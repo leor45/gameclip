@@ -51,6 +51,7 @@ export const IpcChannel = {
   ClipGetAudioWaveforms: 'clip:get-audio-waveforms',
   ClipGetTrackAudio: 'clip:get-track-audio',
   ClipSaveAudioEdit: 'clip:save-audio-edit',
+  ClipCaptureFrame: 'clip:capture-frame',
 } as const;
 
 // Eventos push main → renderer (webContents.send).
@@ -150,6 +151,18 @@ export interface IpcContract {
     request: { clipId: number; mutedTracks: string[] };
     response: SaveAudioEditResult;
   };
+  /** Guarda un fotograma (PNG en base64) del clip como captura en la biblioteca. */
+  [IpcChannel.ClipCaptureFrame]: {
+    request: { clipId: number; pngBase64: string };
+    response: CaptureFrameResult;
+  };
+}
+
+/** Resultado de guardar un fotograma como captura. */
+export interface CaptureFrameResult {
+  ok: boolean;
+  /** Mensaje de error (sencillo) cuando `ok` es false. */
+  message?: string;
 }
 
 export interface CaptureApi {
@@ -231,6 +244,11 @@ export interface EditorApi {
    * pistas marcadas. Las muteadas siguen en el archivo (el edit es reversible).
    */
   saveAudioEdit(clipId: number, mutedTracks: string[]): Promise<SaveAudioEditResult>;
+  /**
+   * Guarda un fotograma del clip (PNG en base64, ya con el reencuadre aplicado) como captura en la
+   * carpeta del juego y lo da de alta en la biblioteca. Best-effort.
+   */
+  captureFrame(clipId: number, pngBase64: string): Promise<CaptureFrameResult>;
 }
 
 export interface OverlayApi {

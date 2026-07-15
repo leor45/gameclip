@@ -70,6 +70,21 @@ export function segmentAt(segments: Segment[], t: number): number {
 }
 
 /**
+ * Tiempos de **origen** para muestrear un filmstrip: `count` puntos repartidos por el centro de cada
+ * tramo de la **salida** (respeta los cortes) y mapeados a origen. Vacío si `count ≤ 0` o no hay salida.
+ */
+export function filmstripSampleTimes(segments: Segment[], count: number): number[] {
+  if (count <= 0) return [];
+  const outLen = keptDuration(segments);
+  if (outLen <= 0) return [];
+  const times: number[] = [];
+  for (let i = 0; i < count; i++) {
+    times.push(outputToSource(segments, ((i + 0.5) * outLen) / count));
+  }
+  return times;
+}
+
+/**
  * Divide en `t` el segmento que lo contiene. No divide (devuelve la lista igual) si `t` no cae dentro
  * de ningún segmento o si algún trozo quedaría por debajo de `MIN_TRIM_SECONDS`.
  */

@@ -3,6 +3,7 @@ import {
   clampTime,
   clampZoomFactor,
   deleteSegment,
+  filmstripSampleTimes,
   initialSegments,
   keptDuration,
   MIN_TRIM_SECONDS,
@@ -22,6 +23,30 @@ import {
   ZOOM_FACTOR_MAX,
   ZOOM_FACTOR_MIN,
 } from '../timeline';
+
+describe('filmstripSampleTimes', () => {
+  it('reparte por el centro de cada tramo en un clip sin cortes', () => {
+    expect(filmstripSampleTimes([{ start: 0, end: 10 }], 5)).toEqual([1, 3, 5, 7, 9]);
+  });
+
+  it('respeta los cortes: mapea los tiempos de salida a origen (salta el hueco)', () => {
+    // Conservado [0,3] + [6,10] → salida 7 s. Centros de salida 0.5..6.5 → origen saltando 3→6.
+    expect(
+      filmstripSampleTimes(
+        [
+          { start: 0, end: 3 },
+          { start: 6, end: 10 },
+        ],
+        7,
+      ),
+    ).toEqual([0.5, 1.5, 2.5, 6.5, 7.5, 8.5, 9.5]);
+  });
+
+  it('casos borde: count ≤ 0 o sin duración → vacío', () => {
+    expect(filmstripSampleTimes([{ start: 0, end: 10 }], 0)).toEqual([]);
+    expect(filmstripSampleTimes([{ start: 5, end: 5 }], 4)).toEqual([]);
+  });
+});
 
 describe('conversión tiempo↔px y zoom', () => {
   it('convierte segundos a px y de vuelta', () => {

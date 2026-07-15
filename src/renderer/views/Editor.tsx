@@ -6,6 +6,7 @@ import { formatDuration } from '@shared/library';
 import type { ClipAudioTrack } from '@shared/tracks';
 import { hasRoleTracks, selectableTracks, trackKey, trackLabel } from '@shared/tracks';
 import { clipMediaUrl } from '../lib/media';
+import DraftsList from '../components/editor-avanzado/DraftsList';
 
 type Estado = 'listo' | 'exportando' | 'hecho' | 'error';
 type EstadoEdit = 'listo' | 'guardando' | 'guardado' | 'error';
@@ -71,10 +72,7 @@ export default function Editor() {
     return (
       <section>
         <h1>Editor</h1>
-        <p className="placeholder">
-          Elige un clip en la <Link to="/biblioteca">Biblioteca</Link> y pulsa "Editar" para
-          recortarlo y exportarlo.
-        </p>
+        <DraftsList />
       </section>
     );
   }

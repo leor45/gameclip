@@ -2214,6 +2214,118 @@ body {
   border: 1px solid rgba(91, 127, 219, 0.4);
 }
 
+/* Filmstrip: miniaturas reales estiradas para llenar la barra de la pista de vídeo. */
+.eav-filmstrip {
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+}
+
+.eav-filmstrip-frame {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  border-right: 1px solid rgba(0, 0, 0, 0.35);
+  user-select: none;
+}
+
+.eav-filmstrip-frame:last-child {
+  border-right: none;
+}
+
+/* Aviso breve tras capturar un fotograma (misma esquina que el de render). */
+.eav-frame-notice {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Lista de "ediciones sin terminar" en la pestaña Editor. */
+.eav-drafts-title {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.eav-drafts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.eav-draft-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+}
+
+.eav-draft-thumb {
+  flex-shrink: 0;
+  width: 128px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eav-draft-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.eav-draft-thumb-empty {
+  font-size: 24px;
+  opacity: 0.6;
+}
+
+.eav-draft-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.eav-draft-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eav-draft-time {
+  font-size: 12px;
+  color: var(--text-dim, #9aa);
+}
+
+.eav-draft-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.eav-draft-card.eav-draft-missing {
+  justify-content: space-between;
+  color: var(--text-dim, #9aa);
+}
+
 .eav-audio-list {
   list-style: none;
   display: flex;
