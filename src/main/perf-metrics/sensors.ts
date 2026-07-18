@@ -77,7 +77,20 @@ export interface LineProcess {
 export interface SensorsDeps {
   helperPath: () => string | null;
   spawn: (exePath: string, args: string[]) => LineProcess;
+  /** Reloj inyectable para los reintentos (tests). */
+  now?: () => number;
 }
+
+/** Espera antes de los primeros reintentos tras una muerte inesperada. */
+const REINTENTO_MUERTE_MS = 5_000;
+/** Reintentos rápidos antes de pasar a la cadencia lenta. */
+const MAX_REINTENTOS = 3;
+/**
+ * Cadencia tras agotar los rápidos. **No se abandona del todo**, mismo criterio que el watchdog de
+ * PresentMon: la causa de una muerte suele ser pasajera y rendirse dejaría las métricas de hardware
+ * en «—» hasta reiniciar GameClip, sin que el usuario sepa por qué.
+ */
+const REINTENTO_LENTO_MS = 60_000;
 
 /**
  * Argumento que pide al helper abrir **también** el grupo de CPU. Es opt-in a propósito: la
@@ -94,18 +107,29 @@ export interface SensorsMode {
 }
 
 /**
- * Mantiene vivo el helper de sensores mientras haga falta y recuerda la última lectura. Si el
- * proceso muere no se relanza solo (evita un bucle de crashes: p. ej. sin .NET Framework);
- * `start()` tras un `stop()` sí vuelve a intentarlo.
+ * Mantiene vivo el helper de sensores mientras haga falta y recuerda la última lectura.
+ *
+ * Si el proceso muere por su cuenta **se relanza solo**, con la espera escalonada de más abajo: no
+ * en caliente (encadenaría arranques fallidos) pero tampoco nunca — antes, morir una vez dejaba las
+ * siete métricas de hardware en «—» el resto de la sesión, en silencio y sin más salida que tocar
+ * ajustes o reiniciar. Lo único que sigue siendo un fallo **permanente** es que falte el binario:
+ * eso no se arregla esperando.
  */
 export class SensorsReader {
   private child: LineProcess | null = null;
   private reading: SensorReading = EMPTY_SENSOR_READING;
+  /** Fallo del que no se vuelve: hoy, solo «no está el .exe». */
   private failed = false;
   /** Modo con el que corre el helper actual, para saber si hay que relanzarlo. */
   private mode: SensorsMode | null = null;
+  /** Cuándo murió por su cuenta, o null si está vivo (o parado a propósito). */
+  private muertoEn: number | null = null;
+  private reintentos = 0;
+  private readonly now: () => number;
 
-  constructor(private readonly deps: SensorsDeps) {}
+  constructor(private readonly deps: SensorsDeps) {
+    this.now = deps.now ?? (() => Date.now());
+  }
 
   start(mode: SensorsMode = { cpu: false }): void {
     // Cambiar de modo obliga a relanzar: los grupos se eligen al abrir el helper y no se reconfiguran
@@ -119,7 +143,17 @@ export class SensorsReader {
       this.child = null;
       this.failed = false; // el cambio es una acción del usuario: merece un intento nuevo
     }
+    if (this.muertoEn !== null) {
+      // Murió y espera su reintento espaciado: no se adelanta aquí. Pero sí se apunta el modo nuevo,
+      // porque si no volvería con el viejo (p. ej. con `--cpu` después de haberlo desmarcado).
+      this.mode = mode;
+      return;
+    }
     if (this.child || this.failed) return;
+    this.spawnChild(mode);
+  }
+
+  private spawnChild(mode: SensorsMode): void {
     const exePath = this.deps.helperPath();
     if (!exePath) {
       this.failed = true; // sin binario: no insistir en cada tick
@@ -134,11 +168,34 @@ export class SensorsReader {
     child.onExit(() => {
       if (this.child === child) {
         this.child = null;
-        this.failed = true;
+        this.muertoEn = this.now();
+        // Aquí SÍ se limpia la lectura: la ventana de reintento puede durar un minuto, y enseñar
+        // cifras de hace un minuto como si fueran de ahora es peor que un guion — el usuario no
+        // puede distinguirlo. (Al relanzar por cambio de modo el hueco es de ~1 s y sí se conservan.)
         this.reading = EMPTY_SENSOR_READING;
       }
     });
     this.child = child;
+  }
+
+  /**
+   * Relanza el helper si murió y ya toca. Se evalúa desde `latest()`, o sea una vez por tick del
+   * sampler: no hace falta un `setInterval` que luego haya que apagar en `stop()` y en el cierre de
+   * la app — justo el tipo de ciclo de vida que provocó el bug de la bandeja destruida al cerrar.
+   */
+  private reintentarSiMurio(): void {
+    if (this.child || this.muertoEn === null || this.failed) return;
+    const espera = this.reintentos < MAX_REINTENTOS ? REINTENTO_MUERTE_MS : REINTENTO_LENTO_MS;
+    if (this.now() - this.muertoEn < espera) return;
+    this.reintentos++;
+    if (this.reintentos === MAX_REINTENTOS + 1) {
+      // Solo al entrar en cadencia lenta: repetirlo cada minuto sería ruido en el log.
+      console.warn(
+        `[perf] el helper de sensores sigue cayéndose; se reintentará cada ${REINTENTO_LENTO_MS / 1000}s.`,
+      );
+    }
+    this.muertoEn = null;
+    this.spawnChild(this.mode ?? { cpu: false });
   }
 
   stop(): void {
@@ -146,11 +203,14 @@ export class SensorsReader {
     this.child = null;
     this.failed = false;
     this.mode = null;
+    this.muertoEn = null;
+    this.reintentos = 0;
     // Aquí sí se limpia: parar de verdad (overlay apagado) no debe dejar cifras viejas en pantalla.
     this.reading = EMPTY_SENSOR_READING;
   }
 
   latest(): SensorReading {
+    this.reintentarSiMurio();
     return this.reading;
   }
 }

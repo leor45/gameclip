@@ -988,11 +988,51 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >
 > **Con las tres entregadas, la 0.9.0 queda lista para publicarse.**
 >
-> **Candidato anotado (no entra aquí):** `fix/presentmon-no-reintenta-tras-morir` — si PresentMon
-> muere por una causa transitoria, `onExit` marca el reader como `failed` y **`start()` ya no vuelve
-> a lanzarlo**, así que los FPS quedan muertos en silencio hasta alternar el ajuste o reiniciar la
-> app. El watchdog cubre «vivo pero mudo», no «murió una vez». El término medio ya existe en el
-> propio watchdog: reintento con cadencia lenta y tope.
+> 4. **`fix/helpers-no-reintentan-tras-morir`** — ✅ entregado (2026-07-18, en rama). *Era el candidato
+>    `fix/presentmon-no-reintenta-tras-morir`; el owner decidió meterlo en la 0.9.0 porque el overlay
+>    aún no se ha publicado y se puede corregir antes de estrenarlo.*
+>
+>    Si un helper moría por su cuenta, sus métricas quedaban **muertas en silencio el resto de la
+>    sesión**: `onExit` ponía `failed = true` y `start()` salía antes de nada. **El alcance resultó
+>    mayor que el anotado**, que hablaba solo de PresentMon: `SensorsReader` tenía el patrón idéntico y
+>    ahí el daño es peor — PresentMon solo mata los FPS, el de sensores se lleva **siete métricas**.
+>
+>    No se inventó mecanismo: el watchdog ya resolvía el caso hermano («vivo pero mudo») con
+>    reintentos escalonados y **sin timers**, movido desde `fps()`. La muerte se trata igual — el flag
+>    terminal pasa a ser **un estado con hora** y el siguiente tick relanza cuando toca. `failed` se
+>    conserva **solo** para «falta el binario», que es lo único que no se arregla esperando. Sin
+>    `setInterval` a propósito: otro ciclo de vida que apagar en `stop()` y en el cierre es justo lo
+>    que provocó el bug de la bandeja destruida. La lectura **sí** se limpia al morir (la ventana dura
+>    hasta un minuto y enseñar cifras viejas como actuales es peor que un guion) — al revés que el
+>    relanzado por cambio de modo, donde el hueco es de ~1 s.
+>
+>    **Verificado E2E en la app real**, no solo en tests: matado el helper de sensores volvió solo a
+>    los ~5 s; matándolo seis veces seguidas los huecos escalan y **se asientan en exactamente 60 s**;
+>    y leyendo el overlay por CDP, GPU/Temp GPU/VRAM pasan de cifras → **«—»** → cifras otra vez **sin
+>    tocar ajustes ni reiniciar**. 862 tests verdes (+8).
+>
+>    ⚠️ **Anotado de la E2E:** sin elevar, PresentMon muere al instante (no puede crear su sesión ETW)
+>    y queda reintentando **una vez por minuto** mientras el overlay esté encendido — antes era un
+>    intento y silencio. No se mitiga: el coste medido es despreciable y es la **misma política** que
+>    el watchdog ya aplicaba al caso mudo. Si algún día molesta, lo natural es alargar la cadencia
+>    cuando el proceso ni sobrevive un par de segundos (causa estructural, no pasajera).
+>
+> 5. **`feature/overlay-proteccion-selectiva`** — 📋 spec y plan escritos, **plan pendiente de
+>    aprobación y sin código**. Es la que faltaba en esta lista: su propio spec ya decía que entra en
+>    el **mismo release** que el overlay, así que la 0.9.0 no se publica sin ella.
+>
+>    Hoy el overlay se crea con `setContentProtection(true)` (`WDA_EXCLUDEFROMCAPTURE`), que lo hace
+>    invisible para **toda** captura: cumple lo de no salir en los clips, pero se pasa de largo y
+>    tampoco se ve al compartir pantalla en Discord ni en un recorte de Windows, que es justo donde el
+>    usuario sí lo quiere. La idea es aplicar la protección **solo cuando el pipeline está capturando
+>    el monitor** (perfil `desktop` capturando de verdad); con perfil `game` queda siempre quitada,
+>    porque el `game_capture` solo ve la swapchain del juego y los clips salen limpios igual.
+>
+>    **Riesgo principal, sin verificar:** conmutar `setContentProtection` en caliente podría alterar
+>    la ventana (perder el nivel `screen-saver`, parpadear, o no aplicarse hasta el siguiente
+>    repintado). Se comprueba a mano en su E2E.
+>
+> **Con las cinco entregadas, la 0.9.0 queda lista para publicarse.**
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
