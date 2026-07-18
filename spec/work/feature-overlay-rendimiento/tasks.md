@@ -4,61 +4,65 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Implementación
 
-- [ ] 1. `src/shared/capture.ts`: tipo `PerfOverlaySettings` (con `posX`/`posY`, `toggleHotkey`),
+- [x] 1. `src/shared/capture.ts`: tipo `PerfOverlaySettings` (con `posX`/`posY`, `toggleHotkey`),
       defaults, `normalizePerfOverlay()`, `presetFor()` y `clampPerfPosition()` (sin centro).
-- [ ] 2. Ajustes → Avanzado: fieldset "Overlay de rendimiento" — switch, hotkey, checks de
+      *(Quedó en `src/shared/perf.ts` + campos `perfOverlayEnabled`/`perfOverlayHotkey`/`perfOverlay`
+      en `CaptureSettings`; el atajo es plano para entrar al catálogo `HOTKEY_ACTIONS`.)*
+- [x] 2. Ajustes → Avanzado: fieldset "Overlay de rendimiento" — switch, hotkey, checks de
       métricas, preset con flechas + sliders H/V sincronizados, disposición, color, opacidad,
       opt-in de admin.
-- [ ] 3. Preview en vivo: IPC de preview (throttled) que mueve/repinta la ventana al arrastrar,
-      antes de guardar.
-- [ ] 4. Página `perf-overlay.html` + vista React tonta: pinta snapshot con la config visual
+- [x] 3. Preview en vivo: IPC de preview (debounced) que mueve/repinta la ventana al arrastrar,
+      antes de guardar; al salir sin guardar se restaura la config persistida.
+- [x] 4. Página `perf-overlay.html` + vista React tonta: pinta snapshot con la config visual
       (`—` para null).
-- [ ] 5. `src/main/perf-overlay.ts`: `PerfOverlayController` (ventana transparente click-through,
+- [x] 5. `src/main/perf-overlay.ts`: `PerfOverlayController` (ventana transparente click-through,
       `setContentProtection(true)`, posición desde posX/posY, crear/destruir según `enabled`,
-      toggle de visibilidad).
-- [ ] 6. Hotkey global Alt+R (configurable) que alterna la visibilidad, conviviendo con los
-      hotkeys existentes.
-- [ ] 7. `src/main/perf-metrics/`: sampler de CPU/RAM (os) con snapshot cada 1 s.
-- [ ] 8. Helpers bundleados: proyecto del helper LHM compilado contra .NET Framework 4.8 +
-      binario de PresentMon en `resources/`, incluidos en el empaquetado (electron-builder).
-- [ ] 9. Helper LibreHardwareMonitor (GPU uso/temp/fans/voltaje/VRAM + temp CPU): wrapper de
-      proceso, parseo JSON, degradación a null; hint de permisos sin admin.
-- [ ] 10. Helper PresentMon (FPS del PID del juego activo): wrapper, parseo CSV, degradación;
-      hint de permisos.
-- [ ] 11. `src/main/overlay.ts`: `moveTop()` al mostrar zonas (REC/toast/aviso encima del perf).
-- [ ] 12. Auto-inicio elevado opt-in: tarea programada al logon (`RunLevel=Highest`, ruta real
-      del portable), alta/baja idempotente, restaurar clave Run al desmarcar.
-- [ ] 13. Wiring en main: instanciar controller, re-config en settings-changed, PID del juego,
-      apagar helpers al desactivar/cerrar.
-- [ ] 14. Medir tamaño del exe portable antes/después (criterio: crece ≤ ~5 MB).
+      toggle de visibilidad, recarga si su renderer muere).
+- [x] 6. Hotkey global Alt+R (configurable) que alterna la visibilidad, en el catálogo
+      `HOTKEY_ACTIONS` (colisiones + reserva del PTT gratis, y aparece en la sección Atajos).
+- [x] 7. `src/main/perf-metrics/`: sampler de CPU/RAM (os) con snapshot cada 1 s.
+- [x] 8. Helpers bundleados: `gc-perf-sensors` (C# net48 + LibreHardwareMonitorLib, compilado con
+      el csc de Windows) + `gc-presentmon.exe` (binario oficial 1.10.0, ~380 KB) vía
+      `scripts/build-perf-sensors.ps1`; en `build:native` y `extraResources`.
+- [x] 9. Wrapper LibreHardwareMonitor (GPU uso/temp/fans/voltaje/VRAM + temp CPU): proceso, parseo
+      JSON, degradación a null (temperaturas ≤ 0 = sensor sin permisos → null).
+- [x] 10. Wrapper PresentMon (FPS por `-process_name` del juego activo): parseo CSV
+      (msBetweenPresents), media por ventana de 1 s, degradación sin permisos.
+- [x] 11. `src/main/overlay.ts`: `moveTop()` al mostrar zonas (REC/toast/aviso encima del perf).
+- [x] 12. Auto-inicio elevado opt-in: tarea programada al logon (`RunLevel=Highest`, ruta real
+      del portable), aplicado SOLO al cambiar el ajuste, reversión si el UAC se cancela.
+- [x] 13. Wiring en main: instanciar controller, re-config en settings-changed, ejecutable del
+      juego activo → PresentMon, apagar helpers al desactivar/cerrar.
+- [x] 14. Medir tamaño del exe portable antes/después (criterio: crece ≤ ~5 MB). Medido
+      2026-07-18: 98 415 667 → 98 890 734 bytes = **+0,45 MB** (los ~4,5 MB de helpers quedan en
+      ~0,5 MB tras la compresión LZMA del portable). Los 4 helpers presentes en `resources/`.
 
 ## Tests unitarios (obligatorios)
 
-- [ ] `normalizePerfOverlay`: defaults con input basura, hex inválido, opacidad/posX/posY fuera
-      de rango, hotkey vacío, migración de settings sin `perfOverlay`.
-- [ ] `presetFor`/`clampPerfPosition`: las 8 zonas, bordes de banda, y centro-centro reubicado a
-      izquierda/derecha más cercana.
-- [ ] Sampler CPU/RAM: delta de `os.cpus()` (mock), snapshot solo con métricas marcadas.
-- [ ] Parseo LHM: JSON válido, sensor ausente → null, proceso caído → todos null sin excepción.
-- [ ] Parseo PresentMon: CSV válido → FPS, salida vacía/corrupta → null.
-- [ ] Resolución de rutas de los helpers bundleados (dev vs empaquetado), helper ausente →
-      métricas null con hint, sin excepción.
-- [ ] Auto-inicio elevado: argumentos de `schtasks` generados (lógica pura, patrón
-      `auto-launch.ts`), alta/baja idempotente.
-- [ ] UI Avanzado: checks/sliders reflejan settings, mover slider actualiza preset, elegir preset
-      fija sliders (patrón de `ajustes.test.tsx`).
-- [ ] Vista overlay: pinta solo métricas presentes, aplica color/opacidad/disposición, `—` para
-      null.
+- [x] `normalizePerfOverlay`: defaults con input basura, hex inválido, opacidad/posX/posY fuera
+      de rango, migración de settings sin `perfOverlay`.
+- [x] `presetFor`/`clampPerfPosition`: las 8 zonas, bordes de banda, y centro-centro reubicado.
+- [x] Sampler CPU/RAM: delta de `os.cpus()` (mock), snapshot solo con métricas marcadas.
+- [x] Parseo LHM: JSON válido, sensor ausente → null, proceso caído → todos null sin excepción;
+      sin binario no insiste; muerto no se relanza solo.
+- [x] Parseo PresentMon: cabecera CSV, valores, FpsTracker (media y datos viejos → null),
+      target fallido no se reintenta.
+- [x] Rutas/args de helpers y `schtasks`/PowerShell elevado (alta, baja, escapado, UAC cancelado).
+- [x] UI Avanzado: checks reflejan settings, slider ↔ preset (incluido esquive del centro),
+      preview en vivo, rechazo de tecla del PTT y de atajos ya asignados, opt-in admin.
+- [x] Vista overlay: solo métricas presentes, color/opacidad/disposición/anclaje, `—` para null.
 
 ## Verificación (gates)
 
-- [ ] Type-check verde (`npm run typecheck`)
-- [ ] Lint verde (`npm run lint`)
-- [ ] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: overlay visible en juego borderless (y un emulador); drag del slider
-      mueve el overlay en vivo; Alt+R lo oculta/muestra; REC/toast por encima; clip de game
-      capture y grabación de escritorio SIN el overlay; desactivar mata ventana y helpers;
-      auto-inicio elevado arranca la app como admin tras relogon.
+- [x] Type-check verde (`npm run typecheck`)
+- [x] Lint verde (`npm run lint`)
+- [x] Tests verdes (`npm run test`) — 811 tests, 74 archivos
+- [x] Comprobación E2E en máquina real (dev + CDP, 2026-07-18): ventana del overlay viva con
+      métricas reales (GPU 38 %, 42 °C, VRAM 4,1/12 GB, CPU/RAM; voltaje, temp CPU y FPS en «—»
+      por hardware/permisos, como se diseñó) **y captura GDI de esa esquina SIN el overlay**
+      (la exclusión de capturas funciona) mientras un emulador corría en pantalla.
+- [ ] Comprobación manual pendiente (owner): REC/toast por encima en juego, Alt+R, clip real de
+      game capture y grabación de escritorio sin el overlay, auto-inicio elevado tras relogon.
 
 ## Cierre
 
