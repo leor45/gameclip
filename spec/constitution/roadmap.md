@@ -1047,10 +1047,17 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    escritorio, el fotograma no contiene el overlay: desproteger no lo filtra a los clips.
 >    872 tests verdes (+8).
 >
->    ⚠️ **Queda para la E2E del owner:** un **clip con un juego real**. Un juego falso (`cmd.exe`
->    renombrado) no tiene swapchain que enganchar, así que no valida que el `game_capture` siga sin ver
->    el overlay ahora que está desprotegido. Es el argumento en el que se apoya toda la feature y
->    conviene confirmarlo con un juego de verdad antes de publicar.
+>    ✅ **E2E del owner con juego real (2026-07-18): «funcionando, no sale en las capturas de vídeo».**
+>    El argumento en el que se apoya la feature —el `game_capture` no ve una ventana ajena— queda
+>    confirmado con un juego de verdad.
+>
+>    🐞 **Efecto secundario detectado en esa E2E, aceptado y aplazado por el owner:** las **capturas de
+>    pantalla de la app** (hotkey de screenshot, PNG en `Capturas/`) **sí incluyen el overlay** cuando
+>    está desprotegido. Es una **regresión de esta feature**, no una rareza previa: antes el overlay
+>    estaba protegido siempre y no salía en ninguna. La captura de pantalla toma el monitor, así que
+>    con perfil `game` —donde ahora se desprotege a propósito— la ventana entra. Arreglarlo es
+>    proteger alrededor del disparo de la screenshot (protegerla justo antes y devolverla después),
+>    y va en su propia rama: **no bloquea la 0.9.0** por decisión del owner.
 >
 > **Con las cinco entregadas, la 0.9.0 queda lista para publicarse.**
 
