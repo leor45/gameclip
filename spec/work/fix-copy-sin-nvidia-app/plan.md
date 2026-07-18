@@ -59,4 +59,4 @@ fixture de `setup.ts` (`NVIDIA NVENC…` es el nombre real del encoder).
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-07-18

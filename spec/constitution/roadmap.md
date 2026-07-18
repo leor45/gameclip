@@ -968,14 +968,25 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    está por defecto), **sin argumentos**, y dentro ponía `IsCpuEnabled = true` incondicionalmente.
 >    **Detectado por el owner** al revisar la entrega de `fix/sensores-pawnio`.
 >
-> 3. **`fix/copy-sin-nvidia-app`** — 📋 spec escrito. La leyenda de posición dice «como en NVIDIA App»:
->    la NVIDIA App fue **referencia de desarrollo**, y el producto no debe nombrarla (instrucción del
->    owner). Se reescribe la frase conservando el dato útil —por qué el centro no es elegible— y se
->    barre la copy entera. **No entra** el nombre del encoder `NVIDIA NVENC`, que es el nombre real
->    del hardware. Quedan dos casos anotados a decidir en su plan: los **comentarios de código**
->    (propuesta: se quedan, documentan el porqué) y el **diagnóstico de PresentMon** que nombra a la
->    NVIDIA App como capturador que compite por las sesiones ETW (propuesta: se queda, es
->    troubleshooting útil, no una referencia de diseño).
+> 3. **`fix/copy-sin-nvidia-app`** — ✅ entregado (2026-07-18, en rama). La NVIDIA App fue **referencia
+>    de desarrollo** del overlay y el producto no debe nombrarla (instrucción del owner). El barrido
+>    confirmó que la leyenda de posición era la **única** cadena que veía el usuario; se reescribe
+>    entera en vez de recortar el paréntesis, para **conservar el dato útil** —por qué el centro no es
+>    elegible—, que si desaparece hace parecer la reserva arbitraria y acabaría "arreglándose":
+>    *«Con el overlay activo, los cambios se ven en pantalla al instante. El centro de la pantalla no
+>    es una posición elegible: se deja libre para el juego.»*
+>
+>    **Decisión del owner sobre el resto:** se quedan los **comentarios de código** (`perf.ts`,
+>    `Avanzado.tsx`), que son la nota de desarrollo que la referencia debía ser y documentan el porqué;
+>    el **diagnóstico de PresentMon**, que cita a la NVIDIA App junto al overlay de Steam como
+>    capturadores que **compiten por las sesiones ETW** (troubleshooting, no comparación de diseño); y
+>    los nombres de encoder `NVIDIA NVENC…`, que son el nombre real del hardware.
+>
+>    El test va sobre el **DOM renderizado** y no sobre los ficheros: un `grep` en el repo daría rojo
+>    por lo que se conserva a propósito y acabaría desactivado. La regla que se blinda es «el usuario
+>    no la ve». 856 tests verdes (+2).
+>
+> **Con las tres entregadas, la 0.9.0 queda lista para publicarse.**
 >
 > **Candidato anotado (no entra aquí):** `fix/presentmon-no-reintenta-tras-morir` — si PresentMon
 > muere por una causa transitoria, `onExit` marca el reader como `failed` y **`start()` ya no vuelve

@@ -294,8 +294,8 @@ export default function AjustesAvanzado() {
           />
         </label>
         <p className="settings-hint">
-          Con el overlay activo, los cambios se ven en pantalla al instante (el centro de la
-          pantalla queda reservado al juego, como en NVIDIA App).
+          Con el overlay activo, los cambios se ven en pantalla al instante. El centro de la pantalla
+          no es una posición elegible: se deja libre para el juego.
         </p>
 
         <label>
