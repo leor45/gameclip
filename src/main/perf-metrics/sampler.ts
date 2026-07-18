@@ -71,7 +71,11 @@ export class PerfSampler extends EventEmitter {
       this.stopAll();
       return;
     }
-    if (needsSensors(metrics)) this.deps.sensors.start();
+    // Dos preguntas distintas, a propósito: `needsSensors` decide **si** hace falta el helper, y
+    // `cpuTemp` decide **en qué modo**. Solo esa métrica necesita el grupo de CPU (los MSR, anillo 0
+    // vía PawnIO); lo de GPU va por NVAPI/ADL, que no usa driver. Quien no la marcó no debe provocar
+    // la carga de un driver de kernel.
+    if (needsSensors(metrics)) this.deps.sensors.start({ cpu: metrics.cpuTemp });
     else this.deps.sensors.stop();
     // PresentMon captura TODOS los procesos: no depende del juego detectado, así que basta con
     // encenderlo mientras la métrica de FPS esté marcada.

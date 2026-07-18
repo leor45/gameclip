@@ -941,15 +941,33 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > El overlay se publica **una sola vez**, cuando las tres estén entregadas (decisión del owner,
 > 2026-07-18). Ninguna se mergea a `main` sin su propio spec/plan aprobado.
 >
-> 1. **`fix/sensores-pawnio`** — ✅ entregado, pendiente de merge. Quita WinRing0 (ver arriba).
-> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — 📋 spec escrito. Desmarcar «Temp CPU» hoy deja de
->    **pintar** el número pero no cambia nada por debajo: el helper se lanza si hay **cualquier**
->    métrica de sensores marcada (`gpuUsage` lo está por defecto), se lanza **sin argumentos**, y
->    dentro pone `IsCpuEnabled = true` **incondicionalmente** — que es lo que engancha los MSR y con
->    ellos PawnIO. O sea: quien solo quiere FPS y uso de GPU acaba cargando un driver de anillo 0 si lo
->    tiene instalado. Importa porque PawnIO arregla el flag de Defender pero **no** la fricción con
->    anti-cheats de kernel: esa fricción hay que pagarla solo cuando se pidió la métrica que la
->    necesita. Detectado por el owner al revisar la entrega de `fix/sensores-pawnio`.
+> 1. **`fix/sensores-pawnio`** — ✅ entregado y **mergeado a `main`** (2026-07-18). Quita WinRing0 (ver
+>    arriba).
+> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — ✅ entregado (2026-07-18, en rama). El helper pasa de
+>    un modo a dos: `IsCpuEnabled` deja de ser incondicional y depende de una bandera **`--cpu`** que
+>    el main pasa solo cuando «Temp CPU» está marcada. Sin ella, el grupo de CPU no se abre y **los
+>    MSR no se tocan** — o sea, PawnIO no entra en juego para quien solo quiere FPS y uso de GPU.
+>    Bandera **opt-in** a propósito: con opt-out, un despiste dejaría el grupo abierto, y el modo por
+>    defecto tiene que ser el que **no** toca ring0 (que un fallo degrade a «no lee la temperatura» y
+>    nunca a «carga un driver de kernel de más»). Cambiar de modo **relanza** el helper —seguro porque
+>    `configure()` solo se llama al arrancar y en `settings:changed`, nunca por tick— **conservando la
+>    última lectura**, para que tocar ese checkbox no haga parpadear a «—» las métricas de GPU (mismo
+>    criterio que el arreglo del parpadeo de FPS de la Fase 19).
+>
+>    **Esto no apaga PawnIO: deja de usarlo.** GameClip nunca arranca ni para el servicio —no hay una
+>    sola línea de gestión de servicios en el repo— y esta tarea no añade ninguna; lo que cambia es si
+>    le hablamos. Queda prohibido en el spec, junto con cualquier lógica de «¿lo usa alguien más?»
+>    para decidir apagarlo: es una carrera y no es asunto de una app de clips.
+>
+>    Verificado con **las dos variantes elevadas**, para que la diferencia sea la bandera y no los
+>    permisos: sin `--cpu` → `cpuTemp: null` con las métricas de GPU intactas; con `--cpu` →
+>    **48,125 °C**. Servicio PawnIO en `Running` antes y después. 854 tests verdes (+8).
+>
+>    *Causa raíz que arregla:* desmarcar «Temp CPU» dejaba de **pintar** el número sin cambiar nada por
+>    debajo — el helper se lanzaba si había **cualquier** métrica de sensores marcada (`gpuUsage` lo
+>    está por defecto), **sin argumentos**, y dentro ponía `IsCpuEnabled = true` incondicionalmente.
+>    **Detectado por el owner** al revisar la entrega de `fix/sensores-pawnio`.
+>
 > 3. **`fix/copy-sin-nvidia-app`** — 📋 spec escrito. La leyenda de posición dice «como en NVIDIA App»:
 >    la NVIDIA App fue **referencia de desarrollo**, y el producto no debe nombrarla (instrucción del
 >    owner). Se reescribe la frase conservando el dato útil —por qué el centro no es elegible— y se

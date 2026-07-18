@@ -76,7 +76,21 @@ export interface LineProcess {
 
 export interface SensorsDeps {
   helperPath: () => string | null;
-  spawn: (exePath: string) => LineProcess;
+  spawn: (exePath: string, args: string[]) => LineProcess;
+}
+
+/**
+ * Argumento que pide al helper abrir **también** el grupo de CPU. Es opt-in a propósito: la
+ * temperatura del procesador se lee de los MSR (anillo 0) y eso es lo que engancha PawnIO, así que
+ * el modo por defecto tiene que ser el que **no** lo toca. Si algún día se olvida pasar la bandera,
+ * el fallo degrada a «no se lee la temperatura» y nunca a «se carga un driver de kernel de más».
+ */
+const ARG_CPU = '--cpu';
+
+/** Qué grupos de sensores se le piden al helper. El de GPU (NVAPI/ADL) va siempre: no usa driver. */
+export interface SensorsMode {
+  /** Abrir el grupo de CPU. Solo cuando el usuario marcó «Temperatura de CPU». */
+  cpu: boolean;
 }
 
 /**
@@ -88,17 +102,31 @@ export class SensorsReader {
   private child: LineProcess | null = null;
   private reading: SensorReading = EMPTY_SENSOR_READING;
   private failed = false;
+  /** Modo con el que corre el helper actual, para saber si hay que relanzarlo. */
+  private mode: SensorsMode | null = null;
 
   constructor(private readonly deps: SensorsDeps) {}
 
-  start(): void {
+  start(mode: SensorsMode = { cpu: false }): void {
+    // Cambiar de modo obliga a relanzar: los grupos se eligen al abrir el helper y no se reconfiguran
+    // en caliente. Es barato porque solo ocurre cuando el usuario toca un checkbox en Ajustes
+    // (`configure()` se llama al arrancar y desde `settings:changed`, nunca por tick).
+    if (this.child && this.mode && this.mode.cpu !== mode.cpu) {
+      // Se conserva la última lectura a propósito: relanzar tarda ~1 s en dar la primera muestra y
+      // limpiarla haría parpadear a «—» las métricas de GPU, que no tienen nada que ver con el
+      // checkbox que se acaba de tocar. Un valor de hace un segundo informa mejor que un guion.
+      this.child.kill();
+      this.child = null;
+      this.failed = false; // el cambio es una acción del usuario: merece un intento nuevo
+    }
     if (this.child || this.failed) return;
     const exePath = this.deps.helperPath();
     if (!exePath) {
       this.failed = true; // sin binario: no insistir en cada tick
       return;
     }
-    const child = this.deps.spawn(exePath);
+    this.mode = mode;
+    const child = this.deps.spawn(exePath, mode.cpu ? [ARG_CPU] : []);
     child.onLine((line) => {
       const parsed = parseSensorsLine(line);
       if (parsed) this.reading = parsed;
@@ -117,6 +145,8 @@ export class SensorsReader {
     this.child?.kill();
     this.child = null;
     this.failed = false;
+    this.mode = null;
+    // Aquí sí se limpia: parar de verdad (overlay apagado) no debe dejar cifras viejas en pantalla.
     this.reading = EMPTY_SENSOR_READING;
   }
 
@@ -126,8 +156,8 @@ export class SensorsReader {
 }
 
 /** Spawn real con stdout por líneas. stdin 'pipe': el helper recibe EOF si GameClip muere. */
-export function realSensorsSpawn(exePath: string): LineProcess {
-  const child: ChildProcess = spawn(exePath, [], {
+export function realSensorsSpawn(exePath: string, args: string[] = []): LineProcess {
+  const child: ChildProcess = spawn(exePath, args, {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'ignore'],
   });

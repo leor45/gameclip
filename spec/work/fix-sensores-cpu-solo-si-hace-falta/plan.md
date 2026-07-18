@@ -87,4 +87,4 @@ ni el catálogo de métricas.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-07-18
