@@ -40,14 +40,17 @@ Camino feliz **y** casos borde.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual (owner, requiere sesión elevada): escritorio con Discord abierto → «—» en
-      FPS y el resto de métricas vivas; juego sin bordes no detectado → FPS correctos; alt+tab → los
-      conserva; emulador en ventana añadido a mano → FPS; DLSS FG → sigue coincidiendo con Steam.
+- [x] Comprobación manual (owner, 2026-07-18): escritorio → «—» en FPS con el resto de métricas
+      vivas ✅ · juego detectado (`re9demo.exe`, vía índice de launchers) → FPS ✅ · emulador
+      `eden.exe` en sin-bordes → «—», resuelto con **alta manual** según la limitación del spec ✅.
+      El caso «juego **no** detectado en pantalla completa → FPS» **no se pudo observar**: en esta
+      máquina nada presenta en modo hardware (ver el hallazgo del spec), así que la vía del modo no
+      llega a dispararse. Queda sin verificar en campo, aceptado por el owner.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado
 - [ ] **Release** con las notas de las tres ramas (`feature/overlay-rendimiento` + esta +
       `feature/overlay-proteccion-selectiva`)

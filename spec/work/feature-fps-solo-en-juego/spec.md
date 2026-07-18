@@ -62,6 +62,39 @@ hay que hacer para que la app lo clipee de todos modos.
 No hay forma limpia de cerrarlo: cualquier señal que encienda los FPS de un emulador en ventana
 enciende también los de Discord en ventana. Por eso NVIDIA y Steam mantienen listas de aplicaciones.
 
+## Hallazgo de la E2E (2026-07-18) — medido, no supuesto
+
+La verificación en la máquina del owner dejó un dato que **contradice la premisa del plan** y conviene
+que quede escrito, porque cualquiera que retome esto lo va a asumir mal otra vez.
+
+Capturas de PresentMon 2.5.1 (sesión aparte, 8–10 s cada una):
+
+| Proceso | Qué es | Modo de presentación |
+|---|---|---|
+| `dwm.exe` | compositor (en denylist) | **`Hardware: Legacy Flip`** |
+| `re9demo.exe` | juego AAA, pantalla completa | `Composed: Flip` (2127/2127) |
+| `eden.exe` | emulador, pantalla completa (F11) | `Composed: Flip` (533/533) |
+| `Code.exe`, `obs64.exe`, Discord, Opera | apps de escritorio | `Composed: Flip` |
+
+**En Windows 11 moderno ninguna aplicación llega a modo hardware: solo DWM.** El *Independent Flip*
+casi no ocurre — los juegos usan ventana sin bordes por defecto y con HAGS, varios monitores o
+cualquier overlay topmost el compositor se queda al mando. La premisa «juego = presenta por
+hardware» describe a un Windows anterior.
+
+Consecuencia práctica: **la vía del modo de presentación no dispara nunca en esta máquina y todo el
+trabajo lo hace la vía de detección.** Se comprobó que no era culpa del overlay propio (misma
+medición con el overlay de GameClip apagado: idéntico resultado).
+
+**Aun así la vía del modo se conserva**, porque es **puramente aditiva**: `califica()` acepta
+cualquiera de las dos vías y la marca nunca se apaga, así que solo puede **encender** FPS, jamás
+apagarlos. Donde el *Independent Flip* sí ocurra (pantalla completa exclusiva, MPO activo, Windows
+más viejo) cubre juegos no detectados; donde no ocurra, no estorba.
+
+> Ojo al contar las fuentes de detección: son **tres** — la lista curada (`src/shared/games.ts`),
+> las altas manuales (`customGames`) y el **índice de launchers** (`games-index.json`), que es la que
+> más juegos aporta. Durante esta E2E se dio una falsa alarma («Resident Evil mostraría —») por
+> revisar solo las dos primeras.
+
 ## Criterios de aceptación
 
 Observables y verificables uno a uno:

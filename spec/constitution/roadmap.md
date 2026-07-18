@@ -823,6 +823,39 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > `feature/overlay-proteccion-selectiva` (que el overlay sí salga en capturas externas). El overlay de
 > rendimiento **no se publica hasta que las tres ramas estén en `main`**, y las notas del release se
 > arman con las tres juntas.
+>
+> **`feature/fps-solo-en-juego` (2026-07-18, en `main` sin release):** el contador medía *cualquier*
+> proceso que presentara, así que en el escritorio marcaba los FPS de Discord o del navegador. Ahora
+> un proceso **califica** para el contador por dos vías, y basta una: presentar por la ruta directa a
+> hardware (modos `Hardware…` de PresentMon, columna 7 del CSV — el dato ya llegaba y se tiraba), o
+> **ser el juego detectado** por la app. Sin ninguno calificado → «—», y **el resto de métricas sigue
+> vivo**. La pieza que hace que no rompa nada es *dónde* se aplica: calificar es requisito de
+> **entrada al enganche**, no filtro por lectura, así que un juego conserva el contador aunque DWM
+> degrade su modo (un menú, un overlay encima) o pase a segundo plano; filtrar lectura a lectura lo
+> habría hecho parpadear. La columna se trata como **opcional**: si una versión futura de PresentMon
+> la renombrara, exigirla mataría los FPS del todo — sin ella se degrada a «todo califica».
+>
+> **El hallazgo de la E2E, que contradice la premisa del plan:** medido con PresentMon en la máquina
+> del owner, **ninguna aplicación llega a modo hardware — solo DWM**. Un juego AAA en pantalla
+> completa (`re9demo.exe`) presenta 2127/2127 frames en `Composed: Flip`, igual que el emulador
+> (`eden.exe`, 533/533) y que Discord o el editor. El *Independent Flip* casi no ocurre en Windows 11
+> moderno (ventana sin bordes por defecto, HAGS, overlays topmost). O sea: **la vía del modo no
+> dispara nunca en esta máquina y todo el trabajo lo hace la detección.** Se descartó que fuera culpa
+> del overlay propio repitiendo la medición con él apagado. Aun así la vía del modo **se conserva
+> porque es puramente aditiva** —solo puede encender FPS, nunca apagarlos—, y donde el *Independent
+> Flip* sí ocurra cubre juegos no detectados. Limitación aceptada: un juego/emulador en ventana y no
+> detectado muestra «—»; se resuelve con **alta manual**, que es lo que ya hay que hacer para
+> clipearlo. Verificado E2E por el owner. 831 tests verdes (+14).
+>
+> ⚠️ **Al contar las fuentes de detección son TRES**: lista curada (`src/shared/games.ts`), altas
+> manuales (`customGames`) e **índice de launchers** (`games-index.json`), que es la que más juegos
+> aporta. Durante la E2E se dio una falsa alarma por revisar solo las dos primeras.
+>
+> **Candidato anotado (no entra aquí):** `fix/presentmon-no-reintenta-tras-morir` — si PresentMon
+> muere por una causa transitoria, `onExit` marca el reader como `failed` y **`start()` ya no vuelve
+> a lanzarlo**, así que los FPS quedan muertos en silencio hasta alternar el ajuste o reiniciar la
+> app. El watchdog cubre «vivo pero mudo», no «murió una vez». El término medio ya existe en el
+> propio watchdog: reintento con cadencia lenta y tope.
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
