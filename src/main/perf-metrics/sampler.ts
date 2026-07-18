@@ -22,7 +22,7 @@ function needsSensors(metrics: PerfMetricsEnabled): boolean {
 
 export interface PerfSamplerDeps {
   sensors: Pick<SensorsReader, 'start' | 'stop' | 'latest'>;
-  presentMon: Pick<PresentMonReader, 'start' | 'stop' | 'fps'>;
+  presentMon: Pick<PresentMonReader, 'start' | 'stop' | 'fps' | 'setDetectedGame'>;
   /** Fuente de datos de os, inyectable en tests. */
   osApi?: {
     cpus: () => ReturnType<typeof os.cpus>;
@@ -52,6 +52,16 @@ export class PerfSampler extends EventEmitter {
       freemem: () => os.freemem(),
     };
     this.intervalMs = deps.intervalMs ?? INTERVAL_MS;
+  }
+
+  /**
+   * Ejecutable del juego que la app tiene detectado (o null). Es una **segunda vía** para calificar
+   * un proceso de cara a los FPS —cubre el emulador que corre en ventana normal—, nunca un
+   * requisito: los FPS siguen funcionando con juegos que la app no reconoce. No revive el
+   * `setGameExe` que la Fase 19 quitó, que sí era un requisito. Ver `presentmon.ts`.
+   */
+  setDetectedGame(exe: string | null): void {
+    this.deps.presentMon.setDetectedGame(exe);
   }
 
   /** Estado deseado: null apaga todo (overlay desactivado). Idempotente. */

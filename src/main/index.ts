@@ -218,6 +218,10 @@ function setupCapture(): CaptureManager {
     mainWindow?.webContents.send(IpcEvent.CaptureStatusChanged, status);
     overlay?.setRecording(status.state === 'recording');
     tray?.setRecording(status.state === 'recording');
+    // Segunda vía de calificación de los FPS: el juego detectado muestra su contador aunque corra
+    // en ventana normal (un emulador). Va por el ejecutable, que es lo que PresentMon reporta en su
+    // columna `Application`; `detectedGame` es el nombre visible y no serviría para cruzarlo.
+    perfSampler?.setDetectedGame(manager.activeGameExecutable());
 
     if (status.detectedGame && !juegoAnterior) {
       const aviso = buildGameNotice(manager.getSettings());
