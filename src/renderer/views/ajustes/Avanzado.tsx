@@ -214,6 +214,13 @@ export default function AjustesAvanzado() {
             {METRIC_LABELS[key]}
           </label>
         ))}
+        {/* El aviso va AQUÍ, y no solo junto al checkbox elevado del final: la duda nace al marcar
+            la métrica, y nada obliga a haber bajado hasta la explicación completa. */}
+        <p className="settings-hint">
+          FPS y Temp CPU necesitan permisos de administrador y sin ellos se muestran como «—»; las
+          demás métricas funcionan siempre. Se resuelve con «Iniciar con Windows como administrador»,
+          más abajo.
+        </p>
 
         <p className="settings-subtitle">Posición</p>
         <div className="perf-preset">
