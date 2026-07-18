@@ -13,9 +13,13 @@ release/
 resources/gc-app-audio-mute.exe
 resources/gc-controller-listen.exe
 resources/gc-perf-sensors.exe
-resources/LibreHardwareMonitorLib.dll
-resources/HidSharp.dll
 resources/gc-presentmon.exe
+# Las DLLs de resources/ son TODAS dependencias de gc-perf-sensors bajadas del NuGet (LHM 0.9.6 trae
+# un cierre de 10, no la sola LibreHardwareMonitorLib de la 0.9.4), y el .config lleva sus binding
+# redirects. Por patrón y no una a una: enumerarlas se desincroniza con el script en cuanto cambie
+# una versión, y una DLL suelta acabaría commiteada como binario.
+resources/*.dll
+resources/gc-perf-sensors.exe.config
 
 # SDK de GameInput descargado del NuGet para compilar gc-controller-listen (cabeceras de Microsoft;
 # no se vendorizan por licencia). Lo baja scripts/build-controller-listen.ps1.

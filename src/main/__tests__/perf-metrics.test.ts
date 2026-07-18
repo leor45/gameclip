@@ -542,6 +542,49 @@ function samplerFalso() {
 }
 
 describe('PerfSampler', () => {
+  it('sin sensor de temperatura de CPU, el resto de métricas sobrevive', () => {
+    // Contrato de la degradación cuando falta PawnIO (o no se corre elevado): la temperatura del
+    // procesador se lee de los MSR y sin anillo 0 vuelve null, pero eso NO puede arrastrar a las
+    // demás — las de GPU van por NVAPI/ADL y las de CPU-uso/RAM ni pasan por el helper. Es lo que
+    // hace que el aviso de PawnIO sea informativo y no un requisito para usar el overlay.
+    const { sampler, sensors } = samplerFalso();
+    sensors.latest.mockReturnValue({
+      ...EMPTY_SENSOR_READING,
+      gpuUsage: 57,
+      gpuTemp: 60,
+      vramUsedMb: 4096,
+      vramTotalMb: 12288,
+      cpuTemp: null, // <- lo único que se pierde sin el driver
+    });
+    const snapshots: PerfSnapshot[] = [];
+    sampler.on('snapshot', (s: PerfSnapshot) => snapshots.push(s));
+
+    sampler.configure({
+      ...DEFAULT_PERF_OVERLAY.metrics,
+      fps: true,
+      gpuUsage: true,
+      gpuTemp: true,
+      vram: true,
+      cpuUsage: true,
+      cpuTemp: true,
+      ram: true,
+    });
+    sampler.tick();
+    sampler.tick();
+
+    const s = snapshots[1];
+    expect(s.cpuTemp).toBeNull();
+    // Las otras ocho, intactas.
+    expect(s.fps).toBe(120);
+    expect(s.gpuUsage).toBe(57);
+    expect(s.gpuTemp).toBe(60);
+    expect(s.vramUsedMb).toBe(4096);
+    expect(s.vramTotalMb).toBe(12288);
+    expect(s.cpuUsage).toBe(70);
+    expect(s.ramUsedMb).toBe(10 * 1024);
+    sampler.stop();
+  });
+
   it('emite snapshots solo con las métricas marcadas', () => {
     const { sampler, sensors } = samplerFalso();
     const snapshots: PerfSnapshot[] = [];

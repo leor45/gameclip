@@ -62,13 +62,21 @@ extraResources:
   - from: resources/gc-controller-listen.exe
     to: gc-controller-listen.exe
   # Sensores del overlay de rendimiento (GPU/CPU, LibreHardwareMonitor sobre .NET Framework 4.8,
-  # incluido en Windows). Se compila con scripts/build-perf-sensors.ps1; sus DLLs viajan al lado.
-  - from: resources/gc-perf-sensors.exe
-    to: gc-perf-sensors.exe
-  - from: resources/LibreHardwareMonitorLib.dll
-    to: LibreHardwareMonitorLib.dll
-  - from: resources/HidSharp.dll
-    to: HidSharp.dll
+  # incluido en Windows). Se compila con scripts/build-perf-sensors.ps1.
+  #
+  # POR CARPETA Y NO FICHERO A FICHERO, al revés que los demás helpers: con LHM 0.9.6 el helper dejó
+  # de ser "un .exe y su DLL" y pasa a arrastrar un cierre de 10 dependencias del NuGet más un
+  # .config con binding redirects (sin el .config el .exe NO ARRANCA). Enumerarlas aquí obligaría a
+  # tocar dos ficheros cada vez que cambie una versión, y olvidar una rompe SOLO el portable: en dev
+  # el helper resuelve resources/ por process.cwd() y todo parece correcto. Peor aún, no degrada a
+  # «—» en una métrica: el proceso muere y se van TODAS las de hardware. Con el filtro, el
+  # empaquetado no puede desincronizarse del script de build.
+  - from: resources
+    to: .
+    filter:
+      - gc-perf-sensors.exe
+      - gc-perf-sensors.exe.config
+      - '*.dll'
   # PresentMon (Intel, MIT): FPS reales del juego por ETW para el overlay de rendimiento.
   - from: resources/gc-presentmon.exe
     to: gc-presentmon.exe
