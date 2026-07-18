@@ -65,6 +65,26 @@ describe('Ajustes — Overlay de rendimiento', () => {
     expect(screen.getByText(/crea una tarea programada elevada/i)).toBeInTheDocument();
   });
 
+  it('la copy no nombra a la NVIDIA App', async () => {
+    // La NVIDIA App fue referencia de diseño durante el desarrollo del overlay; el producto no la
+    // nombra. La comprobación va sobre el DOM renderizado y NO sobre los ficheros: en el código se
+    // conservan a propósito los comentarios que explican el porqué de estas decisiones y el
+    // diagnóstico de PresentMon que la cita como capturador que compite por las sesiones ETW.
+    await irAAvanzado();
+
+    expect(document.body.textContent).not.toMatch(/NVIDIA App/i);
+  });
+
+  it('explica por qué el centro no es una posición elegible', async () => {
+    // El dato útil de la leyenda vieja sobrevive a quitar la comparación: sin él, reservar el centro
+    // parece arbitrario y acabaría "arreglándose".
+    await irAAvanzado();
+
+    const leyenda = screen.getByText(/los cambios se ven en pantalla al instante/i);
+    expect(leyenda.textContent).toMatch(/centro de la pantalla/i);
+    expect(leyenda.textContent).toMatch(/juego/i);
+  });
+
   it('distingue los dos requisitos: FPS solo admin, Temp CPU admin + PawnIO', async () => {
     // No son el mismo requisito y fundirlos engaña: los FPS salen de PresentMon (ETW, solo pide
     // elevación) y la Temp CPU de los MSR, que además necesitan el driver.
