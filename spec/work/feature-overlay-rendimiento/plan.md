@@ -80,17 +80,18 @@ Sensor ausente o helper caído ⇒ la métrica emite `null` y la página pinta `
 disponibles ⇒ `—` + hint en Ajustes ("requiere ejecutar GameClip como administrador"). Sin
 prompts UAC sorpresa en el uso normal.
 
-### 4. Distribución de helpers — sin engordar el portable
+### 4. Distribución de helpers — bundleados, apuntando a .NET Framework 4.8
 
-Los helpers **no van dentro del exe**: se publican como asset del release de GitHub
-(`gameclip-perf-helpers-X.Y.Z.zip`) y GameClip los descarga **bajo demanda** la primera vez que se
-activa una métrica que los necesita, a la carpeta de datos de la app (junto a la config), con
-verificación de hash SHA-256 y un estado visible en Ajustes ("descargando herramientas de
-métricas…"). Quedan cacheados; sin red, las métricas de helper muestran `—` con hint.
+Los helpers van **dentro del paquete** (`resources/`), sin descargas en runtime. La clave del
+tamaño: el helper de sensores se compila contra **.NET Framework 4.8**, que viene incluido en
+Windows 10/11 (LibreHardwareMonitorLib soporta ese target) ⇒ helper ~2 MB sin runtime que
+empaquetar. PresentMon es nativo (~2 MB). Total: **+4–5 MB antes de la compresión 7z del
+portable** (~5 % de los 93 MB actuales), funciona offline y no toca el proceso de release.
 
-El helper LHM se publica **framework-dependent** (~1–2 MB) si el .NET Desktop Runtime está
-presente; si no, el zip self-contained (~25 MB) — la detección la hace GameClip antes de elegir
-qué descargar. PresentMon son ~2 MB. El exe portable no crece nada.
+Descartada la descarga bajo demanda (analizada en una iteración previa del plan): exigía red en
+la primera activación, sumaba descargador + hash + cache + estados de UI, añadía un asset por
+release que podía olvidarse, y ejecutar exes descargados en runtime desde AppData es patrón de
+alerta para antivirus. Todo eso para ahorrar ~5 MB — no compensa.
 
 ### 5. Auto-inicio como administrador (opt-in)
 
@@ -115,7 +116,7 @@ CPU funcionan desde el arranque.
 - `src/renderer/perf-overlay.html` + entrada React de la página overlay (nuevo).
 - `src/renderer/views/ajustes/Avanzado.tsx` — fieldset "Overlay de rendimiento" (sliders con
   preview, preset, checks, hotkey, color, opacidad, admin opt-in).
-- Pipeline de release — publicar `gameclip-perf-helpers-X.Y.Z.zip` como asset.
+- `resources/` + config de electron-builder — helpers bundleados (helper LHM net48 + PresentMon).
 - Tests en `src/shared/__tests__/`, `src/main/__tests__/`, `src/renderer/__tests__/`.
 
 ## Decisiones y alternativas consideradas
@@ -128,8 +129,11 @@ CPU funcionan desde el arranque.
   voltaje; descartados bindings NVML/ADL propios: triple mantenimiento por vendor.
 - **PresentMon** para FPS — descartado derivarlo del hook de `game_capture` (obs-studio-node no
   expone frametimes) y RTSS (dependencia de terceros instalada).
-- **Descarga bajo demanda de helpers** — descartado bundlear self-contained (+25 MB al portable)
-  y descartado exigir .NET instalado sin alternativa (rompería la promesa portable).
+- **Helpers bundleados sobre .NET Framework 4.8 (incluido en Windows)** — descartado
+  self-contained (+25–30 MB al portable recién adelgazado), descartada la descarga bajo demanda
+  (red obligatoria la primera vez, más código que la feature misma, asset extra por release,
+  heurísticas de antivirus sobre exes descargados) y descartado exigir el .NET Runtime moderno
+  instalado (rompería la promesa portable).
 - **Tarea programada para auto-inicio elevado** — descartado manifest `requireAdministrator`
   (UAC en cada arranque manual y Windows bloquea su clave Run) y descartado relanzarse elevado
   solo (doble proceso + UAC en cada arranque).
@@ -138,8 +142,11 @@ CPU funcionan desde el arranque.
 
 ## Riesgos
 
-- **Descarga bajo demanda:** requiere red la primera vez; sin red ⇒ `—` + hint. El zip va
-  versionado y verificado por hash; el proceso de release gana un asset más que mantener.
+- **Tamaño del portable:** +4–5 MB pre-compresión (~5 %); se mide el antes/después del exe en la
+  verificación, como se hizo en `feature-adelgazar-portable`.
+- **Antivirus y temp de CPU:** LibreHardwareMonitor carga un driver de kernel (WinRing0) para la
+  temperatura de CPU que algunos antivirus marcan, se distribuya como se distribuya. Si el driver
+  no carga, esa métrica degrada a `—` sin afectar al resto.
 - **Permisos:** sin admin, FPS y temp de CPU degradan a `—`; la solución completa exige el
   opt-in de admin (UAC una vez) o arrancar la app elevada a mano.
 - **Tarea programada:** entornos corporativos pueden bloquear `schtasks`; si la creación falla se

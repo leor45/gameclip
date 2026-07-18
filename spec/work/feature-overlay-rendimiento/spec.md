@@ -41,8 +41,9 @@ juego activo que GameClip ya detecta, incluidos los añadidos a mano como juego 
 - Degradación elegante: una métrica sin sensor disponible (p. ej. voltaje en GPUs que no lo
   exponen, o temperatura de CPU/FPS sin permisos de administrador) se muestra como `—`, sin
   romper el resto, con un hint en Ajustes cuando la causa son permisos.
-- Los helpers de métricas **no engordan el portable**: se descargan bajo demanda al activar por
-  primera vez una métrica que los necesita.
+- Los helpers de métricas van bundleados con impacto mínimo en el portable (~4–5 MB antes de
+  compresión: helper de sensores sobre .NET Framework 4.8 —incluido en Windows— + PresentMon
+  nativo); todo funciona offline.
 - Opción opt-in "Iniciar con Windows como administrador" (tarea programada con privilegios
   elevados; una confirmación UAC al activarla), para que FPS y temperatura de CPU funcionen en el
   arranque automático.
@@ -77,7 +78,7 @@ Observables y verificables uno a uno:
 - [ ] Una métrica no disponible en el hardware/permisos actuales aparece como `—` y las demás
       siguen funcionando; sin admin, Ajustes muestra el hint de permisos.
 - [ ] Con el overlay desactivado no existe ventana ni proceso auxiliar de métricas corriendo.
-- [ ] El exe portable no crece por los helpers: se descargan al activar la primera métrica que
-      los necesita y quedan cacheados en la carpeta de datos.
+- [ ] El exe portable crece como máximo ~5 MB respecto al build previo (medido antes/después) y
+      las métricas funcionan sin conexión a internet.
 - [ ] Con "Iniciar con Windows como administrador" activo, tras reiniciar sesión la app arranca
       elevada y FPS + temperatura de CPU dan valores reales.

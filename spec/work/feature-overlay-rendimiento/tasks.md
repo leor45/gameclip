@@ -19,9 +19,8 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [ ] 6. Hotkey global Alt+R (configurable) que alterna la visibilidad, conviviendo con los
       hotkeys existentes.
 - [ ] 7. `src/main/perf-metrics/`: sampler de CPU/RAM (os) con snapshot cada 1 s.
-- [ ] 8. Descarga bajo demanda de helpers: asset zip del release, hash SHA-256, cache en carpeta
-      de datos, estado en Ajustes, detección de .NET runtime (framework-dependent vs
-      self-contained).
+- [ ] 8. Helpers bundleados: proyecto del helper LHM compilado contra .NET Framework 4.8 +
+      binario de PresentMon en `resources/`, incluidos en el empaquetado (electron-builder).
 - [ ] 9. Helper LibreHardwareMonitor (GPU uso/temp/fans/voltaje/VRAM + temp CPU): wrapper de
       proceso, parseo JSON, degradación a null; hint de permisos sin admin.
 - [ ] 10. Helper PresentMon (FPS del PID del juego activo): wrapper, parseo CSV, degradación;
@@ -31,7 +30,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
       del portable), alta/baja idempotente, restaurar clave Run al desmarcar.
 - [ ] 13. Wiring en main: instanciar controller, re-config en settings-changed, PID del juego,
       apagar helpers al desactivar/cerrar.
-- [ ] 14. Release: publicar `gameclip-perf-helpers-X.Y.Z.zip` y documentarlo en el proceso.
+- [ ] 14. Medir tamaño del exe portable antes/después (criterio: crece ≤ ~5 MB).
 
 ## Tests unitarios (obligatorios)
 
@@ -42,8 +41,8 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [ ] Sampler CPU/RAM: delta de `os.cpus()` (mock), snapshot solo con métricas marcadas.
 - [ ] Parseo LHM: JSON válido, sensor ausente → null, proceso caído → todos null sin excepción.
 - [ ] Parseo PresentMon: CSV válido → FPS, salida vacía/corrupta → null.
-- [ ] Descarga de helpers: hash correcto/incorrecto, cache existente no re-descarga, sin red →
-      estado de error limpio.
+- [ ] Resolución de rutas de los helpers bundleados (dev vs empaquetado), helper ausente →
+      métricas null con hint, sin excepción.
 - [ ] Auto-inicio elevado: argumentos de `schtasks` generados (lógica pura, patrón
       `auto-launch.ts`), alta/baja idempotente.
 - [ ] UI Avanzado: checks/sliders reflejan settings, mover slider actualiza preset, elegir preset
