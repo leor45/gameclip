@@ -93,6 +93,36 @@ Observables y verificables uno a uno:
       fallo de empaquetado es invisible en dev y tumba el helper entero, no solo Temp CPU.)*
 - [ ] Gates verdes: type-check · lint · tests (832 hoy).
 
+## Qué métrica depende de qué (la base de la copy)
+
+Verificado contra el código (`PERF_METRIC_KEYS` en `src/shared/perf.ts`, el reparto de fuentes en
+`sampler.ts:97-117`) y contra una ejecución real del helper sin elevar.
+
+| Métrica | Fuente | ¿Admin? | ¿PawnIO? |
+|---|---|---|---|
+| CPU (uso) | `os.cpus()` (Node) | no | no |
+| RAM | `os.totalmem/freemem` (Node) | no | no |
+| GPU (uso) | helper LHM → NVAPI/ADL | no | no |
+| Temp GPU | helper LHM → NVAPI/ADL | no | no |
+| Fans GPU | helper LHM → NVAPI/ADL | no | no |
+| Voltaje GPU | helper LHM → NVAPI/ADL | no | no |
+| VRAM | helper LHM → NVAPI/ADL | no | no |
+| FPS | PresentMon (ETW) | **sí** | no |
+| **Temp CPU** | helper LHM → **MSR (ring0)** | **sí** | **sí** |
+
+**PawnIO lo necesita una sola métrica: Temp CPU** — la temperatura del procesador se lee de los
+*Model Specific Registers*, que exigen anillo 0 (es lo que hacen los módulos `IntelMSR`,
+`AMDFamily17` y `RyzenSMU` que la 0.9.6 embebe). Todo lo de GPU va por las APIs del fabricante
+(NVAPI/ADL), de usuario y sin driver. Confirmado sin elevar: GPU 19 %, Temp GPU 38 °C,
+VRAM 1421/12282 MB reales y `cpuTemp` en `null`.
+
+**Son dos requisitos distintos y la copy no debe fundirlos:** FPS necesita **administrador pero no
+PawnIO**; Temp CPU necesita **las dos cosas**. Es la única que las necesita.
+
+> Observación previa y **fuera de alcance**: en la máquina del owner (RTX 4070 Ti) `gpuVoltage`
+> también vuelve `null` con el resto de sensores vivos — muchas tarjetas de consumo no exponen el
+> voltaje del core por NVAPI. No lo causa este cambio ni lo arregla PawnIO.
+
 ## Notas de verificación
 
 ⚠️ **La máquina del owner ya tiene PawnIO instalado** (`C:\Program Files\PawnIO`, servicio `PawnIO`
