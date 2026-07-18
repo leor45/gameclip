@@ -37,19 +37,27 @@ referencia en el desarrollo, no colocarlo explícitamente»*.
   usuario sin saber qué está eligiendo.
 - Rediseñar el selector de posición o cambiar comportamiento: esto es **solo copy**.
 
-## A decidir con el owner (no se toca sin respuesta)
+## Decidido por el owner (2026-07-18): **solo sale lo visible**
 
-El barrido encuentra tres clases de referencia y **solo la primera es claramente copy visible**:
+> *«Déjalos, solo quita lo visible; los comentarios en código solo evidencian que pueden pelear por
+> las sesiones ETW, así que está bien.»*
 
-1. **Copy visible — fuera, sin duda.** `Avanzado.tsx:296-299` (la leyenda que motivó el spec).
-2. **Comentarios de código** — `src/shared/perf.ts:1, 76, 114` y `Avanzado.tsx:67`
+El barrido encuentra tres clases de referencia y **solo la primera se toca**:
+
+1. **Copy visible — ✂️ FUERA.** `Avanzado.tsx:296-299` (la leyenda que motivó el spec). Es la única
+   cadena que ve el usuario: el barrido no encontró ninguna otra.
+2. **Comentarios de código — ✅ SE QUEDAN.** `src/shared/perf.ts:1, 76, 114` y `Avanzado.tsx:67`
    («estilo NVIDIA App», «las 8 posiciones con nombre (como NVIDIA App)»). Son notas de desarrollo,
-   que es exactamente lo que el owner dijo que la referencia debía ser. **Propuesta: se quedan** —
-   documentan *por qué* el centro está excluido, y perder ese porqué invitaría a "arreglarlo" luego.
-3. **Diagnóstico en el log** — `src/main/perf-metrics/presentmon.ts:33, 284`: nombra a la NVIDIA App
-   (junto al overlay de Steam) como capturador que **compite por las sesiones ETW** y puede dejar los
-   FPS sin datos. No es una referencia de diseño sino información de resolución de problemas, y
-   quitarla haría el mensaje menos útil. **Propuesta: se queda.**
+   que es exactamente lo que el owner dijo que la referencia debía ser, y documentan *por qué* el
+   centro está excluido: perder ese porqué invitaría a "arreglarlo" más adelante.
+3. **Diagnóstico en el log — ✅ SE QUEDA.** `src/main/perf-metrics/presentmon.ts:33, 284`: nombra a la
+   NVIDIA App (junto al overlay de Steam) como capturador que **compite por las sesiones ETW** y puede
+   dejar los FPS sin datos. No es una referencia de diseño sino resolución de problemas, y quitarla
+   haría el mensaje menos útil justo cuando alguien lo necesita.
+
+**Consecuencia para el test:** la regla que se blinda es «**la copy visible** no nombra a la NVIDIA
+App», no «la cadena no aparece en el repo». Un test que buscara la cadena en todo el código fallaría
+por los comentarios y el log, que se quedan a propósito.
 
 ## Criterios de aceptación
 
