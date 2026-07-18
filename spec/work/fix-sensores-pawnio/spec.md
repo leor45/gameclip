@@ -76,6 +76,10 @@ Observables y verificables uno a uno:
 - [ ] **Elevado y sin PawnIO** (servicio parado a mano para simularlo): `cpuTemp` en «—», el resto de
       métricas intactas y el helper sigue vivo emitiendo.
 - [ ] La leyenda de Ajustes → Avanzado menciona PawnIO junto al requisito de administrador, con test.
+- [ ] **Sobre el portable ya construido** (`npm run build:portable`, no en dev): el helper arranca y
+      emite sensores. El usuario final **no instala ni configura nada** para esto — el `.exe`, sus
+      DLLs y el `.config` de binding redirects viajan dentro del paquete. *(Criterio propio porque el
+      fallo de empaquetado es invisible en dev y tumba el helper entero, no solo Temp CPU.)*
 - [ ] Gates verdes: type-check · lint · tests (832 hoy).
 
 ## Notas de verificación

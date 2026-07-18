@@ -79,6 +79,10 @@ Cuatro piezas:
   cierre de dependencias, copia del `.config`, `/platform:x64`. **El grueso del cambio.**
 - `native/gc-perf-sensors/App.config` *(nuevo)* — binding redirects. Se copia a `resources/` como
   `gc-perf-sensors.exe.config`.
+- `electron-builder.yml` — **imprescindible, y no es obvio:** `extraResources` enumera los ficheros
+  **uno a uno**, y hoy solo lista `gc-perf-sensors.exe`, `LibreHardwareMonitorLib.dll` y
+  `HidSharp.dll`. El `.config` y las 11 DLLs nuevas **no viajarían** si no se añaden. Ver la decisión
+  sobre cómo listarlos, más abajo.
 - `native/gc-perf-sensors/Program.cs` — **sin cambios de código**; solo el comentario de cabecera,
   que hoy dice "driver ring0" de WinRing0 y pasa a nombrar PawnIO.
 - `src/renderer/views/ajustes/Avanzado.tsx` — leyenda: Temp CPU necesita administrador **y PawnIO**.
@@ -108,6 +112,13 @@ Cuatro piezas:
 - **No tocar `Program.cs`.** Compila y corre tal cual; el spec no pide sensores nuevos.
 - **No instalar PawnIO desde la app** (queda fuera, ver spec). Lo mínimo que exige el spec es
   degradar limpio y **decirlo**; pedir la instalación es producto y va aparte.
+- **En `extraResources`, una entrada de carpeta con filtro para las DLLs del helper** en vez de once
+  entradas literales. La lista explícita es el estilo del fichero y para un helper de un solo binario
+  está bien, pero aquí el número de DLLs lo decide el grafo de dependencias de LHM: con entradas a
+  mano, subir una versión en el futuro y olvidar una DLL rompe **solo el portable**, en silencio. Una
+  entrada `from: resources/ … filter: [gc-perf-sensors.exe, gc-perf-sensors.exe.config, '*.dll']`
+  hace que el build no pueda desincronizarse del script. Los demás helpers (`gc-app-audio-mute`,
+  `gc-controller-listen`, `gc-presentmon`) se quedan como están: no tienen dependencias.
 
 ## Riesgos
 
@@ -126,6 +137,12 @@ Cuatro piezas:
 - **Regresión silenciosa:** el build puede terminar OK y dejar un `.exe` que no arranca (es
   exactamente lo que pasó en la prueba). Por eso la verificación **ejecuta el helper**, no se
   conforma con que compile.
+- **El riesgo de empaquetado, que solo se ve en el portable:** si falta el `.config` o una DLL en
+  `extraResources`, en **dev todo funciona** (el helper resuelve `resources/` por `process.cwd()`) y
+  el fallo aparece únicamente en el `.exe` que descarga el usuario — y no degrada a Temp CPU en «—»,
+  sino que **tumba el helper entero**: adiós también a GPU, VRAM y ventilador. Misma familia que el
+  bug de `require.resolve()` devolviendo rutas de `app.asar`. Mitigado por la entrada de carpeta con
+  filtro **y** por verificar sobre el portable, no solo en dev.
 
 ---
 
