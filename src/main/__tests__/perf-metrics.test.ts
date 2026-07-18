@@ -188,6 +188,21 @@ describe('presentmon', () => {
     expect(tracker.fps(6000)).toBeNull();
   });
 
+  it('regresión: una ráfaga que vacía la ventana no parpadea a «—»', () => {
+    // PresentMon escribe por bloques cuando su salida es una tubería, así que las muestras llegan
+    // apelotonadas. Con la ventana (1 s) igual al periodo de muestreo, un bloque que tardaba un pelo
+    // de más dejaba la ventana vacía y el overlay caía a «—» para recuperarse al bloque siguiente.
+    const tracker = new FpsTracker();
+    for (let i = 0; i < 10; i++) tracker.push(16.666, 1000);
+    expect(Math.round(tracker.fps(1100)!)).toBe(60);
+
+    // Ventana vacía pero dentro del margen de gracia: se sostiene la última lectura.
+    expect(Math.round(tracker.fps(2050)!)).toBe(60);
+
+    // Pasado el margen sí se admite que no hay nada presentando.
+    expect(tracker.fps(3200)).toBeNull();
+  });
+
   it('mide los FPS de una app aunque no sea un juego detectado', () => {
     const { reader, fake, presentar } = readerFalso();
     reader.start();
@@ -197,7 +212,7 @@ describe('presentmon', () => {
     expect(Math.round(reader.fps()!)).toBe(100);
   });
 
-  it('sigue mostrando los FPS de la app enganchada aunque otra tenga más tasa', () => {
+  it('mantiene la app enganchada frente a otra algo más rápida (sin saltos)', () => {
     const { reader, fake, presentar } = readerFalso();
     reader.start();
     fake.emitLine(CABECERA);
@@ -205,12 +220,32 @@ describe('presentmon', () => {
     presentar('eden.exe', 33, 40);
     expect(Math.round(reader.fps()!)).toBe(30);
 
-    // Aparece un vídeo de navegador a 60 fps: NO debe robar la lectura (enganchado al juego).
+    // Otra app a ~35 fps: está por encima pero no supera el margen → no roba la lectura.
     for (let i = 0; i < 40; i++) {
       presentar('eden.exe', 33, 1);
-      fake.emitLine(fila('chrome.exe', 16.6));
+      fake.emitLine(fila('chrome.exe', 28.5));
     }
     expect(Math.round(reader.fps()!)).toBe(30);
+  });
+
+  it('regresión: no se queda pegado a una app de escritorio con el juego mucho más rápido', () => {
+    // Caso real medido: el overlay marcaba 52 fps (Discord) con el juego a 129, porque el enganche
+    // era permanente y al arrancar antes que el juego se pegó a Discord para siempre.
+    const { reader, fake, presentar, avanzar } = readerFalso();
+    reader.start();
+    fake.emitLine(CABECERA);
+
+    // Solo Discord presenta al principio (el juego aún no arrancó): se engancha a él.
+    presentar('discord.exe', 18.2, 60);
+    expect(Math.round(reader.fps()!)).toBe(55);
+
+    // Arranca el juego a ~130 fps mientras Discord sigue a sus ~55: debe robarle el enganche.
+    for (let i = 0; i < 130; i++) {
+      avanzar(7.7);
+      fake.emitLine(fila('re9demo.exe', 7.7));
+      if (i % 2 === 0) fake.emitLine(fila('discord.exe', 18.2));
+    }
+    expect(Math.round(reader.fps()!)).toBe(130);
   });
 
   it('re-engancha al de mayor tasa cuando el enganchado deja de presentar', () => {
@@ -277,7 +312,7 @@ describe('presentmon', () => {
     expect(spawn).toHaveBeenCalledTimes(3);
   });
 
-  it('el watchdog se rinde tras los reintentos y no insiste eternamente', () => {
+  it('el watchdog espacia los reintentos en vez de rendirse del todo', () => {
     const fake = procesoFalso();
     let t = 0;
     const spawn = vi.fn().mockReturnValue(fake.proc);
@@ -288,12 +323,22 @@ describe('presentmon', () => {
       now: () => t,
     });
     reader.start();
-    for (let i = 1; i <= 6; i++) {
+    // Tres reintentos rápidos (cada 12 s).
+    for (let i = 1; i <= 3; i++) {
       t += 13_000;
       reader.fps();
     }
-    // 1 arranque + 3 reintentos como máximo.
     expect(spawn).toHaveBeenCalledTimes(4);
+
+    // A partir de ahí la cadencia es lenta: 13 s ya no bastan...
+    t += 13_000;
+    reader.fps();
+    expect(spawn).toHaveBeenCalledTimes(4);
+
+    // ...pero al pasar el minuto vuelve a intentarlo (los FPS no quedan muertos para siempre).
+    t += 61_000;
+    reader.fps();
+    expect(spawn).toHaveBeenCalledTimes(5);
   });
 
   it('si llegan líneas, el watchdog no reinicia nada', () => {

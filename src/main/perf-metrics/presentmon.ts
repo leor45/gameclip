@@ -35,8 +35,22 @@ const PRUNE_MS = 5000;
  * se quedaban en «—» para siempre y en silencio.
  */
 const NO_DATA_MS = 12_000;
-/** Reintentos antes de rendirse (no insistir eternamente si la máquina no puede capturar). */
+/** Reintentos rápidos antes de pasar a la cadencia lenta. */
 const MAX_REINTENTOS = 3;
+/**
+ * Cadencia tras agotar los reintentos rápidos. No se abandona del todo: la causa habitual (cupos
+ * ETW ocupados por sesiones huérfanas o por otro capturador) se resuelve sola al cerrarse el otro
+ * programa, y sin reintento lento los FPS quedarían muertos hasta reiniciar GameClip.
+ */
+const REINTENTO_LENTO_MS = 60_000;
+/**
+ * Cuánto tiene que superar un proceso al enganchado para robarle la lectura. El enganche evita que
+ * el contador salte entre apps, pero NO puede ser permanente: apps de escritorio (Discord, editores,
+ * navegadores) presentan sin parar, y si el overlay arranca antes que el juego se quedaba pegado a
+ * ellas para siempre —medido: el overlay marcaba 52 fps, que era Discord, con el juego a 129—. Con
+ * este margen el juego (mucho más rápido) recupera el enganche y el ruido normal no lo mueve.
+ */
+const MARGEN_CAMBIO = 1.25;
 
 // Procesos que nunca son "el juego": el compositor de Windows y (se añade en runtime) la propia
 // GameClip. El overlay y la ventana de la app presentan frames pero no son lo que el usuario mide.
@@ -88,6 +102,9 @@ export function csvNumberAt(cells: string[], index: number): number | null {
  */
 export class FpsTracker {
   private samples: { at: number; ms: number }[] = [];
+  /** Última lectura válida, para sostenerla mientras la ventana esté vacía por una ráfaga. */
+  private ultimoFps: number | null = null;
+  private ultimoFpsAt = Number.NEGATIVE_INFINITY;
 
   push(msBetweenPresents: number, now: number): void {
     if (msBetweenPresents <= 0) return;
@@ -102,13 +119,27 @@ export class FpsTracker {
     return last ? last.at : Number.NEGATIVE_INFINITY;
   }
 
-  /** FPS de la ventana, o null si no hay presents frescos. */
+  /**
+   * FPS de la ventana, o null si no hay presents frescos.
+   *
+   * Si la ventana queda vacía NO se cae a null de inmediato: se sostiene la última lectura durante
+   * `STALE_MS`. Las muestras se fechan al *llegar* por la tubería, y PresentMon escribe por bloques
+   * cuando su salida no es una consola, así que llegan a ráfagas; con la ventana (1 s) igual al
+   * periodo de muestreo del overlay (1 s) no hay holgura ninguna y una ráfaga que tarde un pelo de
+   * más vaciaba la ventana. Se veía como un parpadeo a «—» con los FPS volviendo acto seguido. Cubre
+   * también el bache de cuando el frame generation engancha o suelta y recrea la swapchain.
+   */
   fps(now: number): number | null {
-    if (now - this.lastAt() > STALE_MS) return null;
     const vivos = this.samples.filter((s) => s.at >= now - FPS_WINDOW_MS);
-    if (!vivos.length) return null;
-    const media = vivos.reduce((acc, s) => acc + s.ms, 0) / vivos.length;
-    return media > 0 ? 1000 / media : null;
+    if (vivos.length) {
+      const media = vivos.reduce((acc, s) => acc + s.ms, 0) / vivos.length;
+      if (media > 0) {
+        this.ultimoFps = 1000 / media;
+        this.ultimoFpsAt = now;
+        return this.ultimoFps;
+      }
+    }
+    return now - this.ultimoFpsAt > STALE_MS ? null : this.ultimoFps;
   }
 }
 
@@ -198,12 +229,23 @@ export class PresentMonReader {
    */
   private watchdog(now: number): void {
     if (!this.child || this.lineas > 0) return;
-    if (now - this.arrancadoEn < NO_DATA_MS) return;
-    if (this.reintentos >= MAX_REINTENTOS) return;
+    // Tras los primeros intentos se espacia el reintento, para no estar matando y relanzando un
+    // proceso cada 12 s en una máquina que sencillamente no puede capturar ahora mismo.
+    const lento = this.reintentos >= MAX_REINTENTOS;
+    if (now - this.arrancadoEn < (lento ? REINTENTO_LENTO_MS : NO_DATA_MS)) return;
     this.reintentos++;
-    console.warn(
-      `[perf] PresentMon no entregó datos en ${NO_DATA_MS / 1000}s; reintento ${this.reintentos}/${MAX_REINTENTOS}`,
-    );
+    if (!lento) {
+      console.warn(
+        `[perf] PresentMon no entregó datos en ${NO_DATA_MS / 1000}s; reintento ${this.reintentos}/${MAX_REINTENTOS}`,
+      );
+    } else if (this.reintentos === MAX_REINTENTOS + 1) {
+      // Solo se avisa al entrar en cadencia lenta: repetirlo cada minuto sería ruido en el log.
+      console.warn(
+        `[perf] PresentMon sigue sin datos; se reintentará cada ${REINTENTO_LENTO_MS / 1000}s. ` +
+          'Causa habitual: sesiones ETW ocupadas por otro capturador (overlay de Steam, NVIDIA App) ' +
+          'o falta de permisos de administrador.',
+      );
+    }
     this.reiniciando = true;
     this.child.kill();
     this.child = null;
@@ -244,25 +286,19 @@ export class PresentMonReader {
   }
 
   /**
-   * FPS a mostrar (enganchado al juego): si el proceso enganchado sigue presentando, sus FPS; si no,
-   * se re-engancha al de mayor tasa. Poda de paso los procesos que dejaron de presentar hace rato.
+   * FPS a mostrar, enganchado al juego. El enganchado conserva la lectura mientras siga presentando
+   * —aunque pase a segundo plano, y aunque otra app presente algo más rápido—, pero otro proceso se
+   * la queda si lo supera por `MARGEN_CAMBIO`. Ese margen es lo que hace que el juego recupere el
+   * contador si el overlay arrancó enganchado a una app de escritorio, sin que el contador ande
+   * saltando por variaciones normales. Poda de paso lo que dejó de presentar.
    */
   fps(): number | null {
     const now = this.now();
     this.watchdog(now);
-    // Poda.
     for (const [exe, tracker] of this.trackers) {
       if (now - tracker.lastAt() > PRUNE_MS) this.trackers.delete(exe);
     }
 
-    // El enganchado sigue vivo → se mantiene aunque otro tenga más tasa.
-    if (this.locked) {
-      const fps = this.trackers.get(this.locked)?.fps(now) ?? null;
-      if (fps !== null) return fps;
-      this.locked = null;
-    }
-
-    // Re-enganche: el de mayor FPS entre los que presentan ahora.
     let mejorExe: string | null = null;
     let mejorFps = 0;
     for (const [exe, tracker] of this.trackers) {
@@ -272,11 +308,19 @@ export class PresentMonReader {
         mejorExe = exe;
       }
     }
-    if (mejorExe) {
+
+    const actual = this.locked ? (this.trackers.get(this.locked)?.fps(now) ?? null) : null;
+    // El enganchado dejó de presentar: se lo queda el más rápido (si hay alguno).
+    if (actual === null) {
+      this.locked = mejorExe;
+      return mejorExe ? mejorFps : null;
+    }
+    // Sigue vivo: solo lo pierde ante alguien claramente más rápido.
+    if (mejorExe && mejorExe !== this.locked && mejorFps > actual * MARGEN_CAMBIO) {
       this.locked = mejorExe;
       return mejorFps;
     }
-    return null;
+    return actual;
   }
 }
 
