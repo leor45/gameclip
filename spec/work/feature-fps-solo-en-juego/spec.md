@@ -4,6 +4,11 @@
 **Rama:** `feature/fps-solo-en-juego`
 **Fecha:** 2026-07-18
 
+> **Release:** entra en el **mismo release** que `feature/overlay-rendimiento` (Fase 19, ya en `main`)
+> y que `feature/overlay-proteccion-selectiva`. Las tres ramas son un solo entregable: el overlay de
+> rendimiento no se publica hasta que las tres estén dentro. **Al preparar el release, las notas se
+> arman con las tres.**
+
 ## Problema / Objetivo
 
 El contador de FPS del overlay de rendimiento (Fase 19) mide **cualquier** proceso que presente. En

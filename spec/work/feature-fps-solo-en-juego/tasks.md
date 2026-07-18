@@ -2,6 +2,9 @@
 
 Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
+> **Release:** mismo release que `feature/overlay-rendimiento` y
+> `feature/overlay-proteccion-selectiva`.
+
 ## Implementación
 
 - [ ] 1. `parseCsvHeader`: localizar también `presentmode`, como columna **opcional** (si falta, se
@@ -46,3 +49,5 @@ Camino feliz **y** casos borde.
 - [ ] Aprobación del owner
 - [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [ ] `spec/constitution/roadmap.md` actualizado
+- [ ] **Release** con las notas de las tres ramas (`feature/overlay-rendimiento` + esta +
+      `feature/overlay-proteccion-selectiva`)

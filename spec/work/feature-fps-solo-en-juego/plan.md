@@ -3,6 +3,9 @@
 > **Este plan es un contrato.** Se propone y se espera el OK del owner antes de escribir código.
 > Aprobado, el alcance queda fijo: lo nuevo lleva su propio spec/plan.
 
+> **Release:** mismo release que `feature/overlay-rendimiento` y
+> `feature/overlay-proteccion-selectiva`.
+
 ## Enfoque
 
 El dato que hace falta **ya está llegando y lo estábamos tirando**: `PresentMode` es la columna 7 del

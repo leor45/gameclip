@@ -818,8 +818,11 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > usar* y se encoge cuando otra app pide memoria). Se conserva el nuestro a propósito: para un overlay
 > de rendimiento la pregunta útil es cuánto está llena la tarjeta, contando todo lo que hay dentro.
 >
-> Quedan dos trabajos acordados **antes del release**: `feature/fps-solo-en-juego` (FPS en «—» en el
-> escritorio) y `feature/overlay-proteccion-selectiva` (que el overlay sí salga en capturas externas).
+> **⚠️ Sin publicar todavía.** Quedan dos trabajos acordados que van en el **mismo release** que esta
+> fase: `feature/fps-solo-en-juego` (FPS en «—» en el escritorio) y
+> `feature/overlay-proteccion-selectiva` (que el overlay sí salga en capturas externas). El overlay de
+> rendimiento **no se publica hasta que las tres ramas estén en `main`**, y las notas del release se
+> arman con las tres juntas.
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
