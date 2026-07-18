@@ -851,6 +851,15 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > manuales (`customGames`) e **índice de launchers** (`games-index.json`), que es la que más juegos
 > aporta. Durante la E2E se dio una falsa alarma por revisar solo las dos primeras.
 >
+> **`hotfix/aviso-metricas-admin` (2026-07-18, en `main` sin release):** la leyenda de que FPS y
+> Temp CPU necesitan administrador ya existía, pero al **final** del fieldset, colgada del checkbox
+> «Iniciar con Windows como administrador» — y la duda nace **arriba**, al marcar la métrica en «Qué
+> mostrar». Se añade el aviso ahí, remitiendo a la opción elevada; la leyenda del checkbox queda
+> intacta (es donde toca explicar el mecanismo completo). La copy lo encuadra como una limitación de
+> **dos** métricas y nunca como «la app requiere admin»: verificado sobre los manifiestos, tanto
+> `GameClip.exe` como el portable y `gc-presentmon.exe` son `asInvoker`, **la app no pide UAC nunca**
+> y 7 de las 9 métricas funcionan sin elevar. 832 tests verdes.
+>
 > **Candidato anotado (no entra aquí):** `fix/presentmon-no-reintenta-tras-morir` — si PresentMon
 > muere por una causa transitoria, `onExit` marca el reader como `failed` y **`start()` ya no vuelve
 > a lanzarlo**, así que los FPS quedan muertos en silencio hasta alternar el ajuste o reiniciar la
