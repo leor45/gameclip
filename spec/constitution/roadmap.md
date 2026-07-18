@@ -1059,7 +1059,14 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    proteger alrededor del disparo de la screenshot (protegerla justo antes y devolverla después),
 >    y va en su propia rama: **no bloquea la 0.9.0** por decisión del owner.
 >
-> **Con las cinco entregadas, la 0.9.0 queda lista para publicarse.**
+> **✅ Las cinco entregadas y publicadas como v0.9.0 (2026-07-18, portable).** El overlay de
+> rendimiento sale por fin, con FPS que solo cuentan juegos y visible en capturas externas.
+>
+> **Notas del release:** solo la funcionalidad final y los **requisitos que el usuario necesita
+> entender** (FPS → administrador; Temp CPU → administrador **y** PawnIO, con enlace). Los cuatro
+> fixes internos **no** aparecen, por decisión del owner: se corrigieron antes de publicar, así que
+> ningún usuario los sufrió. Se documenta además que **Voltaje de GPU no muestra valor** y está en
+> revisión.
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
