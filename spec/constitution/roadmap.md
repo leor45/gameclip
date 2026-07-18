@@ -1006,7 +1006,22 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    el watchdog ya aplicaba al caso mudo. Si algún día molesta, lo natural es alargar la cadencia
 >    cuando el proceso ni sobrevive un par de segundos (causa estructural, no pasajera).
 >
-> **Con las cuatro entregadas, la 0.9.0 queda lista para publicarse.**
+> 5. **`feature/overlay-proteccion-selectiva`** — 📋 spec y plan escritos, **plan pendiente de
+>    aprobación y sin código**. Es la que faltaba en esta lista: su propio spec ya decía que entra en
+>    el **mismo release** que el overlay, así que la 0.9.0 no se publica sin ella.
+>
+>    Hoy el overlay se crea con `setContentProtection(true)` (`WDA_EXCLUDEFROMCAPTURE`), que lo hace
+>    invisible para **toda** captura: cumple lo de no salir en los clips, pero se pasa de largo y
+>    tampoco se ve al compartir pantalla en Discord ni en un recorte de Windows, que es justo donde el
+>    usuario sí lo quiere. La idea es aplicar la protección **solo cuando el pipeline está capturando
+>    el monitor** (perfil `desktop` capturando de verdad); con perfil `game` queda siempre quitada,
+>    porque el `game_capture` solo ve la swapchain del juego y los clips salen limpios igual.
+>
+>    **Riesgo principal, sin verificar:** conmutar `setContentProtection` en caliente podría alterar
+>    la ventana (perder el nivel `screen-saver`, parpadear, o no aplicarse hasta el siguiente
+>    repintado). Se comprueba a mano en su E2E.
+>
+> **Con las cinco entregadas, la 0.9.0 queda lista para publicarse.**
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
