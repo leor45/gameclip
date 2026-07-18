@@ -28,7 +28,9 @@ const RAISE_MS = 2000;
  * Las dos garantías clave de la feature viven aquí:
  * - `setContentProtection(true)` → `WDA_EXCLUDEFROMCAPTURE`: la ventana se ve en pantalla pero no
  *   sale en NINGUNA captura (game capture, WGC, duplicación DXGI). Por eso el overlay no aparece
- *   en clips ni grabaciones.
+ *   en clips ni grabaciones. **Ya no es permanente:** se aplica solo mientras el pipeline captura el
+ *   monitor, para que el overlay sí se vea al compartir pantalla o en un recorte de Windows. Lo
+ *   decide `needsContentProtection()` en el manager; aquí solo se obedece (`setCaptureProtection`).
  * - Nivel topmost `'screen-saver'`, el único que queda por encima de las ventanas sin bordes de
  *   los juegos. Los avisos (REC/toast/aviso) comparten banda, así que el orden lo decide quién
  *   sube último: cada vez que este overlay se re-eleva, vuelve a elevar los avisos detrás
@@ -43,6 +45,11 @@ export class PerfOverlayController {
   /** Ocultado con el hotkey. No persiste: reactivar el overlay lo devuelve visible. */
   private oculto = false;
   private raiseTimer: NodeJS.Timeout | null = null;
+  /**
+   * ¿Oculto de las capturas ahora mismo? Nace en `true` (ver la creación de la ventana) y lo baja el
+   * manager cuando el pipeline no está capturando el monitor.
+   */
+  private protegido = true;
 
   constructor(
     enabled: boolean,
@@ -53,6 +60,26 @@ export class PerfOverlayController {
     this.enabled = enabled;
     this.config = config;
     this.sync();
+  }
+
+  /**
+   * Oculta (o no) el overlay de las capturas. Lo decide el `CaptureManager` según lo que esté
+   * capturando; aquí solo se aplica.
+   *
+   * Solo se llama a `setContentProtection` **cuando el valor cambia**: es una llamada Win32 sobre la
+   * ventana y el manager recalcula en cada transición de captura, así que repetirla sería gratis en
+   * el mejor caso y un parpadeo en el peor. Tras conmutarla se reaplica `setAlwaysOnTop`, porque
+   * tocar la protección puede reordenar la ventana y el overlay perdería su nivel `screen-saver`
+   * —quedándose por debajo de los juegos sin bordes—.
+   */
+  setCaptureProtection(protegido: boolean): void {
+    if (protegido === this.protegido) return;
+    this.protegido = protegido;
+    const win = this.win;
+    if (!win || win.isDestroyed()) return;
+    win.setContentProtection(protegido);
+    win.setAlwaysOnTop(true, 'screen-saver');
+    this.raiseNotices();
   }
 
   /** Ajustes guardados: estado nuevo completo. */
@@ -157,9 +184,11 @@ export class PerfOverlayController {
         nodeIntegration: false,
       },
     });
-    // WDA_EXCLUDEFROMCAPTURE: visible en pantalla, invisible para cualquier captura. Es lo que
-    // mantiene el overlay fuera de clips y grabaciones aunque esté a la vista.
-    win.setContentProtection(true);
+    // WDA_EXCLUDEFROMCAPTURE: visible en pantalla, invisible para cualquier captura. La ventana
+    // NACE protegida y se desprotege cuando el manager lo diga (ver `setCaptureProtection`): así, si
+    // algún día ese cable se rompiera, el fallo sería «no se ve en una captura externa» —lo de
+    // siempre— y nunca «se coló en un clip del usuario».
+    win.setContentProtection(this.protegido);
     // 'screen-saver' es el único nivel que queda por encima de las ventanas sin bordes de los
     // juegos; los avisos comparten nivel y ganan porque se re-elevan detrás de este (ver arriba).
     win.setAlwaysOnTop(true, 'screen-saver');

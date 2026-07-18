@@ -529,6 +529,13 @@ app.whenReady().then(() => {
     });
   }, 5000);
 
+  // El manager decide si el overlay de rendimiento debe ocultarse de las capturas (solo mientras se
+  // capture el monitor) y lo emite; el puente vive aquí para no acoplar el manager al controlador
+  // del overlay, igual que con 'settings' → settings:changed.
+  capture.on('overlay-protection', (protegido: boolean) => {
+    perfOverlay?.setCaptureProtection(protegido);
+  });
+
   // Si cambian los ajustes (p. ej. hotkeys, overlay, juegos manuales o auto-arranque), se re-aplican.
   let elevadoAnterior = capture.getSettings().autoLaunchElevated;
   capture.on('settings', (settings: CaptureSettings) => {

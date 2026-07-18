@@ -156,6 +156,64 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     expect(remuxCalls).toEqual([]);
   });
 
+  describe('protección del overlay de rendimiento', () => {
+    /** Recoge los cambios de protección emitidos por el manager. */
+    function espiar(manager: CaptureManager): boolean[] {
+      const emitidos: boolean[] = [];
+      manager.on('overlay-protection', (p: boolean) => emitidos.push(p));
+      return emitidos;
+    }
+
+    it('en el escritorio con el búfer corriendo, el overlay queda protegido', async () => {
+      const manager = crear({ bufferMode: 'always' }); // escritorio + búfer continuo
+      const emitidos = espiar(manager);
+      await manager.initialize();
+
+      // Nace protegido, así que no hay nada que emitir: el estado ya es el correcto.
+      expect(emitidos).not.toContain(false);
+    });
+
+    it('al detectarse un juego se desprotege (el game capture no puede verlo)', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const emitidos = espiar(manager);
+
+      await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+
+      expect(emitidos).toContain(false);
+    });
+
+    it('al cerrarse el juego se vuelve a proteger antes de que el búfer del escritorio arranque', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.setGameDetected('Counter-Strike 2', 'cs2.exe');
+      const emitidos = espiar(manager);
+
+      await manager.setGameDetected(null);
+
+      expect(emitidos[emitidos.length - 1]).toBe(true);
+    });
+
+    it('sin nada que capturar (perfil none) no se protege', async () => {
+      const manager = crear({ bufferMode: 'always', desktopRecordingEnabled: false });
+      const emitidos = espiar(manager);
+      await manager.initialize();
+
+      // Perfil 'none': no hay escena ni salida, así que no hay nada de lo que esconderse.
+      expect(emitidos[emitidos.length - 1]).toBe(false);
+    });
+
+    it('al apagar la captura no queda protegido de más', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const emitidos = espiar(manager);
+
+      manager.shutdown();
+
+      expect(emitidos[emitidos.length - 1]).toBe(false);
+    });
+  });
+
   describe('perfil de captura (escritorio ↔ juego)', () => {
     it('lanzar un juego cambia el perfil y reconstruye el pipeline apuntando al juego', async () => {
       const manager = crear({ bufferMode: 'always' }); // escritorio + auto-switch (defaults)
