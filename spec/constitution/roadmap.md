@@ -936,14 +936,16 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > `GameClip.exe` como el portable y `gc-presentmon.exe` son `asInvoker`, **la app no pide UAC nunca**
 > y 7 de las 9 métricas funcionan sin elevar. 832 tests verdes.
 >
-> ### 📦 Release 0.9.0 — el overlay de rendimiento sale con tres tareas
+> ### 📦 Release 0.9.0 — el overlay de rendimiento sale con cinco tareas
 >
-> El overlay se publica **una sola vez**, cuando las tres estén entregadas (decisión del owner,
+> El overlay se publica **una sola vez**, cuando las cinco estén entregadas (decisión del owner,
 > 2026-07-18). Ninguna se mergea a `main` sin su propio spec/plan aprobado.
 >
-> 1. **`fix/sensores-pawnio`** — ✅ entregado y **mergeado a `main`** (2026-07-18). Quita WinRing0 (ver
+> **Estado:** 1-4 ✅ mergeadas · 5 pendiente.
+>
+> 1. **`fix/sensores-pawnio`** — ✅ mergeado a `main` (2026-07-18). Quita WinRing0 (ver
 >    arriba).
-> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — ✅ entregado (2026-07-18, en rama). El helper pasa de
+> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — ✅ mergeado a `main` (2026-07-18). El helper pasa de
 >    un modo a dos: `IsCpuEnabled` deja de ser incondicional y depende de una bandera **`--cpu`** que
 >    el main pasa solo cuando «Temp CPU» está marcada. Sin ella, el grupo de CPU no se abre y **los
 >    MSR no se tocan** — o sea, PawnIO no entra en juego para quien solo quiere FPS y uso de GPU.
@@ -968,7 +970,7 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    está por defecto), **sin argumentos**, y dentro ponía `IsCpuEnabled = true` incondicionalmente.
 >    **Detectado por el owner** al revisar la entrega de `fix/sensores-pawnio`.
 >
-> 3. **`fix/copy-sin-nvidia-app`** — ✅ entregado (2026-07-18, en rama). La NVIDIA App fue **referencia
+> 3. **`fix/copy-sin-nvidia-app`** — ✅ mergeado a `main` (2026-07-18). La NVIDIA App fue **referencia
 >    de desarrollo** del overlay y el producto no debe nombrarla (instrucción del owner). El barrido
 >    confirmó que la leyenda de posición era la **única** cadena que veía el usuario; se reescribe
 >    entera en vez de recortar el paréntesis, para **conservar el dato útil** —por qué el centro no es
@@ -986,9 +988,7 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    por lo que se conserva a propósito y acabaría desactivado. La regla que se blinda es «el usuario
 >    no la ve». 856 tests verdes (+2).
 >
-> **Con las tres entregadas, la 0.9.0 queda lista para publicarse.**
->
-> 4. **`fix/helpers-no-reintentan-tras-morir`** — ✅ entregado (2026-07-18, en rama). *Era el candidato
+> 4. **`fix/helpers-no-reintentan-tras-morir`** — ✅ mergeado a `main` (2026-07-18). *Era el candidato
 >    `fix/presentmon-no-reintenta-tras-morir`; el owner decidió meterlo en la 0.9.0 porque el overlay
 >    aún no se ha publicado y se puede corregir antes de estrenarlo.*
 >
