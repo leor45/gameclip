@@ -110,6 +110,7 @@ const perf: PerfApi = {
     ipcRenderer.on(IpcEvent.PerfOverlayData, wrapped);
     return () => ipcRenderer.removeListener(IpcEvent.PerfOverlayData, wrapped);
   },
+  isPawnIoInstalled: () => ipcRenderer.invoke(IpcChannel.PerfPawnIoInstalled),
 };
 
 const api: GameclipApi = {

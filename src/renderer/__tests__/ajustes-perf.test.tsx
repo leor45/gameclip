@@ -49,6 +49,90 @@ describe('Ajustes — Overlay de rendimiento', () => {
     expect(screen.getByLabelText('Mostrar overlay de rendimiento')).not.toBeChecked();
   });
 
+  it('avisa junto a las métricas que FPS y Temp CPU necesitan administrador', async () => {
+    // El aviso tiene que estar donde se marcan las métricas: la explicación completa vive al final
+    // del fieldset, y quien marca FPS no tiene por qué haber bajado hasta allí.
+    await irAAvanzado();
+
+    const avisos = screen.getAllByText(/necesitan permisos de administrador/i);
+    expect(avisos.length).toBeGreaterThanOrEqual(1);
+    const juntoALasMetricas = avisos.find((el) => /FPS y Temp CPU/i.test(el.textContent ?? ''));
+    expect(juntoALasMetricas).toBeDefined();
+    // Y remite a la salida real, no deja al usuario sin qué hacer.
+    expect(juntoALasMetricas!.textContent).toMatch(/Iniciar con Windows como administrador/i);
+
+    // La leyenda del checkbox elevado sigue en su sitio (explica el mecanismo completo).
+    expect(screen.getByText(/crea una tarea programada elevada/i)).toBeInTheDocument();
+  });
+
+  it('la copy no nombra a la NVIDIA App', async () => {
+    // La NVIDIA App fue referencia de diseño durante el desarrollo del overlay; el producto no la
+    // nombra. La comprobación va sobre el DOM renderizado y NO sobre los ficheros: en el código se
+    // conservan a propósito los comentarios que explican el porqué de estas decisiones y el
+    // diagnóstico de PresentMon que la cita como capturador que compite por las sesiones ETW.
+    await irAAvanzado();
+
+    expect(document.body.textContent).not.toMatch(/NVIDIA App/i);
+  });
+
+  it('explica por qué el centro no es una posición elegible', async () => {
+    // El dato útil de la leyenda vieja sobrevive a quitar la comparación: sin él, reservar el centro
+    // parece arbitrario y acabaría "arreglándose".
+    await irAAvanzado();
+
+    const leyenda = screen.getByText(/los cambios se ven en pantalla al instante/i);
+    expect(leyenda.textContent).toMatch(/centro de la pantalla/i);
+    expect(leyenda.textContent).toMatch(/juego/i);
+  });
+
+  it('distingue los dos requisitos: FPS solo admin, Temp CPU admin + PawnIO', async () => {
+    // No son el mismo requisito y fundirlos engaña: los FPS salen de PresentMon (ETW, solo pide
+    // elevación) y la Temp CPU de los MSR, que además necesitan el driver.
+    await irAAvanzado();
+
+    const leyenda = screen.getByText(/crea una tarea programada elevada/i);
+    expect(leyenda.textContent).toMatch(/temperatura de CPU necesita\s+además el controlador PawnIO/i);
+    expect(leyenda.textContent).toMatch(/los FPS no/i);
+  });
+
+  it('sin PawnIO y con Temp CPU marcada, ofrece el enlace de descarga', async () => {
+    mock().perf.isPawnIoInstalled.mockResolvedValue(false);
+    const user = await irAAvanzado();
+
+    // Sin marcar la métrica no hay aviso: a quien no la use, contarle que le falta un driver de
+    // kernel es ruido —y ruido que suena a que la app pide privilegios.
+    expect(screen.queryByTestId('aviso-pawnio')).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Temperatura de CPU'));
+
+    const aviso = await screen.findByTestId('aviso-pawnio');
+    // Dice qué es y qué se pierde, sin prometer que la app lo instale.
+    expect(aviso.textContent).toMatch(/PawnIO/);
+    expect(aviso.textContent).toMatch(/otras ocho siguen funcionando/i);
+    expect(aviso.textContent).toMatch(/anti-cheat/i);
+
+    const enlace = screen.getByRole('link', { name: /Descargar PawnIO/i });
+    expect(enlace).toHaveAttribute('href', 'https://pawnio.eu');
+  });
+
+  it('con PawnIO instalado no aparece el aviso aunque Temp CPU esté marcada', async () => {
+    // El mock lo da por instalado (el caso normal, y el de la máquina del owner).
+    const user = await irAAvanzado();
+    await user.click(screen.getByLabelText('Temperatura de CPU'));
+
+    expect(screen.queryByTestId('aviso-pawnio')).not.toBeInTheDocument();
+  });
+
+  it('si la comprobación de PawnIO falla, no se inventa un aviso', async () => {
+    // Best-effort: ante un canal roto, callar es mejor que mandar a instalar un driver de kernel a
+    // quien quizá ya lo tiene.
+    mock().perf.isPawnIoInstalled.mockRejectedValue(new Error('canal caído'));
+    const user = await irAAvanzado();
+    await user.click(screen.getByLabelText('Temperatura de CPU'));
+
+    expect(screen.queryByTestId('aviso-pawnio')).not.toBeInTheDocument();
+  });
+
   it('guarda las métricas marcadas y el overlay activado', async () => {
     const user = await irAAvanzado();
 

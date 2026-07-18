@@ -44,6 +44,12 @@ const MAX_REINTENTOS = 3;
  */
 const REINTENTO_LENTO_MS = 60_000;
 /**
+ * Espera antes de los primeros reintentos cuando el proceso **muere** (distinto de quedarse mudo:
+ * ahí hay que darle `NO_DATA_MS` para ver si arranca a entregar datos; aquí ya no hay nada que
+ * esperar, solo evitar encadenar arranques en caliente).
+ */
+const REINTENTO_MUERTE_MS = 5_000;
+/**
  * Cuánto tiene que superar un proceso al enganchado para robarle la lectura. El enganche evita que
  * el contador salte entre apps, pero NO puede ser permanente: apps de escritorio (Discord, editores,
  * navegadores) presentan sin parar, y si el overlay arranca antes que el juego se quedaba pegado a
@@ -51,6 +57,19 @@ const REINTENTO_LENTO_MS = 60_000;
  * este margen el juego (mucho más rápido) recupera el enganche y el ruido normal no lo mueve.
  */
 const MARGEN_CAMBIO = 1.25;
+
+/**
+ * Un proceso solo entra al enganche si presenta por la ruta directa a hardware. Se compara por
+ * PREFIJO y no por subcadena a propósito: `Hardware Composed: Independent Flip` contiene la palabra
+ * «Composed» y aun así es un modo de hardware (ventana sin bordes con MPO), así que buscar
+ * «Composed» dentro de la cadena lo descartaría por error.
+ *
+ * Califican: `Hardware: Legacy Flip`, `Hardware: Legacy Copy to front buffer`,
+ * `Hardware: Independent Flip` y `Hardware Composed: Independent Flip` — pantalla completa y ventana
+ * sin bordes. No califican `Composed: Flip`, `Composed: Copy with …` ni `Unknown`, que es por donde
+ * presentan Discord, los navegadores y los editores.
+ */
+const PREFIJO_HARDWARE = 'hardware';
 
 // Procesos que nunca son "el juego": el compositor de Windows y (se añade en runtime) la propia
 // GameClip. El overlay y la ventana de la app presentan frames pero no son lo que el usuario mide.
@@ -76,10 +95,17 @@ export function presentMonArgs(excludeExe: string[]): string[] {
   return args;
 }
 
-/** Índice de columnas de la cabecera CSV que nos interesan; null si falta alguna. */
+/** Índice de columnas de la cabecera CSV que nos interesan; null si falta alguna imprescindible. */
 export interface CsvColumns {
   application: number;
   msBetweenPresents: number;
+  /**
+   * Columna del modo de presentación, o null si la cabecera no la trae. Es **opcional** a
+   * propósito: si una versión futura de PresentMon la renombrara, exigirla invalidaría la cabecera
+   * entera y los FPS morirían del todo. Sin ella se degrada a «todo califica», que es el
+   * comportamiento previo a esta feature — peor, pero no roto.
+   */
+  presentMode: number | null;
 }
 
 export function parseCsvHeader(headerLine: string): CsvColumns | null {
@@ -87,7 +113,8 @@ export function parseCsvHeader(headerLine: string): CsvColumns | null {
   const application = cols.indexOf('application');
   const msBetweenPresents = cols.indexOf('msbetweenpresents');
   if (application < 0 || msBetweenPresents < 0) return null;
-  return { application, msBetweenPresents };
+  const presentMode = cols.indexOf('presentmode');
+  return { application, msBetweenPresents, presentMode: presentMode < 0 ? null : presentMode };
 }
 
 /** Valor numérico de una columna de una línea CSV; null si no parsea. */
@@ -105,6 +132,22 @@ export class FpsTracker {
   /** Última lectura válida, para sostenerla mientras la ventana esté vacía por una ráfaga. */
   private ultimoFps: number | null = null;
   private ultimoFpsAt = Number.NEGATIVE_INFINITY;
+  /** Ver `calificar()`: solo se enciende, nunca se apaga mientras el tracker viva. */
+  private calificado = false;
+
+  /**
+   * Marca el proceso como candidato al enganche. La calificación es una **puerta de entrada**, no
+   * un filtro por lectura: una vez dentro, el proceso conserva el contador aunque deje de presentar
+   * en modo hardware (DWM lo degrada al abrir un menú o al superponer un overlay de terceros) o
+   * pase a segundo plano. Filtrar lectura a lectura haría parpadear el contador.
+   */
+  calificar(): void {
+    this.calificado = true;
+  }
+
+  estaCalificado(): boolean {
+    return this.calificado;
+  }
 
   push(msBetweenPresents: number, now: number): void {
     if (msBetweenPresents <= 0) return;
@@ -163,18 +206,27 @@ export interface PresentMonDeps {
 
 /**
  * Corre PresentMon en modo captura-todo y expone los FPS del proceso enganchado. Un solo proceso
- * mientras la métrica FPS esté activa: `start()` lo lanza, `stop()` lo mata. Si el proceso muere
- * (sin permisos, cierre) no se relanza solo (evita un bucle de crashes); `stop()`+`start()` reintenta.
+ * mientras la métrica FPS esté activa: `start()` lo lanza, `stop()` lo mata.
+ *
+ * Si el proceso muere por su cuenta **se relanza solo**, con la misma espera escalonada que el
+ * watchdog usa para «vivo pero mudo» — antes se marcaba como fallido para siempre y los FPS quedaban
+ * en «—» el resto de la sesión, en silencio. El único fallo permanente que queda es que falte el
+ * binario: eso no se arregla esperando.
  */
 export class PresentMonReader {
   private child: LineProcess | null = null;
   private cols: CsvColumns | null = null;
+  /** Fallo del que no se vuelve: hoy, solo «no está el .exe». */
   private failed = false;
+  /** Cuándo murió por su cuenta, o null si está vivo (o parado a propósito). */
+  private muertoEn: number | null = null;
   /** exe (lowercase) → tracker de FPS. */
   private trackers = new Map<string, FpsTracker>();
   private denylist: Set<string>;
   /** Proceso cuyos FPS se muestran; se mantiene mientras presente. */
   private locked: string | null = null;
+  /** Juego detectado por la app (lowercase): segunda vía de calificación. Ver `setDetectedGame`. */
+  private juegoDetectado: string | null = null;
   private readonly now: () => number;
   /** Líneas recibidas del proceso vivo; 0 tras `NO_DATA_MS` dispara el watchdog. */
   private lineas = 0;
@@ -190,7 +242,8 @@ export class PresentMonReader {
   }
 
   start(): void {
-    if (this.child || this.failed) return;
+    // Si murió y espera su reintento espaciado, no se adelanta aquí: `reintentarSiMurio` lo hará.
+    if (this.child || this.failed || this.muertoEn !== null) return;
     this.reintentos = 0;
     this.spawnChild();
   }
@@ -214,9 +267,10 @@ export class PresentMonReader {
       this.child = null;
       this.trackers.clear();
       this.locked = null;
-      // Una muerte por su cuenta (típicamente: sin permisos para la sesión ETW) no se reintenta,
-      // para no encadenar arranques fallidos. Un reinicio nuestro sí vuelve a levantarlo.
-      if (!this.reiniciando) this.failed = true;
+      // Una muerte por su cuenta (típicamente: sin permisos para la sesión ETW) se anota con la
+      // hora, no se marca como fallo terminal: `reintentarSiMurio` la recupera espaciada. Un
+      // reinicio nuestro no cuenta como muerte — lo relanza el propio watchdog.
+      if (!this.reiniciando) this.muertoEn = this.now();
     });
     this.child = child;
   }
@@ -253,6 +307,27 @@ export class PresentMonReader {
     this.spawnChild();
   }
 
+  /**
+   * Relanza PresentMon si murió y ya toca. Camino aparte del watchdog: aquel cubre «vivo pero mudo»
+   * y este «se fue». Comparten reloj, contador y cadencia, así que un proceso que alterna entre
+   * caerse y quedarse mudo escala igual hacia la cadencia lenta en vez de reintentar sin freno.
+   */
+  private reintentarSiMurio(now: number): void {
+    if (this.child || this.muertoEn === null || this.failed) return;
+    const lento = this.reintentos >= MAX_REINTENTOS;
+    if (now - this.muertoEn < (lento ? REINTENTO_LENTO_MS : REINTENTO_MUERTE_MS)) return;
+    this.reintentos++;
+    if (!lento) {
+      console.warn(`[perf] PresentMon murió; reintento ${this.reintentos}/${MAX_REINTENTOS}`);
+    } else if (this.reintentos === MAX_REINTENTOS + 1) {
+      console.warn(
+        `[perf] PresentMon sigue cayéndose; se reintentará cada ${REINTENTO_LENTO_MS / 1000}s.`,
+      );
+    }
+    this.muertoEn = null;
+    this.spawnChild();
+  }
+
   stop(): void {
     // El kill dispara `exit`; sin esta marca se interpretaría como muerte por su cuenta.
     this.reiniciando = true;
@@ -260,6 +335,7 @@ export class PresentMonReader {
     this.reiniciando = false;
     this.child = null;
     this.failed = false;
+    this.muertoEn = null;
     this.cols = null;
     this.lineas = 0;
     this.reintentos = 0;
@@ -282,7 +358,33 @@ export class PresentMonReader {
       tracker = new FpsTracker();
       this.trackers.set(exe, tracker);
     }
+    if (!tracker.estaCalificado() && this.califica(cells, exe)) tracker.calificar();
     tracker.push(ms, this.now());
+  }
+
+  /**
+   * ¿Este present hace que el proceso entre al enganche? Dos vías, y basta una:
+   * presentar por hardware (pantalla completa o sin bordes), o ser el juego que la app ya tiene
+   * detectado —que cubre el emulador en ventana normal—. Sin columna de modo no se puede juzgar,
+   * así que se cae al comportamiento previo: todo califica.
+   */
+  private califica(cells: string[], exe: string): boolean {
+    if (exe === this.juegoDetectado) return true;
+    const modeCol = this.cols?.presentMode ?? null;
+    if (modeCol === null) return true;
+    return (cells[modeCol] ?? '').trim().toLowerCase().startsWith(PREFIJO_HARDWARE);
+  }
+
+  /**
+   * Juego detectado por la app (automático o manual), o null. Es una vía que **solo puede
+   * encender**: nunca descalifica a nadie, así que ningún proceso que hoy muestre FPS deja de
+   * hacerlo por esto. Pasar null no apaga el contador de un proceso ya calificado —la calificación
+   * es pegajosa—, solo deja de calificar por esta vía a los que vengan después.
+   */
+  setDetectedGame(exe: string | null): void {
+    this.juegoDetectado = exe ? exe.trim().toLowerCase() : null;
+    // Califica ya al que tenga tracker vivo, sin esperar a su siguiente present.
+    if (this.juegoDetectado) this.trackers.get(this.juegoDetectado)?.calificar();
   }
 
   /**
@@ -294,6 +396,9 @@ export class PresentMonReader {
    */
   fps(): number | null {
     const now = this.now();
+    // Primero recuperar al muerto (si toca) y luego vigilar al vivo: así el watchdog no evalúa a un
+    // proceso recién nacido, que aún no ha tenido tiempo de entregar nada.
+    this.reintentarSiMurio(now);
     this.watchdog(now);
     for (const [exe, tracker] of this.trackers) {
       if (now - tracker.lastAt() > PRUNE_MS) this.trackers.delete(exe);
@@ -302,6 +407,9 @@ export class PresentMonReader {
     let mejorExe: string | null = null;
     let mejorFps = 0;
     for (const [exe, tracker] of this.trackers) {
+      // Solo los calificados compiten por el enganche: una app de escritorio no entra ni aunque sea
+      // la única presentando (entonces no hay FPS que mostrar y el overlay pinta «—»).
+      if (!tracker.estaCalificado()) continue;
       const fps = tracker.fps(now);
       if (fps !== null && fps > mejorFps) {
         mejorFps = fps;

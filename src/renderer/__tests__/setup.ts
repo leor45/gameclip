@@ -127,6 +127,8 @@ export function crearGameclipMock() {
     perf: {
       preview: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn().mockReturnValue(() => undefined),
+      // Por defecto instalado: el aviso de descarga es la excepción, no el estado normal.
+      isPawnIoInstalled: vi.fn().mockResolvedValue(true),
     },
   };
 }

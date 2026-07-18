@@ -22,7 +22,7 @@ function needsSensors(metrics: PerfMetricsEnabled): boolean {
 
 export interface PerfSamplerDeps {
   sensors: Pick<SensorsReader, 'start' | 'stop' | 'latest'>;
-  presentMon: Pick<PresentMonReader, 'start' | 'stop' | 'fps'>;
+  presentMon: Pick<PresentMonReader, 'start' | 'stop' | 'fps' | 'setDetectedGame'>;
   /** Fuente de datos de os, inyectable en tests. */
   osApi?: {
     cpus: () => ReturnType<typeof os.cpus>;
@@ -54,6 +54,16 @@ export class PerfSampler extends EventEmitter {
     this.intervalMs = deps.intervalMs ?? INTERVAL_MS;
   }
 
+  /**
+   * Ejecutable del juego que la app tiene detectado (o null). Es una **segunda vía** para calificar
+   * un proceso de cara a los FPS —cubre el emulador que corre en ventana normal—, nunca un
+   * requisito: los FPS siguen funcionando con juegos que la app no reconoce. No revive el
+   * `setGameExe` que la Fase 19 quitó, que sí era un requisito. Ver `presentmon.ts`.
+   */
+  setDetectedGame(exe: string | null): void {
+    this.deps.presentMon.setDetectedGame(exe);
+  }
+
   /** Estado deseado: null apaga todo (overlay desactivado). Idempotente. */
   configure(metrics: PerfMetricsEnabled | null): void {
     this.metrics = metrics;
@@ -61,7 +71,11 @@ export class PerfSampler extends EventEmitter {
       this.stopAll();
       return;
     }
-    if (needsSensors(metrics)) this.deps.sensors.start();
+    // Dos preguntas distintas, a propósito: `needsSensors` decide **si** hace falta el helper, y
+    // `cpuTemp` decide **en qué modo**. Solo esa métrica necesita el grupo de CPU (los MSR, anillo 0
+    // vía PawnIO); lo de GPU va por NVAPI/ADL, que no usa driver. Quien no la marcó no debe provocar
+    // la carga de un driver de kernel.
+    if (needsSensors(metrics)) this.deps.sensors.start({ cpu: metrics.cpuTemp });
     else this.deps.sensors.stop();
     // PresentMon captura TODOS los procesos: no depende del juego detectado, así que basta con
     // encenderlo mientras la métrica de FPS esté marcada.

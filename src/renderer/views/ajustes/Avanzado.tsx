@@ -4,6 +4,7 @@ import type { CaptureSettings } from '@shared/capture';
 import { HOTKEY_ACTIONS, accelFromKeyPress, hotkeyCollisions, isPttReserved } from '@shared/hotkeys';
 import type { PerfMetricKey, PerfOverlayConfig } from '@shared/perf';
 import {
+  PAWNIO_DOWNLOAD_URL,
   PERF_METRIC_KEYS,
   PERF_PRESETS,
   PERF_PRESET_LABELS,
@@ -31,6 +32,8 @@ export default function AjustesAvanzado() {
   /** El botón del atajo está "a la escucha" de una pulsación. */
   const [capturando, setCapturando] = useState(false);
   const [rechazo, setRechazo] = useState<string | null>(null);
+  /** null mientras no se sabe: así el aviso no parpadea al abrir la sección. */
+  const [pawnIoInstalado, setPawnIoInstalado] = useState<boolean | null>(null);
 
   const perf = settings?.perfOverlay ?? null;
   const perfEnabled = settings?.perfOverlayEnabled ?? false;
@@ -42,6 +45,24 @@ export default function AjustesAvanzado() {
     },
     [settings, set],
   );
+
+  // Se pregunta al abrir la sección y no una vez por app: el usuario puede instalar PawnIO con la
+  // app abierta (es justo lo que le pide el enlace) y al volver a Ajustes el aviso debe haberse ido.
+  // Best-effort: si el canal falla, se asume instalado y no se enseña un aviso que quizá sobra.
+  useEffect(() => {
+    let vivo = true;
+    void window.gameclip.perf
+      .isPawnIoInstalled()
+      .then((instalado) => {
+        if (vivo) setPawnIoInstalado(instalado);
+      })
+      .catch(() => {
+        if (vivo) setPawnIoInstalado(true);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   // Preview en vivo (estilo NVIDIA App): cada cambio de config se aplica al overlay real al
   // instante, sin persistir; guardar sigue siendo lo que persiste. Debounce corto para que
@@ -214,6 +235,29 @@ export default function AjustesAvanzado() {
             {METRIC_LABELS[key]}
           </label>
         ))}
+        {/* El aviso va AQUÍ, y no solo junto al checkbox elevado del final: la duda nace al marcar
+            la métrica, y nada obliga a haber bajado hasta la explicación completa. */}
+        <p className="settings-hint">
+          FPS y Temp CPU necesitan permisos de administrador y sin ellos se muestran como «—»; las
+          demás métricas funcionan siempre. Se resuelve con «Iniciar con Windows como administrador»,
+          más abajo.
+        </p>
+        {/* Requisito DISTINTO del de administrador, y de una sola métrica: la temperatura del
+            procesador se lee de los MSR (anillo 0) y eso lo aporta PawnIO, que se instala aparte.
+            Solo se enseña si Temp CPU está marcada — a quien no la use, contarle que le falta un
+            driver de kernel es ruido, y ruido que suena a que la app pide privilegios. */}
+        {perf.metrics.cpuTemp && pawnIoInstalado === false && (
+          <p className="settings-hint" data-testid="aviso-pawnio">
+            Temp CPU además necesita <strong>PawnIO</strong>, un controlador gratuito que permite
+            leer la temperatura del procesador y que se instala aparte. Sin él esa métrica se ve como
+            «—» y las otras ocho siguen funcionando.{' '}
+            <a href={PAWNIO_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+              Descargar PawnIO
+            </a>
+            . Si juegas a algo con anti-cheat de kernel, ten en cuenta que PawnIO es un controlador
+            de sistema y puede dar problemas con alguno.
+          </p>
+        )}
 
         <p className="settings-subtitle">Posición</p>
         <div className="perf-preset">
@@ -250,8 +294,8 @@ export default function AjustesAvanzado() {
           />
         </label>
         <p className="settings-hint">
-          Con el overlay activo, los cambios se ven en pantalla al instante (el centro de la
-          pantalla queda reservado al juego, como en NVIDIA App).
+          Con el overlay activo, los cambios se ven en pantalla al instante. El centro de la pantalla
+          no es una posición elegible: se deja libre para el juego.
         </p>
 
         <label>
@@ -308,7 +352,8 @@ export default function AjustesAvanzado() {
           Los FPS y la temperatura de CPU necesitan permisos de administrador (es una restricción de
           Windows); sin ellos se muestran como «—». Esta opción crea una tarea programada elevada
           (pide confirmación UAC una sola vez) y requiere tener activo «Iniciar con Windows» en{' '}
-          <Link to="/ajustes/general">General</Link>.
+          <Link to="/ajustes/general">General</Link>. La temperatura de CPU necesita{' '}
+          <strong>además</strong> el controlador PawnIO, que se instala aparte; los FPS no.
         </p>
       </fieldset>
 

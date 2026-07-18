@@ -818,8 +818,221 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > usar* y se encoge cuando otra app pide memoria). Se conserva el nuestro a propósito: para un overlay
 > de rendimiento la pregunta útil es cuánto está llena la tarjeta, contando todo lo que hay dentro.
 >
-> Quedan dos trabajos acordados **antes del release**: `feature/fps-solo-en-juego` (FPS en «—» en el
-> escritorio) y `feature/overlay-proteccion-selectiva` (que el overlay sí salga en capturas externas).
+> **⚠️ Sin publicar todavía.** Quedan dos trabajos acordados que van en el **mismo release** que esta
+> fase: `feature/fps-solo-en-juego` (FPS en «—» en el escritorio) y
+> `feature/overlay-proteccion-selectiva` (que el overlay sí salga en capturas externas). El overlay de
+> rendimiento **no se publica hasta que las tres ramas estén en `main`**, y las notas del release se
+> arman con las tres juntas.
+>
+> **`feature/fps-solo-en-juego` (2026-07-18, en `main` sin release):** el contador medía *cualquier*
+> proceso que presentara, así que en el escritorio marcaba los FPS de Discord o del navegador. Ahora
+> un proceso **califica** para el contador por dos vías, y basta una: presentar por la ruta directa a
+> hardware (modos `Hardware…` de PresentMon, columna 7 del CSV — el dato ya llegaba y se tiraba), o
+> **ser el juego detectado** por la app. Sin ninguno calificado → «—», y **el resto de métricas sigue
+> vivo**. La pieza que hace que no rompa nada es *dónde* se aplica: calificar es requisito de
+> **entrada al enganche**, no filtro por lectura, así que un juego conserva el contador aunque DWM
+> degrade su modo (un menú, un overlay encima) o pase a segundo plano; filtrar lectura a lectura lo
+> habría hecho parpadear. La columna se trata como **opcional**: si una versión futura de PresentMon
+> la renombrara, exigirla mataría los FPS del todo — sin ella se degrada a «todo califica».
+>
+> **El hallazgo de la E2E, que contradice la premisa del plan:** medido con PresentMon en la máquina
+> del owner, **ninguna aplicación llega a modo hardware — solo DWM**. Un juego AAA en pantalla
+> completa (`re9demo.exe`) presenta 2127/2127 frames en `Composed: Flip`, igual que el emulador
+> (`eden.exe`, 533/533) y que Discord o el editor. El *Independent Flip* casi no ocurre en Windows 11
+> moderno (ventana sin bordes por defecto, HAGS, overlays topmost). O sea: **la vía del modo no
+> dispara nunca en esta máquina y todo el trabajo lo hace la detección.** Se descartó que fuera culpa
+> del overlay propio repitiendo la medición con él apagado. Aun así la vía del modo **se conserva
+> porque es puramente aditiva** —solo puede encender FPS, nunca apagarlos—, y donde el *Independent
+> Flip* sí ocurra cubre juegos no detectados. Limitación aceptada: un juego/emulador en ventana y no
+> detectado muestra «—»; se resuelve con **alta manual**, que es lo que ya hay que hacer para
+> clipearlo. Verificado E2E por el owner. 831 tests verdes (+14).
+>
+> ⚠️ **Al contar las fuentes de detección son TRES**: lista curada (`src/shared/games.ts`), altas
+> manuales (`customGames`) e **índice de launchers** (`games-index.json`), que es la que más juegos
+> aporta. Durante la E2E se dio una falsa alarma por revisar solo las dos primeras.
+>
+> ### ✅ Bloqueante del release resuelto: `fix/sensores-pawnio` (2026-07-18, en rama)
+>
+> **El overlay ya se puede publicar.** LibreHardwareMonitor sube 0.9.4 → **0.9.6**: fuera WinRing0,
+> dentro PawnIO. Verificado sobre los binarios que enviamos (no sobre el changelog): la 0.9.4 contenía
+> `WinRing0.gz`/`WinRing0x64.gz` y en la 0.9.6 no hay **ninguna** ocurrencia; el script lleva ahora la
+> comprobación dentro, así que el build falla si vuelve a colarse.
+>
+> **El salto no era cambiar un número** — tres cosas que el spec resolvió midiendo, no presumiendo:
+> (1) el paquete **ya no trae `lib/net472`**: ahora hay `ref/<tfm>/` para compilar y
+> `runtimes/win-<arch>/lib/<tfm>/` con la implementación, así que la ruta que el script pedía fallaba;
+> (2) las dependencias pasaron de **una a diez**; y (3) **sin binding redirects el `.exe` compila pero
+> no arranca** (LHM referencia `System.Memory 4.0.5.0` y el paquete envía `4.0.2.0`) — MSBuild los
+> genera solo y `csc` a pelo no, así que el `App.config` se mantiene a mano. `Program.cs` no necesitó
+> ni un cambio. Compilado con `/platform:x64` (la implementación ya es específica de arquitectura).
+>
+> **La comprobación anti-WinRing0 se ganó el sueldo el primer día:** rechazó el build porque
+> `RAMSPDToolkit-NDD.dll` contiene `WinRing0`/`IWinRing0Driver`. No es el driver embebido (solo una
+> interfaz; ni `.sys` ni recurso `.gz`), pero se excluye junto a `DiskInfoToolkit`: sirven a grupos que
+> el helper **nunca habilita** (solo `IsGpuEnabled`/`IsCpuEnabled`).
+>
+> **Empaquetado por carpeta con filtro**, no fichero a fichero: `extraResources` enumeraba a mano y el
+> `.config` y las DLLs nuevas no habrían viajado. El fallo era invisible en dev —el helper resuelve
+> `resources/` por `process.cwd()`— y en el portable no degrada una métrica: **mata el helper entero**.
+>
+> **Aviso de PawnIO ausente:** de las nueve métricas lo necesita **una**, Temp CPU (los MSR exigen
+> anillo 0; lo de GPU va por NVAPI/ADL y CPU-uso/RAM ni pasan por el helper). El aviso sale **solo si
+> esa métrica está marcada** —mismo criterio que `hotfix/aviso-metricas-admin`: la duda nace al marcar
+> la métrica— y enlaza a `https://pawnio.eu`, en una constante única compartida (para un driver de
+> kernel, que se cuele un mirror es un problema de seguridad). La detección mira si está **instalado**
+> (`PawnIOLib.dll`), no si su servicio corre: un servicio parado sigue instalado. **Instalarlo desde la
+> app queda fuera** —red, UAC y un binario de terceros dentro del portable son otra tarea—; por
+> licencias no habría impedimento (PawnIO es GPL-2.0 con excepción de enlazado por IOCTL).
+>
+> ⛔ **Restricción de la máquina del owner, respetada y anotada:** su PawnIO es de **FanControl**, que
+> gobierna los ventiladores del PC. **No se tocó el servicio** (verificado `Running` antes y después de
+> cada prueba elevada); el caso "sin PawnIO" se simula con `GAMECLIP_PAWNIO_DIR` apuntando a una
+> carpeta vacía, que además es **mejor prueba**: recorre la misma ruta de detección que un PC limpio.
+>
+> Verificado: `cpuTemp` **62,9 °C** elevado sobre el artefacto final y `null` sin elevar con los
+> sensores de GPU intactos; el aviso visto en la app real por CDP con su enlace; y el helper
+> arrancando **desde el portable empaquetado** (95 MB), sin `WinRing0` en nada del paquete. 846 tests
+> verdes (+14). `resources/` pasa de 939 KB a 2,15 MB.
+>
+> <details><summary>Estado anterior (bloqueante abierto)</summary>
+>
+> ### ⛔ Bloqueante del release: `fix/sensores-pawnio` — **lo siguiente que se hace**
+>
+> **El overlay no se publica hasta resolver esto**, por delante incluso de
+> `feature/overlay-proteccion-selectiva`. Motivo: `scripts/build-perf-sensors.ps1` fija
+> **LibreHardwareMonitorLib 0.9.4** (nov-2024), que embebe el driver ring0 **WinRing0**. Desde
+> **septiembre de 2025 Windows Defender lo marca** como `VulnerableDriver:WinNT/Winring0.G` y
+> `HackTool:Win32/Winring0`, y pone en cuarentena a las apps que lo cargan. Este es justo el release
+> que estrena las métricas de hardware: publicarlo con ese driver es pisar la mina a propósito, y
+> para un portable que se descarga de GitHub, que Defender lo marque como *HackTool* es un problema
+> de adopción, no una molestia.
+>
+> **La salida ya existe y es la que adoptó el ecosistema:** LibreHardwareMonitor cambió WinRing0 por
+> **PawnIO** el 16-sep-2025 (PR #1857) y la **0.9.6 (feb-2026)** ya lo trae; FanControl hizo lo mismo
+> en su v238 y con eso se le acabaron los reportes de antivirus. El trabajo es subir 0.9.4 → 0.9.6.
+>
+> **Dos matices que el spec tiene que resolver, no dar por hechos:**
+> — PawnIO **sigue siendo un driver ring0** (bytecode sandboxeado): arregla el flag de Defender, **no**
+> la fricción con anti-cheats. FanControl documenta que su v238 es incompatible con **FACEIT**. La
+> recomendación para el usuario sigue siendo correr sin elevar si juega algo con anti-cheat de kernel.
+> — PawnIO **se instala aparte** (instalador propio). Hay que decidir qué hace el portable si no está:
+> degradar limpio (sin Temp CPU) es lo mínimo; pedir la instalación, lo deseable.
+> — Verificar que la 0.9.6 conserva el target `net472` y que compila con el `csc` de C# 5 que usamos
+> (la máquina no tiene SDK de .NET). Si no, cambia el enfoque del helper.
+>
+> **Decisión del owner sobre las notas del release (2026-07-18):** esto **NO va en las notas del
+> release**, solo en los commits. El overlay de rendimiento **nunca se ha publicado**, así que ningún
+> usuario recibió jamás una versión con WinRing0: no hay nada que comunicar ni de qué advertir. Es un
+> arreglo interno previo al estreno, no un fallo corregido de cara al público.
+>
+> </details>
+>
+> **`hotfix/aviso-metricas-admin` (2026-07-18, en `main` sin release):** la leyenda de que FPS y
+> Temp CPU necesitan administrador ya existía, pero al **final** del fieldset, colgada del checkbox
+> «Iniciar con Windows como administrador» — y la duda nace **arriba**, al marcar la métrica en «Qué
+> mostrar». Se añade el aviso ahí, remitiendo a la opción elevada; la leyenda del checkbox queda
+> intacta (es donde toca explicar el mecanismo completo). La copy lo encuadra como una limitación de
+> **dos** métricas y nunca como «la app requiere admin»: verificado sobre los manifiestos, tanto
+> `GameClip.exe` como el portable y `gc-presentmon.exe` son `asInvoker`, **la app no pide UAC nunca**
+> y 7 de las 9 métricas funcionan sin elevar. 832 tests verdes.
+>
+> ### 📦 Release 0.9.0 — el overlay de rendimiento sale con cinco tareas
+>
+> El overlay se publica **una sola vez**, cuando las cinco estén entregadas (decisión del owner,
+> 2026-07-18). Ninguna se mergea a `main` sin su propio spec/plan aprobado.
+>
+> **Estado:** 1-4 ✅ mergeadas · 5 pendiente.
+>
+> 1. **`fix/sensores-pawnio`** — ✅ mergeado a `main` (2026-07-18). Quita WinRing0 (ver
+>    arriba).
+> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — ✅ mergeado a `main` (2026-07-18). El helper pasa de
+>    un modo a dos: `IsCpuEnabled` deja de ser incondicional y depende de una bandera **`--cpu`** que
+>    el main pasa solo cuando «Temp CPU» está marcada. Sin ella, el grupo de CPU no se abre y **los
+>    MSR no se tocan** — o sea, PawnIO no entra en juego para quien solo quiere FPS y uso de GPU.
+>    Bandera **opt-in** a propósito: con opt-out, un despiste dejaría el grupo abierto, y el modo por
+>    defecto tiene que ser el que **no** toca ring0 (que un fallo degrade a «no lee la temperatura» y
+>    nunca a «carga un driver de kernel de más»). Cambiar de modo **relanza** el helper —seguro porque
+>    `configure()` solo se llama al arrancar y en `settings:changed`, nunca por tick— **conservando la
+>    última lectura**, para que tocar ese checkbox no haga parpadear a «—» las métricas de GPU (mismo
+>    criterio que el arreglo del parpadeo de FPS de la Fase 19).
+>
+>    **Esto no apaga PawnIO: deja de usarlo.** GameClip nunca arranca ni para el servicio —no hay una
+>    sola línea de gestión de servicios en el repo— y esta tarea no añade ninguna; lo que cambia es si
+>    le hablamos. Queda prohibido en el spec, junto con cualquier lógica de «¿lo usa alguien más?»
+>    para decidir apagarlo: es una carrera y no es asunto de una app de clips.
+>
+>    Verificado con **las dos variantes elevadas**, para que la diferencia sea la bandera y no los
+>    permisos: sin `--cpu` → `cpuTemp: null` con las métricas de GPU intactas; con `--cpu` →
+>    **48,125 °C**. Servicio PawnIO en `Running` antes y después. 854 tests verdes (+8).
+>
+>    *Causa raíz que arregla:* desmarcar «Temp CPU» dejaba de **pintar** el número sin cambiar nada por
+>    debajo — el helper se lanzaba si había **cualquier** métrica de sensores marcada (`gpuUsage` lo
+>    está por defecto), **sin argumentos**, y dentro ponía `IsCpuEnabled = true` incondicionalmente.
+>    **Detectado por el owner** al revisar la entrega de `fix/sensores-pawnio`.
+>
+> 3. **`fix/copy-sin-nvidia-app`** — ✅ mergeado a `main` (2026-07-18). La NVIDIA App fue **referencia
+>    de desarrollo** del overlay y el producto no debe nombrarla (instrucción del owner). El barrido
+>    confirmó que la leyenda de posición era la **única** cadena que veía el usuario; se reescribe
+>    entera en vez de recortar el paréntesis, para **conservar el dato útil** —por qué el centro no es
+>    elegible—, que si desaparece hace parecer la reserva arbitraria y acabaría "arreglándose":
+>    *«Con el overlay activo, los cambios se ven en pantalla al instante. El centro de la pantalla no
+>    es una posición elegible: se deja libre para el juego.»*
+>
+>    **Decisión del owner sobre el resto:** se quedan los **comentarios de código** (`perf.ts`,
+>    `Avanzado.tsx`), que son la nota de desarrollo que la referencia debía ser y documentan el porqué;
+>    el **diagnóstico de PresentMon**, que cita a la NVIDIA App junto al overlay de Steam como
+>    capturadores que **compiten por las sesiones ETW** (troubleshooting, no comparación de diseño); y
+>    los nombres de encoder `NVIDIA NVENC…`, que son el nombre real del hardware.
+>
+>    El test va sobre el **DOM renderizado** y no sobre los ficheros: un `grep` en el repo daría rojo
+>    por lo que se conserva a propósito y acabaría desactivado. La regla que se blinda es «el usuario
+>    no la ve». 856 tests verdes (+2).
+>
+> 4. **`fix/helpers-no-reintentan-tras-morir`** — ✅ mergeado a `main` (2026-07-18). *Era el candidato
+>    `fix/presentmon-no-reintenta-tras-morir`; el owner decidió meterlo en la 0.9.0 porque el overlay
+>    aún no se ha publicado y se puede corregir antes de estrenarlo.*
+>
+>    Si un helper moría por su cuenta, sus métricas quedaban **muertas en silencio el resto de la
+>    sesión**: `onExit` ponía `failed = true` y `start()` salía antes de nada. **El alcance resultó
+>    mayor que el anotado**, que hablaba solo de PresentMon: `SensorsReader` tenía el patrón idéntico y
+>    ahí el daño es peor — PresentMon solo mata los FPS, el de sensores se lleva **siete métricas**.
+>
+>    No se inventó mecanismo: el watchdog ya resolvía el caso hermano («vivo pero mudo») con
+>    reintentos escalonados y **sin timers**, movido desde `fps()`. La muerte se trata igual — el flag
+>    terminal pasa a ser **un estado con hora** y el siguiente tick relanza cuando toca. `failed` se
+>    conserva **solo** para «falta el binario», que es lo único que no se arregla esperando. Sin
+>    `setInterval` a propósito: otro ciclo de vida que apagar en `stop()` y en el cierre es justo lo
+>    que provocó el bug de la bandeja destruida. La lectura **sí** se limpia al morir (la ventana dura
+>    hasta un minuto y enseñar cifras viejas como actuales es peor que un guion) — al revés que el
+>    relanzado por cambio de modo, donde el hueco es de ~1 s.
+>
+>    **Verificado E2E en la app real**, no solo en tests: matado el helper de sensores volvió solo a
+>    los ~5 s; matándolo seis veces seguidas los huecos escalan y **se asientan en exactamente 60 s**;
+>    y leyendo el overlay por CDP, GPU/Temp GPU/VRAM pasan de cifras → **«—»** → cifras otra vez **sin
+>    tocar ajustes ni reiniciar**. 862 tests verdes (+8).
+>
+>    ⚠️ **Anotado de la E2E:** sin elevar, PresentMon muere al instante (no puede crear su sesión ETW)
+>    y queda reintentando **una vez por minuto** mientras el overlay esté encendido — antes era un
+>    intento y silencio. No se mitiga: el coste medido es despreciable y es la **misma política** que
+>    el watchdog ya aplicaba al caso mudo. Si algún día molesta, lo natural es alargar la cadencia
+>    cuando el proceso ni sobrevive un par de segundos (causa estructural, no pasajera).
+>
+> 5. **`feature/overlay-proteccion-selectiva`** — 📋 spec y plan escritos, **plan pendiente de
+>    aprobación y sin código**. Es la que faltaba en esta lista: su propio spec ya decía que entra en
+>    el **mismo release** que el overlay, así que la 0.9.0 no se publica sin ella.
+>
+>    Hoy el overlay se crea con `setContentProtection(true)` (`WDA_EXCLUDEFROMCAPTURE`), que lo hace
+>    invisible para **toda** captura: cumple lo de no salir en los clips, pero se pasa de largo y
+>    tampoco se ve al compartir pantalla en Discord ni en un recorte de Windows, que es justo donde el
+>    usuario sí lo quiere. La idea es aplicar la protección **solo cuando el pipeline está capturando
+>    el monitor** (perfil `desktop` capturando de verdad); con perfil `game` queda siempre quitada,
+>    porque el `game_capture` solo ve la swapchain del juego y los clips salen limpios igual.
+>
+>    **Riesgo principal, sin verificar:** conmutar `setContentProtection` en caliente podría alterar
+>    la ventana (perder el nivel `screen-saver`, parpadear, o no aplicarse hasta el siguiente
+>    repintado). Se comprueba a mano en su E2E.
+>
+> **Con las cinco entregadas, la 0.9.0 queda lista para publicarse.**
 
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 

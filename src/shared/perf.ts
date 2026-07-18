@@ -2,6 +2,16 @@
 // y snapshot de métricas. Puro (sin Electron): lo comparten el main, la página del overlay y la UI
 // de Ajustes, y se testea sin ventanas.
 
+/**
+ * Página oficial de descarga de PawnIO, el driver que hace falta **solo** para Temp CPU (la
+ * temperatura del procesador se lee de los MSR, que exigen anillo 0; lo de GPU va por NVAPI/ADL sin
+ * driver). Vive aquí, en una **única** constante compartida, a propósito: es un driver de kernel y
+ * que un mirror (Softonic, Nero…) se cuele por un copiar-pegar sería un problema de seguridad, no
+ * de comodidad. Enlaza a la página y no al `.exe` de la release: el enlace directo se pudre al
+ * cambiar de versión y se salta el contexto donde el autor explica las variantes firmada y sin firmar.
+ */
+export const PAWNIO_DOWNLOAD_URL = 'https://pawnio.eu';
+
 /** Métricas que el overlay sabe mostrar; cada una con su check en Ajustes. */
 export const PERF_METRIC_KEYS = [
   'fps',
