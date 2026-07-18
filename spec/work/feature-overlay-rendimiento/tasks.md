@@ -96,7 +96,36 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
       (máx. 3 intentos). Cubre el caso de cupos ETW agotados por sesiones huérfanas.
 - [x] Tests de ambos: cabecera real de la 2.x, flags de doble guion, watchdog (reintenta, se rinde
       al tope, y no actúa si llegan líneas). **820 tests verdes.**
-- [ ] Pendiente del owner: confirmar en pantalla que el contador coincide con el `DLSS` de Steam.
+- [x] Confirmado por el owner: el contador coincide con el `DLSS` de Steam, tanto con FPS reales
+      como con frame generation, y también en segundo plano.
+
+### Tercera ronda (2026-07-18, dos bugs de la E2E del owner)
+
+- [x] R7. **El enganche se re-evalúa.** Era permanente: se elegía el proceso más rápido en la primera
+      evaluación y no se revisaba nunca, así que con GameClip arrancado antes que el juego se quedaba
+      pegado a una app de escritorio para siempre (medido: marcaba 52 fps, que era Discord, con el
+      juego a 129). Ahora otro proceso le roba la lectura si lo supera por `MARGEN_CAMBIO` (25 %),
+      margen que evita saltos por variación normal.
+- [x] R8. **Sin parpadeo a «—».** Las muestras se fechan al *llegar* por la tubería y PresentMon
+      escribe por bloques cuando su salida no es una consola, así que llegan a ráfagas; con la ventana
+      de la media (1 s) igual al periodo de muestreo (1 s) no había holgura y un bloque tardón la
+      vaciaba. Se sostiene la última lectura durante `STALE_MS` — que hasta ahora era **código muerto**,
+      porque el filtro de 1 s siempre era más estricto.
+- [x] R9. Watchdog que no se rinde: tras los 3 reintentos rápidos pasa a uno por minuto en vez de
+      abandonar. La causa habitual (cupos ETW ocupados) se resuelve sola al cerrarse el otro
+      capturador, y rendirse dejaba los FPS muertos hasta reiniciar GameClip.
+- [x] Tests de regresión de R7 y R8 (el caso Discord con datos reales, y la ráfaga que vacía la
+      ventana). **822 tests verdes.**
+
+### VRAM — analizado, sin cambio (2026-07-18)
+
+El owner comparó contra Steam (9,5/11,7 GB frente a nuestro 9,2/12,0) y propuso que el hueco fuera un
+bloque reservado. **No lo es**: ese modelo se contradice —los mismos 0,3 GB tendrían que estar fuera
+del total y dentro del uso a la vez—. Son dos números de APIs distintas: nosotros leemos la memoria
+**física** de la tarjeta por NVAPI (LibreHardwareMonitor) y Steam lee DXGI (`Budget`, lo que el SO te
+*permite* usar, que se encoge cuando otra app pide memoria, y `CurrentUsage`). **Se conserva el
+nuestro a propósito:** para un overlay de rendimiento la pregunta útil es cuánto está llena la
+tarjeta contando todo lo que hay dentro.
 
 ### Hallazgo de sesiones ETW (documentado)
 
@@ -112,6 +141,11 @@ los FPS quedan en `—`. Con admin funcionan. Confirmado midiendo el binario a m
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner (2026-07-18)
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado — Fase 19
+
+## Acordado para antes del release (specs propios, no entran aquí)
+
+- `feature/fps-solo-en-juego` — FPS en «—» en el escritorio, calificando por modo de presentación.
+- `feature/overlay-proteccion-selectiva` — que el overlay sí salga en capturas externas.

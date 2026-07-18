@@ -769,6 +769,58 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > "ejecutables" confundía (un juego mete varios `.exe`; Wallpaper Engine ~25), así que pasa a contar
 > juegos. 756 tests verdes.
 
+## Fase 19 · Overlay de rendimiento — ✅ entregado
+
+- [x] Overlay configurable en Ajustes → Avanzado con nueve métricas por check (FPS · GPU uso/temp/
+      fans/voltaje/VRAM · CPU uso/temp · RAM), posición al estilo NVIDIA App (8 presets con flechas +
+      dos sliders sincronizados, nunca el centro exacto), disposición apaisada o desglosada, tamaño de
+      fuente (pequeño · estándar · grande), color y opacidad, con **previa en vivo** mientras se ajusta.
+- [x] Atajo global configurable (Alt+R por defecto) que solo alterna la visibilidad. Entra en el
+      catálogo `HOTKEY_ACTIONS`, así que hereda gratis la detección de colisiones y la reserva de la
+      tecla del push-to-talk de la Fase 14.
+- [x] **Nunca tapa los avisos**: REC, clip guardado y aviso de juego comparten nivel `screen-saver` y
+      se re-elevan por encima cada 2 s.
+- [x] **No sale en las grabaciones** aunque esté a la vista: `setContentProtection(true)`
+      (`WDA_EXCLUDEFROMCAPTURE`).
+- [x] FPS **sin depender de la detección de juegos** (funciona con emuladores y cualquier app que
+      presente), que **se mantienen en segundo plano** y que **cuentan los frames generados** por
+      DLSS/FSR Frame Generation.
+- [x] Auto-inicio elevado opt-in por tarea programada (`RunLevel=Highest`): PresentMon necesita
+      administrador para abrir su sesión ETW.
+
+> `feature/overlay-rendimiento` (2026-07-18). Dos helpers propios bundleados: `gc-perf-sensors`
+> (C# net48 + LibreHardwareMonitorLib, compilado con el csc de Windows) para los sensores, y
+> **PresentMon 2.5.1** (Intel, MIT) para los FPS. El portable creció solo **+0,45 MB** (98 415 667 →
+> 98 890 734 bytes): los ~4,5 MB de helpers se quedan en medio mega tras la compresión LZMA.
+>
+> **Por qué la 2.5.1 y no la 1.10:** la 1.x **no contabiliza los frames generados**. Medido contra el
+> overlay de Steam en RE Requiem con DLSS FG (`DLSS 128 | FPS 64`): la 1.10 daba ~19–61 fps y la 2.5.1,
+> 133. Las columnas que se parsean (`Application`, `MsBetweenPresents`) están en ambas.
+>
+> **Hallazgo de sesiones ETW:** sobreviven al proceso que las creó, así que matar PresentMon deja la
+> sesión viva. Con varias huérfanas —propias, o de Steam y la NVIDIA App, que capturan igual— Windows
+> agota los cupos del proveedor y PresentMon arranca **sin error pero mudo**, sin ninguna pista del
+> problema. Se limpian con `logman stop <nombre> -ets`; en la app lo mitiga un watchdog que reinicia si
+> no llega ni una línea en 12 s, espaciando a un reintento por minuto en vez de rendirse (la causa
+> suele resolverse sola al cerrarse el otro capturador).
+>
+> Dos bugs cazados en la E2E del owner comparando contra Steam: (1) el **enganche al proceso era
+> permanente** —se elegía el más rápido en la primera evaluación y nunca se revisaba—, así que con
+> GameClip arrancado antes que el juego se quedaba pegado a una app de escritorio: marcaba 52 fps,
+> que era Discord, con el juego a 129. Ahora otro proceso le roba la lectura si lo supera por un 25 %.
+> (2) el contador **parpadeaba a «—»**: las muestras se fechan al llegar por la tubería y PresentMon
+> escribe por bloques cuando su salida no es una consola, así que llegan a ráfagas; con la ventana de
+> la media (1 s) igual al periodo de muestreo (1 s) no había holgura y un bloque tardón la vaciaba.
+> Ahora se sostiene la última lectura durante 2 s. 822 tests verdes.
+>
+> **Decisión sobre la VRAM:** nuestro número (memoria física de la tarjeta contada por el driver, vía
+> NVAPI) no coincide con el de Steam (`Budget`/`CurrentUsage` de DXGI, que es lo que el SO *te permite
+> usar* y se encoge cuando otra app pide memoria). Se conserva el nuestro a propósito: para un overlay
+> de rendimiento la pregunta útil es cuánto está llena la tarjeta, contando todo lo que hay dentro.
+>
+> Quedan dos trabajos acordados **antes del release**: `feature/fps-solo-en-juego` (FPS en «—» en el
+> escritorio) y `feature/overlay-proteccion-selectiva` (que el overlay sí salga en capturas externas).
+
 ## Verificación pendiente (no es un bug: es que no se pudo probar)
 
 ### 🔍 Detección de juegos de EA, Battle.net y Xbox
