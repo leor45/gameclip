@@ -31,9 +31,22 @@ namespace GcPerfSensors
             watcher.IsBackground = true;
             watcher.Start();
 
+            // El grupo de GPU va siempre: NVAPI/ADL son APIs de usuario y no cargan driver alguno.
+            //
+            // El de CPU, SOLO si GameClip lo pide con --cpu. Abrirlo es lo que hace que
+            // LibreHardwareMonitor lea los MSR del procesador, y eso exige anillo 0 (PawnIO). Quien
+            // no marco "Temperatura de CPU" en la app no debe provocar la carga de un driver de
+            // kernel: PawnIO arregla el flag de Defender pero NO la friccion con los anti-cheats,
+            // asi que esa friccion se paga solo cuando se pidio la metrica que la necesita.
+            bool cpuPedido = false;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--cpu") cpuPedido = true;
+            }
+
             Computer computer = new Computer();
             computer.IsGpuEnabled = true;
-            computer.IsCpuEnabled = true;
+            computer.IsCpuEnabled = cpuPedido;
             try
             {
                 computer.Open();

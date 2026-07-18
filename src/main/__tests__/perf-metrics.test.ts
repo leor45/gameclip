@@ -121,6 +121,80 @@ describe('SensorsReader', () => {
     reader.start();
     expect(spawn).toHaveBeenCalledTimes(2);
   });
+
+  // --- Modo del helper: abrir el grupo de CPU solo si se pidió Temp CPU ---------------------------
+  //
+  // Sin `--cpu`, el helper no abre el grupo de CPU y no toca los MSR — que es lo que engancha PawnIO.
+  // Quien solo quiere FPS y uso de GPU no debe provocar la carga de un driver de anillo 0.
+
+  it('sin modo CPU lanza el helper sin --cpu', () => {
+    const spawn = vi.fn().mockReturnValue(procesoFalso().proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn });
+
+    reader.start({ cpu: false });
+
+    expect(spawn).toHaveBeenCalledWith('C:\\fake.exe', []);
+  });
+
+  it('con modo CPU lanza el helper con --cpu', () => {
+    const spawn = vi.fn().mockReturnValue(procesoFalso().proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn });
+
+    reader.start({ cpu: true });
+
+    expect(spawn).toHaveBeenCalledWith('C:\\fake.exe', ['--cpu']);
+  });
+
+  it('pedir el mismo modo dos veces no relanza', () => {
+    const spawn = vi.fn().mockReturnValue(procesoFalso().proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn });
+
+    reader.start({ cpu: true });
+    reader.start({ cpu: true });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('cambiar de modo mata el helper anterior y lo relanza con los argumentos nuevos', () => {
+    const primero = procesoFalso();
+    const segundo = procesoFalso();
+    const spawn = vi.fn().mockReturnValueOnce(primero.proc).mockReturnValueOnce(segundo.proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn });
+
+    reader.start({ cpu: false });
+    reader.start({ cpu: true });
+
+    expect(primero.proc.kill).toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenLastCalledWith('C:\\fake.exe', ['--cpu']);
+  });
+
+  it('al cambiar de modo conserva la última lectura (las métricas de GPU no parpadean)', () => {
+    // Relanzar tarda ~1 s en dar la primera muestra. Limpiar la lectura pintaría «—» en las métricas
+    // de GPU por tocar un checkbox que no les incumbe; un valor de hace un segundo informa mejor.
+    const primero = procesoFalso();
+    const segundo = procesoFalso();
+    const spawn = vi.fn().mockReturnValueOnce(primero.proc).mockReturnValueOnce(segundo.proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn });
+
+    reader.start({ cpu: false });
+    primero.emitLine('{"gpuUsage":50,"gpuTemp":60}');
+    reader.start({ cpu: true });
+
+    expect(reader.latest().gpuUsage).toBe(50);
+    expect(reader.latest().gpuTemp).toBe(60);
+  });
+
+  it('stop() sí limpia la lectura', () => {
+    const fake = procesoFalso();
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn: () => fake.proc });
+
+    reader.start({ cpu: true });
+    fake.emitLine('{"gpuUsage":50}');
+    reader.stop();
+
+    expect(reader.latest()).toEqual(EMPTY_SENSOR_READING);
+  });
 });
 
 // -------------------------------------------------------------------------------------- PresentMon
@@ -542,6 +616,41 @@ function samplerFalso() {
 }
 
 describe('PerfSampler', () => {
+  it('pide el grupo de CPU solo si Temp CPU está marcada', () => {
+    // El nudo de la tarea: marcar métricas de GPU NO debe abrir el grupo de CPU, porque abrirlo es
+    // lo que lee los MSR y engancha PawnIO (anillo 0). Antes daba igual lo que marcaras.
+    const { sampler, sensors } = samplerFalso();
+
+    sampler.configure({ ...DEFAULT_PERF_OVERLAY.metrics, gpuUsage: true, vram: true, cpuTemp: false });
+    expect(sensors.start).toHaveBeenLastCalledWith({ cpu: false });
+
+    sampler.configure({ ...DEFAULT_PERF_OVERLAY.metrics, gpuUsage: true, cpuTemp: true });
+    expect(sensors.start).toHaveBeenLastCalledWith({ cpu: true });
+
+    sampler.stop();
+  });
+
+  it('sin ninguna métrica de sensores no lanza el helper', () => {
+    const { sampler, sensors } = samplerFalso();
+
+    sampler.configure({
+      ...DEFAULT_PERF_OVERLAY.metrics,
+      gpuUsage: false,
+      gpuTemp: false,
+      gpuFan: false,
+      gpuVoltage: false,
+      vram: false,
+      cpuTemp: false,
+      fps: true,
+      cpuUsage: true,
+      ram: true,
+    });
+
+    expect(sensors.start).not.toHaveBeenCalled();
+    expect(sensors.stop).toHaveBeenCalled();
+    sampler.stop();
+  });
+
   it('sin sensor de temperatura de CPU, el resto de métricas sobrevive', () => {
     // Contrato de la degradación cuando falta PawnIO (o no se corre elevado): la temperatura del
     // procesador se lee de los MSR y sin anillo 0 vuelve null, pero eso NO puede arrastrar a las
