@@ -5,6 +5,7 @@ import { BrowserWindow, app, desktopCapturer, dialog, ipcMain, screen, shell } f
 import { IpcChannel } from '@shared/ipc';
 import type { CaptureFrameResult, IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings } from '@shared/capture';
+import { normalizePerfOverlay, type PerfOverlayConfig } from '@shared/perf';
 import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
 import {
@@ -42,6 +43,7 @@ export function registerIpcHandlers(
   storage: StorageManager | null = null,
   pttAvailable: () => boolean = () => false,
   games: GamesIpcDeps | null = null,
+  perfPreview: ((config: PerfOverlayConfig) => void) | null = null,
 ): void {
   ipcMain.handle(
     IpcChannel.AppVersion,
@@ -64,6 +66,10 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IpcChannel.CaptureGetAudioDevices, () => capture.getAudioDevices());
   ipcMain.handle(IpcChannel.CaptureGetPttAvailable, () => pttAvailable());
+  // Preview del overlay de rendimiento: aplica en vivo sin persistir (guardar va por set-settings).
+  ipcMain.handle(IpcChannel.PerfOverlayPreview, (_event, config: unknown) => {
+    perfPreview?.(normalizePerfOverlay(config));
+  });
   ipcMain.handle(IpcChannel.CaptureGetDisplays, async () => {
     const displays = screen.getAllDisplays();
     const primaryId = screen.getPrimaryDisplay().id;

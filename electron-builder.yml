@@ -61,6 +61,17 @@ extraResources:
   # GameInput). Se compila con scripts/build-controller-listen.ps1; queda en resources/ del portable.
   - from: resources/gc-controller-listen.exe
     to: gc-controller-listen.exe
+  # Sensores del overlay de rendimiento (GPU/CPU, LibreHardwareMonitor sobre .NET Framework 4.8,
+  # incluido en Windows). Se compila con scripts/build-perf-sensors.ps1; sus DLLs viajan al lado.
+  - from: resources/gc-perf-sensors.exe
+    to: gc-perf-sensors.exe
+  - from: resources/LibreHardwareMonitorLib.dll
+    to: LibreHardwareMonitorLib.dll
+  - from: resources/HidSharp.dll
+    to: HidSharp.dll
+  # PresentMon (Intel, MIT): FPS reales del juego por ETW para el overlay de rendimiento.
+  - from: resources/gc-presentmon.exe
+    to: gc-presentmon.exe
 
 win:
   # build/icon.ico lo genera `npm run icon` desde build/icon.svg (7 capas, 16→256 px).

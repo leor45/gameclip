@@ -13,6 +13,7 @@ import type { ExportProgress, ExportRequest, ExportResult } from './export';
 import type { GameIndex } from './games';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
 import type { OverlayNotice } from './overlay';
+import type { PerfOverlayConfig, PerfSnapshot } from './perf';
 import type { ClipAudioTrack, SaveAudioEditResult, TrackWaveform } from './tracks';
 
 export const IpcChannel = {
@@ -52,6 +53,7 @@ export const IpcChannel = {
   ClipGetTrackAudio: 'clip:get-track-audio',
   ClipSaveAudioEdit: 'clip:save-audio-edit',
   ClipCaptureFrame: 'clip:capture-frame',
+  PerfOverlayPreview: 'perf-overlay:preview',
 } as const;
 
 // Eventos push main → renderer (webContents.send).
@@ -62,6 +64,7 @@ export const IpcEvent = {
   LibraryChanged: 'library:changed',
   ExportProgress: 'export:progress',
   OverlayState: 'overlay:state',
+  PerfOverlayData: 'perf-overlay:data',
 } as const;
 
 // Estado que el main empuja a la página del overlay in-game.
@@ -71,6 +74,12 @@ export interface OverlayState {
   toast: string | null;
   /** Aviso al detectarse un juego (título + hotkeys reales); null cuando no hay ninguno. */
   notice: OverlayNotice | null;
+}
+
+/** Lo que la página del overlay de rendimiento necesita para pintar: config visual + snapshot. */
+export interface PerfOverlayData {
+  config: PerfOverlayConfig;
+  snapshot: PerfSnapshot;
 }
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -156,6 +165,8 @@ export interface IpcContract {
     request: { clipId: number; pngBase64: string };
     response: CaptureFrameResult;
   };
+  /** Preview en vivo del overlay de rendimiento mientras se ajusta en Ajustes (no persiste). */
+  [IpcChannel.PerfOverlayPreview]: { request: PerfOverlayConfig; response: void };
 }
 
 /** Resultado de guardar un fotograma como captura. */
@@ -256,6 +267,16 @@ export interface OverlayApi {
   onState(listener: (state: OverlayState) => void): () => void;
 }
 
+export interface PerfApi {
+  /**
+   * Aplica la config al overlay de rendimiento en vivo (posición, color…), sin persistir: es el
+   * preview de Ajustes mientras se arrastra un slider. Guardar persiste por la vía normal.
+   */
+  preview(config: PerfOverlayConfig): Promise<void>;
+  /** Suscribe a los datos del overlay de rendimiento (página del overlay). */
+  onData(listener: (data: PerfOverlayData) => void): () => void;
+}
+
 // API que el preload expone en window.gameclip.
 export interface GameclipApi {
   getAppVersion(): Promise<AppVersionInfo>;
@@ -267,4 +288,5 @@ export interface GameclipApi {
   exporter: ExporterApi;
   editor: EditorApi;
   overlay: OverlayApi;
+  perf: PerfApi;
 }

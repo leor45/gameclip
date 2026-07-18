@@ -9,14 +9,15 @@ export type HotkeyKey =
   | 'replayHotkey'
   | 'recordingHotkey'
   | 'screenshotHotkey'
-  | 'gameSwitchHotkey';
+  | 'gameSwitchHotkey'
+  | 'perfOverlayHotkey';
 
 export interface HotkeyAction {
   key: HotkeyKey;
   label: string;
   description: string;
   /** Interruptor de `CaptureSettings` que la habilita, si tiene uno. */
-  enabledBy?: 'screenshotsEnabled' | 'gameSwitchEnabled';
+  enabledBy?: 'screenshotsEnabled' | 'gameSwitchEnabled' | 'perfOverlayEnabled';
   /** true si además exige que el modo de grabación no esté apagado. */
   needsRecording?: boolean;
 }
@@ -49,6 +50,12 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     label: 'Cambiar de juego',
     description: 'Rota el juego activo entre los juegos en ejecución.',
     enabledBy: 'gameSwitchEnabled',
+  },
+  {
+    key: 'perfOverlayHotkey',
+    label: 'Mostrar/ocultar overlay de rendimiento',
+    description: 'Alterna la visibilidad del overlay de rendimiento sin cambiar su configuración.',
+    enabledBy: 'perfOverlayEnabled',
   },
 ];
 

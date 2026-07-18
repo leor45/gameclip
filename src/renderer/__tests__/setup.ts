@@ -124,6 +124,10 @@ export function crearGameclipMock() {
     overlay: {
       onState: vi.fn().mockReturnValue(() => undefined),
     },
+    perf: {
+      preview: vi.fn().mockResolvedValue(undefined),
+      onData: vi.fn().mockReturnValue(() => undefined),
+    },
   };
 }
 

@@ -10,7 +10,10 @@ import type {
   LibraryApi,
   OverlayApi,
   OverlayState,
+  PerfApi,
+  PerfOverlayData,
 } from '@shared/ipc';
+import type { PerfOverlayConfig } from '@shared/perf';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import type { ExportProgress, ExportRequest } from '@shared/export';
 import type { ClipPatch, ClipsQuery } from '@shared/library';
@@ -99,6 +102,16 @@ const overlay: OverlayApi = {
   },
 };
 
+const perf: PerfApi = {
+  preview: (config: PerfOverlayConfig) =>
+    ipcRenderer.invoke(IpcChannel.PerfOverlayPreview, config),
+  onData: (listener: (data: PerfOverlayData) => void) => {
+    const wrapped = (_event: unknown, data: PerfOverlayData) => listener(data);
+    ipcRenderer.on(IpcEvent.PerfOverlayData, wrapped);
+    return () => ipcRenderer.removeListener(IpcEvent.PerfOverlayData, wrapped);
+  },
+};
+
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
   checkForUpdate: () => ipcRenderer.invoke(IpcChannel.AppCheckUpdate),
@@ -108,6 +121,7 @@ const api: GameclipApi = {
   exporter,
   editor,
   overlay,
+  perf,
 };
 
 contextBridge.exposeInMainWorld('gameclip', api);
