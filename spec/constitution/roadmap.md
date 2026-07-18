@@ -851,6 +851,35 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > manuales (`customGames`) e **índice de launchers** (`games-index.json`), que es la que más juegos
 > aporta. Durante la E2E se dio una falsa alarma por revisar solo las dos primeras.
 >
+> ### ⛔ Bloqueante del release: `fix/sensores-pawnio` — **lo siguiente que se hace**
+>
+> **El overlay no se publica hasta resolver esto**, por delante incluso de
+> `feature/overlay-proteccion-selectiva`. Motivo: `scripts/build-perf-sensors.ps1` fija
+> **LibreHardwareMonitorLib 0.9.4** (nov-2024), que embebe el driver ring0 **WinRing0**. Desde
+> **septiembre de 2025 Windows Defender lo marca** como `VulnerableDriver:WinNT/Winring0.G` y
+> `HackTool:Win32/Winring0`, y pone en cuarentena a las apps que lo cargan. Este es justo el release
+> que estrena las métricas de hardware: publicarlo con ese driver es pisar la mina a propósito, y
+> para un portable que se descarga de GitHub, que Defender lo marque como *HackTool* es un problema
+> de adopción, no una molestia.
+>
+> **La salida ya existe y es la que adoptó el ecosistema:** LibreHardwareMonitor cambió WinRing0 por
+> **PawnIO** el 16-sep-2025 (PR #1857) y la **0.9.6 (feb-2026)** ya lo trae; FanControl hizo lo mismo
+> en su v238 y con eso se le acabaron los reportes de antivirus. El trabajo es subir 0.9.4 → 0.9.6.
+>
+> **Dos matices que el spec tiene que resolver, no dar por hechos:**
+> — PawnIO **sigue siendo un driver ring0** (bytecode sandboxeado): arregla el flag de Defender, **no**
+> la fricción con anti-cheats. FanControl documenta que su v238 es incompatible con **FACEIT**. La
+> recomendación para el usuario sigue siendo correr sin elevar si juega algo con anti-cheat de kernel.
+> — PawnIO **se instala aparte** (instalador propio). Hay que decidir qué hace el portable si no está:
+> degradar limpio (sin Temp CPU) es lo mínimo; pedir la instalación, lo deseable.
+> — Verificar que la 0.9.6 conserva el target `net472` y que compila con el `csc` de C# 5 que usamos
+> (la máquina no tiene SDK de .NET). Si no, cambia el enfoque del helper.
+>
+> **Decisión del owner sobre las notas del release (2026-07-18):** esto **NO va en las notas del
+> release**, solo en los commits. El overlay de rendimiento **nunca se ha publicado**, así que ningún
+> usuario recibió jamás una versión con WinRing0: no hay nada que comunicar ni de qué advertir. Es un
+> arreglo interno previo al estreno, no un fallo corregido de cara al público.
+>
 > **`hotfix/aviso-metricas-admin` (2026-07-18, en `main` sin release):** la leyenda de que FPS y
 > Temp CPU necesitan administrador ya existía, pero al **final** del fieldset, colgada del checkbox
 > «Iniciar con Windows como administrador» — y la duda nace **arriba**, al marcar la métrica en «Qué
