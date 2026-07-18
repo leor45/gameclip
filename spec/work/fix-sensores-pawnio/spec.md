@@ -79,8 +79,9 @@ Observables y verificables uno a uno:
 - [ ] **Elevado y con PawnIO instalado:** `cpuTemp` trae un valor plausible — la métrica **no se
       pierde** con el cambio. *(Es el criterio que decide si el upgrade vale: cambiar el flag de
       Defender por una métrica muerta no es un arreglo.)*
-- [ ] **Elevado y sin PawnIO** (servicio parado a mano para simularlo): `cpuTemp` en «—», el resto de
-      métricas intactas y el helper sigue vivo emitiendo.
+- [ ] **Sin PawnIO** (simulado apuntando la detección a una carpeta vacía — **nunca** parando el
+      servicio, ver abajo): `cpuTemp` en «—», el resto de métricas intactas y el helper sigue vivo
+      emitiendo.
 - [ ] La leyenda de Ajustes → Avanzado menciona PawnIO junto al requisito de administrador, con test.
 - [ ] **Con PawnIO ausente y Temp CPU marcada**, Ajustes → Avanzado muestra el aviso con el enlace de
       descarga; el enlace apunta a `https://pawnio.eu` (**la oficial**, nunca un mirror) y abre en el
@@ -125,7 +126,30 @@ PawnIO**; Temp CPU necesita **las dos cosas**. Es la única que las necesita.
 
 ## Notas de verificación
 
-⚠️ **La máquina del owner ya tiene PawnIO instalado** (`C:\Program Files\PawnIO`, servicio `PawnIO`
-en `Running` — probablemente de FanControl o del propio LibreHardwareMonitor). Es decir: **esta
-máquina no puede validar por sí sola el caso "usuario sin PawnIO"**, que es el de cualquiera que se
-baje el portable. El caso ausente se simula **parando el servicio** (elevado), no asumiendo.
+### ⛔ El servicio PawnIO de esta máquina NO SE TOCA
+
+`C:\Program Files\PawnIO` y el servicio `PawnIO` en `Running` **son de FanControl**, con el que el
+owner **controla la velocidad y el arranque de los ventiladores de su PC**. Pararlo, desinstalarlo o
+cambiarle el tipo de arranque puede dejar los ventiladores en el comportamiento por defecto de la
+placa **con el equipo en marcha**: es un problema térmico real, no una molestia de pruebas.
+
+**Prohibido en esta tarea:** `Stop-Service PawnIO`, `sc stop/delete`, el desinstalador de PawnIO o
+cualquier cosa que altere su estado. Consultarlo en modo lectura (`Get-Service`) sí.
+
+**Cómo se simula el caso "no instalado", entonces:** la detección es una función pura con la carpeta
+base **inyectada** (`isPawnIoInstalled(baseDir)`), así que basta con apuntarla a una carpeta vacía.
+Tres niveles, ninguno toca el servicio:
+
+1. **Tests unitarios** — `baseDir` inexistente → `false`; con un `PawnIOLib.dll` de mentira en un
+   directorio temporal → `true`.
+2. **Test de renderer** — el canal devuelve `false` → el aviso y su enlace aparecen; devuelve `true`
+   → no aparecen.
+3. **E2E en la app real** — variable de entorno `GAMECLIP_PAWNIO_DIR` que sobreescribe la carpeta
+   base; apuntándola a una carpeta vacía, la app se comporta como en un PC sin PawnIO y se ve el
+   aviso de verdad, con PawnIO intacto y FanControl funcionando.
+
+**Esto es mejor prueba que parar el servicio**, además de más segura: lo que hay que verificar es que
+la alerta sale y enlaza bien, y la ruta de detección es exactamente la misma que en un PC limpio.
+
+⚠️ Sigue en pie que **esta máquina no ve el aviso sola** (aquí PawnIO está y seguirá estando), así
+que el caso hay que forzarlo a propósito — no darlo por visto.

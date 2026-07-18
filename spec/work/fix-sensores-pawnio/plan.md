@@ -76,9 +76,15 @@ Cuatro piezas:
    el main comprueba la presencia y el renderer decide si pinta el aviso. La detección va por
    **existencia de `%ProgramFiles%\PawnIO\PawnIOLib.dll`**, en una función pura con la ruta base
    inyectada (testeable sin tocar disco). Se descarta consultar el **servicio** (`Get-Service PawnIO`)
-   aunque sea el estado más fiel: cuesta un `spawn` de PowerShell y el servicio puede estar parado
-   **estando** instalado — y lo que queremos responder no es "¿está corriendo?" sino "¿tiene el
-   usuario que ir a descargarlo?". El enlace se abre con `shell.openExternal` (navegador del sistema).
+   aunque sea el estado más fiel, por **tres** motivos: cuesta un `spawn` de PowerShell; el servicio
+   puede estar parado **estando** instalado, y entonces mandaríamos a descargar lo que ya se tiene; y
+   —el que zanja— **el servicio es de FanControl en la máquina del owner**, así que cuanto menos lo
+   rocemos, mejor: mirando un fichero no hay forma de alterarlo ni por accidente. El enlace se abre
+   con `shell.openExternal` (navegador del sistema).
+   La carpeta base se puede sobreescribir con **`GAMECLIP_PAWNIO_DIR`**: es lo que permite probar el
+   aviso en la app real sin acercarse al servicio. No es un *backdoor* de "finge que falta" sino un
+   override de ruta —la misma ruta de código, otra carpeta—, en la línea del `GAMECLIP_SELFTEST` que
+   el repo ya usa, y sirve además si algún día PawnIO se instalara en otra ubicación.
 
 ## Archivos / módulos afectados
 
@@ -151,11 +157,13 @@ Cuatro piezas:
   **No se puede comprobar sin elevar**, así que es el **primer** paso de la verificación E2E, antes
   de escribir el resto. Si falla, el plan se replantea (fijar 0.9.5, o Temp CPU por otra vía) en vez
   de seguir adelante.
-- **La máquina del owner ya tiene PawnIO** (servicio `Running`), así que valida el caso bueno pero
-  **no** el del usuario limpio. El caso ausente se prueba parando el servicio a mano; si no, se
-  publicaría sin haber visto nunca lo que ve quien se baja el portable. Vale igual para el aviso
-  nuevo: **en esta máquina no se va a ver solo**, hay que forzarlo (de ahí que la detección lleve la
-  ruta base inyectada y sus propios tests, y no dependamos de mirarlo a ojo).
+- **⛔ El servicio PawnIO de esta máquina es de FanControl y no se toca** (ver el spec): gobierna los
+  ventiladores del PC del owner y pararlo es un riesgo térmico, no una molestia. El caso "sin PawnIO"
+  se simula apuntando la detección a una carpeta vacía con `GAMECLIP_PAWNIO_DIR`. Es más seguro **y**
+  mejor prueba: recorre la misma ruta de detección que un PC limpio.
+- **La máquina del owner ya tiene PawnIO**, así que valida el caso bueno pero **no** el del usuario
+  limpio, y **el aviso nuevo no se va a ver solo aquí**: hay que forzarlo a propósito. De ahí que la
+  detección lleve la ruta base inyectada y sus propios tests, en vez de fiarlo a mirarlo a ojo.
 - **Recomendar un driver de kernel tiene su propio peso.** El aviso no debe leerse como "la app
   necesita esto para funcionar": son 8 métricas de 9 las que van sin PawnIO, y sigue vigente la
   recomendación de no elevar si se juega algo con anti-cheat de kernel. La copy se revisa con ese
