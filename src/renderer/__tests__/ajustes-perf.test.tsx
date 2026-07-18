@@ -49,6 +49,22 @@ describe('Ajustes — Overlay de rendimiento', () => {
     expect(screen.getByLabelText('Mostrar overlay de rendimiento')).not.toBeChecked();
   });
 
+  it('avisa junto a las métricas que FPS y Temp CPU necesitan administrador', async () => {
+    // El aviso tiene que estar donde se marcan las métricas: la explicación completa vive al final
+    // del fieldset, y quien marca FPS no tiene por qué haber bajado hasta allí.
+    await irAAvanzado();
+
+    const avisos = screen.getAllByText(/necesitan permisos de administrador/i);
+    expect(avisos.length).toBeGreaterThanOrEqual(1);
+    const juntoALasMetricas = avisos.find((el) => /FPS y Temp CPU/i.test(el.textContent ?? ''));
+    expect(juntoALasMetricas).toBeDefined();
+    // Y remite a la salida real, no deja al usuario sin qué hacer.
+    expect(juntoALasMetricas!.textContent).toMatch(/Iniciar con Windows como administrador/i);
+
+    // La leyenda del checkbox elevado sigue en su sitio (explica el mecanismo completo).
+    expect(screen.getByText(/crea una tarea programada elevada/i)).toBeInTheDocument();
+  });
+
   it('guarda las métricas marcadas y el overlay activado', async () => {
     const user = await irAAvanzado();
 
