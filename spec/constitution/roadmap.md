@@ -936,6 +936,29 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > `GameClip.exe` como el portable y `gc-presentmon.exe` son `asInvoker`, **la app no pide UAC nunca**
 > y 7 de las 9 métricas funcionan sin elevar. 832 tests verdes.
 >
+> ### 📦 Release 0.9.0 — el overlay de rendimiento sale con tres tareas
+>
+> El overlay se publica **una sola vez**, cuando las tres estén entregadas (decisión del owner,
+> 2026-07-18). Ninguna se mergea a `main` sin su propio spec/plan aprobado.
+>
+> 1. **`fix/sensores-pawnio`** — ✅ entregado, pendiente de merge. Quita WinRing0 (ver arriba).
+> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — 📋 spec escrito. Desmarcar «Temp CPU» hoy deja de
+>    **pintar** el número pero no cambia nada por debajo: el helper se lanza si hay **cualquier**
+>    métrica de sensores marcada (`gpuUsage` lo está por defecto), se lanza **sin argumentos**, y
+>    dentro pone `IsCpuEnabled = true` **incondicionalmente** — que es lo que engancha los MSR y con
+>    ellos PawnIO. O sea: quien solo quiere FPS y uso de GPU acaba cargando un driver de anillo 0 si lo
+>    tiene instalado. Importa porque PawnIO arregla el flag de Defender pero **no** la fricción con
+>    anti-cheats de kernel: esa fricción hay que pagarla solo cuando se pidió la métrica que la
+>    necesita. Detectado por el owner al revisar la entrega de `fix/sensores-pawnio`.
+> 3. **`fix/copy-sin-nvidia-app`** — 📋 spec escrito. La leyenda de posición dice «como en NVIDIA App»:
+>    la NVIDIA App fue **referencia de desarrollo**, y el producto no debe nombrarla (instrucción del
+>    owner). Se reescribe la frase conservando el dato útil —por qué el centro no es elegible— y se
+>    barre la copy entera. **No entra** el nombre del encoder `NVIDIA NVENC`, que es el nombre real
+>    del hardware. Quedan dos casos anotados a decidir en su plan: los **comentarios de código**
+>    (propuesta: se quedan, documentan el porqué) y el **diagnóstico de PresentMon** que nombra a la
+>    NVIDIA App como capturador que compite por las sesiones ETW (propuesta: se queda, es
+>    troubleshooting útil, no una referencia de diseño).
+>
 > **Candidato anotado (no entra aquí):** `fix/presentmon-no-reintenta-tras-morir` — si PresentMon
 > muere por una causa transitoria, `onExit` marca el reader como `failed` y **`start()` ya no vuelve
 > a lanzarlo**, así que los FPS quedan muertos en silencio hasta alternar el ajuste o reiniciar la
