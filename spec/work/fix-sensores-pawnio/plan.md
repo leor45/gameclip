@@ -72,6 +72,13 @@ Cuatro piezas:
 4. **Copy y terceros:** la leyenda de Ajustes → Avanzado suma PawnIO al requisito de administrador, y
    `build/TERCEROS.txt` lista las licencias nuevas (MPL-2.0, Apache-2.0, MIT — todas compatibles con
    la GPL-3.0 del repo; se comprueban al añadirlas, no se presumen).
+5. **Detección de PawnIO + aviso con enlace.** Canal nuevo `perf:pawnio-installed` (main → renderer):
+   el main comprueba la presencia y el renderer decide si pinta el aviso. La detección va por
+   **existencia de `%ProgramFiles%\PawnIO\PawnIOLib.dll`**, en una función pura con la ruta base
+   inyectada (testeable sin tocar disco). Se descarta consultar el **servicio** (`Get-Service PawnIO`)
+   aunque sea el estado más fiel: cuesta un `spawn` de PowerShell y el servicio puede estar parado
+   **estando** instalado — y lo que queremos responder no es "¿está corriendo?" sino "¿tiene el
+   usuario que ir a descargarlo?". El enlace se abre con `shell.openExternal` (navegador del sistema).
 
 ## Archivos / módulos afectados
 
@@ -85,8 +92,14 @@ Cuatro piezas:
   sobre cómo listarlos, más abajo.
 - `native/gc-perf-sensors/Program.cs` — **sin cambios de código**; solo el comentario de cabecera,
   que hoy dice "driver ring0" de WinRing0 y pasa a nombrar PawnIO.
-- `src/renderer/views/ajustes/Avanzado.tsx` — leyenda: Temp CPU necesita administrador **y PawnIO**.
-- `src/renderer/__tests__/ajustes-perf.test.tsx` — regresión de esa copy.
+- `src/renderer/views/ajustes/Avanzado.tsx` — leyenda: Temp CPU necesita administrador **y PawnIO**;
+  aviso con enlace de descarga cuando falte.
+- `src/renderer/__tests__/ajustes-perf.test.tsx` — regresión de esa copy y del aviso (que aparece sin
+  PawnIO y **no** aparece con él).
+- `src/main/perf-metrics/pawnio.ts` *(nuevo)* — detección pura (`isPawnIoInstalled(baseDir)`) + la URL
+  oficial como constante única, para que no se pueda colar un mirror por copiar y pegar.
+- `src/main/__tests__/perf-metrics.test.ts` — tests de la detección.
+- `src/main/index.ts` · `src/preload/…` — canal `perf:pawnio-installed` y su exposición.
 - `src/main/__tests__/perf-metrics.test.ts` — regresión de "sin sensor de CPU, el resto de métricas
   sobrevive" (el test que fija la degradación como contrato, no como accidente).
 - `build/TERCEROS.txt` — licencias de las dependencias nuevas.
@@ -110,8 +123,19 @@ Cuatro piezas:
   cambiar eso por un fichero XML de 20 líneas sería pagar caro. El coste: si una dependencia sube de
   versión, hay que tocar el redirect — queda anotado en el propio fichero.
 - **No tocar `Program.cs`.** Compila y corre tal cual; el spec no pide sensores nuevos.
-- **No instalar PawnIO desde la app** (queda fuera, ver spec). Lo mínimo que exige el spec es
-  degradar limpio y **decirlo**; pedir la instalación es producto y va aparte.
+- **Avisar y enlazar, pero no descargar ni instalar** (ver spec). Enlazar no tiene implicación de
+  licencia alguna, y aun yendo más lejos tampoco la habría: PawnIO es **GPL-2.0 con una excepción
+  explícita** para combinarlo con módulos independientes que hablen con él solo por la interfaz IOCTL
+  del dispositivo —justo como lo usa LHM—, compatible con la GPL-3.0 del repo. Lo que frena no es la
+  licencia sino la superficie: descargar y ejecutar un instalador de driver de kernel desde la app es
+  otra tarea.
+- **El aviso solo cuando Temp CPU está marcada**, no siempre que falte PawnIO. Es el mismo criterio
+  que fijó `hotfix/aviso-metricas-admin`: la duda nace **al marcar la métrica**. A quien no la use,
+  contarle que le falta un driver de kernel es ruido —y ruido que suena a que la app pide privilegios.
+- **Enlace a `https://pawnio.eu`, la página oficial, y no al `.exe` de la release de GitHub.** Un
+  deep-link a un binario se pudre al cambiar de versión y salta el contexto donde el propio autor
+  explica las variantes firmada y sin firmar. La URL vive en **una sola constante**: para un driver de
+  kernel, que un mirror (Softonic, Nero…) se cuele por un copiar-pegar es un problema de seguridad.
 - **En `extraResources`, una entrada de carpeta con filtro para las DLLs del helper** en vez de once
   entradas literales. La lista explícita es el estilo del fichero y para un helper de un solo binario
   está bien, pero aquí el número de DLLs lo decide el grafo de dependencias de LHM: con entradas a
@@ -129,7 +153,13 @@ Cuatro piezas:
   de seguir adelante.
 - **La máquina del owner ya tiene PawnIO** (servicio `Running`), así que valida el caso bueno pero
   **no** el del usuario limpio. El caso ausente se prueba parando el servicio a mano; si no, se
-  publicaría sin haber visto nunca lo que ve quien se baja el portable.
+  publicaría sin haber visto nunca lo que ve quien se baja el portable. Vale igual para el aviso
+  nuevo: **en esta máquina no se va a ver solo**, hay que forzarlo (de ahí que la detección lleve la
+  ruta base inyectada y sus propios tests, y no dependamos de mirarlo a ojo).
+- **Recomendar un driver de kernel tiene su propio peso.** El aviso no debe leerse como "la app
+  necesita esto para funcionar": son 8 métricas de 9 las que van sin PawnIO, y sigue vigente la
+  recomendación de no elevar si se juega algo con anti-cheat de kernel. La copy se revisa con ese
+  listón, igual que se hizo en `hotfix/aviso-metricas-admin` para no dar a entender que la app pide UAC.
 - **Anti-cheats:** PawnIO sigue siendo ring0. Esto **no** mejora con el cambio y no es un objetivo;
   solo hay que no empeorar la recomendación al usuario.
 - **Superficie del build:** más paquetes descargados = más puntos de fallo de red en un build limpio.

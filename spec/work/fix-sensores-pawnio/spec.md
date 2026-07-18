@@ -42,13 +42,19 @@ la mina a propósito: para un portable que se descarga de GitHub, que Defender l
   «—»; el helper no se cae ni deja de emitir.
 - **Copy al día:** hoy la UI dice que Temp CPU necesita administrador; con PawnIO necesita
   administrador **y** PawnIO. La leyenda de Ajustes → Avanzado tiene que decir la verdad.
+- **Aviso con enlace a la descarga de PawnIO** cuando falte: detectar si está instalado y, si no,
+  mostrarlo en Ajustes → Avanzado junto a la métrica, con un enlace que abre **la página oficial**
+  (`https://pawnio.eu`) en el navegador del sistema.
 - Aviso de licencias/terceros (`build/TERCEROS.txt`) al día con las dependencias nuevas.
 
 **Fuera (explícito):**
 
-- **Instalar PawnIO desde la app** (descargar/lanzar su instalador, pedir elevación, empaquetarlo).
-  Es una decisión de producto con su propia superficie —red, UAC, un instalador de terceros dentro de
-  un portable— y va en su propio spec si el owner la quiere. Aquí se llega hasta **decirlo bien**.
+- **Descargar o ejecutar el instalador de PawnIO desde la app**, y **empaquetarlo** dentro del
+  portable. La app **avisa y enlaza**; instalar un driver de kernel lo decide y lo hace el usuario,
+  en la web oficial. La diferencia no es de tamaño sino de superficie: descargar implica red desde el
+  main, verificar lo descargado, UAC y un binario de terceros dentro del portable. Va en su propio
+  spec si el owner lo quiere.
+- **Comprobar la versión** de PawnIO instalada, o avisar de actualizaciones suyas: solo está o no está.
 - Arreglar la fricción con **anti-cheats**: PawnIO sigue siendo ring0 (bytecode sandboxeado) y
   FanControl documenta su v238 como incompatible con **FACEIT**. La recomendación al usuario sigue
   siendo no elevar si juega algo con anti-cheat de kernel.
@@ -76,6 +82,11 @@ Observables y verificables uno a uno:
 - [ ] **Elevado y sin PawnIO** (servicio parado a mano para simularlo): `cpuTemp` en «—», el resto de
       métricas intactas y el helper sigue vivo emitiendo.
 - [ ] La leyenda de Ajustes → Avanzado menciona PawnIO junto al requisito de administrador, con test.
+- [ ] **Con PawnIO ausente y Temp CPU marcada**, Ajustes → Avanzado muestra el aviso con el enlace de
+      descarga; el enlace apunta a `https://pawnio.eu` (**la oficial**, nunca un mirror) y abre en el
+      navegador del sistema, no dentro de la app. Con PawnIO instalado, el aviso **no** aparece.
+- [ ] El aviso explica **qué** es PawnIO y **para qué** hace falta, sin prometer que la app lo
+      instale y sin empujar a instalarlo: es un driver de kernel y 8 de las 9 métricas van sin él.
 - [ ] **Sobre el portable ya construido** (`npm run build:portable`, no en dev): el helper arranca y
       emite sensores. El usuario final **no instala ni configura nada** para esto — el `.exe`, sus
       DLLs y el `.config` de binding redirects viajan dentro del paquete. *(Criterio propio porque el
