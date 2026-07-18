@@ -92,4 +92,12 @@ Nada del renderer cambia: «—» para `null` ya está implementado y testeado.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado por el owner (2026-07-18)
+
+> Consulta resuelta durante la aprobación: se preguntó si el overlay puede funcionar **sin admin**.
+> Medido sobre los binarios: la app arranca `asInvoker` y **no pide UAC nunca**; de las 9 métricas
+> solo **FPS** (sesión ETW) y **Temp CPU** (driver ring0) necesitan elevación, y ya hay salida
+> (`autoLaunchElevated`, un UAC y listo). Quitar esa dependencia para los FPS es viable vía el
+> servicio de PresentMon de Intel, pero **es otro trabajo con su propio spec** y no toca esta rama:
+> `PresentMonReader` ya recibe el spawn inyectado, así que cambiaría el transporte, no las filas que
+> se parsean aquí. El aviso en la UI va en `hotfix/aviso-metricas-admin`.

@@ -52,6 +52,19 @@ const REINTENTO_LENTO_MS = 60_000;
  */
 const MARGEN_CAMBIO = 1.25;
 
+/**
+ * Un proceso solo entra al enganche si presenta por la ruta directa a hardware. Se compara por
+ * PREFIJO y no por subcadena a propósito: `Hardware Composed: Independent Flip` contiene la palabra
+ * «Composed» y aun así es un modo de hardware (ventana sin bordes con MPO), así que buscar
+ * «Composed» dentro de la cadena lo descartaría por error.
+ *
+ * Califican: `Hardware: Legacy Flip`, `Hardware: Legacy Copy to front buffer`,
+ * `Hardware: Independent Flip` y `Hardware Composed: Independent Flip` — pantalla completa y ventana
+ * sin bordes. No califican `Composed: Flip`, `Composed: Copy with …` ni `Unknown`, que es por donde
+ * presentan Discord, los navegadores y los editores.
+ */
+const PREFIJO_HARDWARE = 'hardware';
+
 // Procesos que nunca son "el juego": el compositor de Windows y (se añade en runtime) la propia
 // GameClip. El overlay y la ventana de la app presentan frames pero no son lo que el usuario mide.
 const DENYLIST_BASE = ['dwm.exe'];
@@ -76,10 +89,17 @@ export function presentMonArgs(excludeExe: string[]): string[] {
   return args;
 }
 
-/** Índice de columnas de la cabecera CSV que nos interesan; null si falta alguna. */
+/** Índice de columnas de la cabecera CSV que nos interesan; null si falta alguna imprescindible. */
 export interface CsvColumns {
   application: number;
   msBetweenPresents: number;
+  /**
+   * Columna del modo de presentación, o null si la cabecera no la trae. Es **opcional** a
+   * propósito: si una versión futura de PresentMon la renombrara, exigirla invalidaría la cabecera
+   * entera y los FPS morirían del todo. Sin ella se degrada a «todo califica», que es el
+   * comportamiento previo a esta feature — peor, pero no roto.
+   */
+  presentMode: number | null;
 }
 
 export function parseCsvHeader(headerLine: string): CsvColumns | null {
@@ -87,7 +107,8 @@ export function parseCsvHeader(headerLine: string): CsvColumns | null {
   const application = cols.indexOf('application');
   const msBetweenPresents = cols.indexOf('msbetweenpresents');
   if (application < 0 || msBetweenPresents < 0) return null;
-  return { application, msBetweenPresents };
+  const presentMode = cols.indexOf('presentmode');
+  return { application, msBetweenPresents, presentMode: presentMode < 0 ? null : presentMode };
 }
 
 /** Valor numérico de una columna de una línea CSV; null si no parsea. */
@@ -105,6 +126,22 @@ export class FpsTracker {
   /** Última lectura válida, para sostenerla mientras la ventana esté vacía por una ráfaga. */
   private ultimoFps: number | null = null;
   private ultimoFpsAt = Number.NEGATIVE_INFINITY;
+  /** Ver `calificar()`: solo se enciende, nunca se apaga mientras el tracker viva. */
+  private calificado = false;
+
+  /**
+   * Marca el proceso como candidato al enganche. La calificación es una **puerta de entrada**, no
+   * un filtro por lectura: una vez dentro, el proceso conserva el contador aunque deje de presentar
+   * en modo hardware (DWM lo degrada al abrir un menú o al superponer un overlay de terceros) o
+   * pase a segundo plano. Filtrar lectura a lectura haría parpadear el contador.
+   */
+  calificar(): void {
+    this.calificado = true;
+  }
+
+  estaCalificado(): boolean {
+    return this.calificado;
+  }
 
   push(msBetweenPresents: number, now: number): void {
     if (msBetweenPresents <= 0) return;
@@ -175,6 +212,8 @@ export class PresentMonReader {
   private denylist: Set<string>;
   /** Proceso cuyos FPS se muestran; se mantiene mientras presente. */
   private locked: string | null = null;
+  /** Juego detectado por la app (lowercase): segunda vía de calificación. Ver `setDetectedGame`. */
+  private juegoDetectado: string | null = null;
   private readonly now: () => number;
   /** Líneas recibidas del proceso vivo; 0 tras `NO_DATA_MS` dispara el watchdog. */
   private lineas = 0;
@@ -282,7 +321,33 @@ export class PresentMonReader {
       tracker = new FpsTracker();
       this.trackers.set(exe, tracker);
     }
+    if (!tracker.estaCalificado() && this.califica(cells, exe)) tracker.calificar();
     tracker.push(ms, this.now());
+  }
+
+  /**
+   * ¿Este present hace que el proceso entre al enganche? Dos vías, y basta una:
+   * presentar por hardware (pantalla completa o sin bordes), o ser el juego que la app ya tiene
+   * detectado —que cubre el emulador en ventana normal—. Sin columna de modo no se puede juzgar,
+   * así que se cae al comportamiento previo: todo califica.
+   */
+  private califica(cells: string[], exe: string): boolean {
+    if (exe === this.juegoDetectado) return true;
+    const modeCol = this.cols?.presentMode ?? null;
+    if (modeCol === null) return true;
+    return (cells[modeCol] ?? '').trim().toLowerCase().startsWith(PREFIJO_HARDWARE);
+  }
+
+  /**
+   * Juego detectado por la app (automático o manual), o null. Es una vía que **solo puede
+   * encender**: nunca descalifica a nadie, así que ningún proceso que hoy muestre FPS deja de
+   * hacerlo por esto. Pasar null no apaga el contador de un proceso ya calificado —la calificación
+   * es pegajosa—, solo deja de calificar por esta vía a los que vengan después.
+   */
+  setDetectedGame(exe: string | null): void {
+    this.juegoDetectado = exe ? exe.trim().toLowerCase() : null;
+    // Califica ya al que tenga tracker vivo, sin esperar a su siguiente present.
+    if (this.juegoDetectado) this.trackers.get(this.juegoDetectado)?.calificar();
   }
 
   /**
@@ -302,6 +367,9 @@ export class PresentMonReader {
     let mejorExe: string | null = null;
     let mejorFps = 0;
     for (const [exe, tracker] of this.trackers) {
+      // Solo los calificados compiten por el enganche: una app de escritorio no entra ni aunque sea
+      // la única presentando (entonces no hay FPS que mostrar y el overlay pinta «—»).
+      if (!tracker.estaCalificado()) continue;
       const fps = tracker.fps(now);
       if (fps !== null && fps > mejorFps) {
         mejorFps = fps;
