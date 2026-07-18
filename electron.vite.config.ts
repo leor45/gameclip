@@ -20,10 +20,11 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        // Dos páginas: la app principal y el overlay in-game.
+        // Tres páginas: la app principal, el overlay in-game y el overlay de rendimiento.
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           overlay: resolve(__dirname, 'src/renderer/overlay.html'),
+          'perf-overlay': resolve(__dirname, 'src/renderer/perf-overlay.html'),
         },
       },
     },

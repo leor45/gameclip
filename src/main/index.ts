@@ -32,6 +32,12 @@ import { migrateClipLayout } from './library/migrate-layout';
 import { StorageManager } from './library/storage-manager';
 import { MEDIA_SCHEME, MEDIA_SCHEME_PRIVILEGES } from './media-protocol';
 import { OverlayController } from './overlay';
+import { PerfOverlayController } from './perf-overlay';
+import { PerfSampler } from './perf-metrics/sampler';
+import { createSensorsReader } from './perf-metrics/sensors';
+import { createPresentMonReader } from './perf-metrics/presentmon';
+import { createElevatedAutoLaunch } from './elevated-launch';
+import type { PerfSnapshot } from '@shared/perf';
 import { createTray } from './tray';
 import type { AppTray } from './tray';
 import { registerIpcHandlers } from './ipc';
@@ -45,6 +51,8 @@ let capture: CaptureManager | null = null;
 let library: LibraryManager | null = null;
 let storage: StorageManager | null = null;
 let overlay: OverlayController | null = null;
+let perfOverlay: PerfOverlayController | null = null;
+let perfSampler: PerfSampler | null = null;
 let tray: AppTray | null = null;
 let detector: GameDetector | null = null;
 let autoSwitchTimer: NodeJS.Timeout | null = null;
@@ -210,6 +218,11 @@ function setupCapture(): CaptureManager {
     mainWindow?.webContents.send(IpcEvent.CaptureStatusChanged, status);
     overlay?.setRecording(status.state === 'recording');
     tray?.setRecording(status.state === 'recording');
+    // El ejecutable del juego activo alimenta los FPS del overlay de rendimiento (PresentMon).
+    const activo = status.detectedGame
+      ? (manager.getRunningGames().find((g) => g.name === status.detectedGame)?.executable ?? null)
+      : null;
+    perfSampler?.setGameExe(activo);
 
     if (status.detectedGame && !juegoAnterior) {
       const aviso = buildGameNotice(manager.getSettings());
@@ -358,6 +371,8 @@ function registerHotkeys(manager: CaptureManager): void {
       });
     },
     gameSwitchHotkey: () => void manager.switchGame(),
+    // Solo alterna la visibilidad; qué se muestra lo deciden los checks de Ajustes.
+    perfOverlayHotkey: () => perfOverlay?.toggleVisibility(),
   };
 
   for (const action of HOTKEY_ACTIONS) {
@@ -397,7 +412,39 @@ function barrerTemporales(registrar = false): void {
 // En dev registraría electron.exe en el arranque de Windows; solo aplica empaquetada.
 function applyAutoLaunch(settings: CaptureSettings): void {
   if (!app.isPackaged) return;
-  app.setLoginItemSettings(loginItemSettings(settings.autoLaunch, process.env, process.execPath));
+  // Con el auto-inicio elevado activo, el arranque lo hace la tarea programada: la clave Run se
+  // retira para no lanzar la app dos veces (una normal y otra como admin).
+  const porRunKey = settings.autoLaunch && !settings.autoLaunchElevated;
+  app.setLoginItemSettings(loginItemSettings(porRunKey, process.env, process.execPath));
+}
+
+/**
+ * Alta/baja de la tarea programada elevada, SOLO cuando el ajuste cambia (cada aplicación pide una
+ * confirmación UAC; en cada arranque sería un prompt por boot). Si falla o se cancela el UAC, el
+ * ajuste vuelve a su estado anterior para no dejar un checkbox fantasma.
+ */
+let elevadoRevirtiendo = false;
+
+function applyElevatedChange(prev: boolean, next: CaptureSettings): void {
+  if (prev === next.autoLaunchElevated) return;
+  // El cambio que estamos deshaciendo nosotros no debe intentar tocar la tarea otra vez.
+  if (elevadoRevirtiendo) {
+    elevadoRevirtiendo = false;
+    return;
+  }
+  if (!app.isPackaged) {
+    console.log('[autolaunch] auto-inicio elevado ignorado en dev');
+    return;
+  }
+  const exePath = process.env['PORTABLE_EXECUTABLE_FILE'] ?? process.execPath;
+  void createElevatedAutoLaunch()
+    .setEnabled(next.autoLaunchElevated, exePath)
+    .then((ok) => {
+      if (ok) return;
+      console.error('[autolaunch] no se pudo aplicar el auto-inicio elevado (¿UAC cancelado?)');
+      elevadoRevirtiendo = true;
+      void capture?.setSettings({ autoLaunchElevated: prev });
+    });
 }
 
 app.whenReady().then(() => {
@@ -413,6 +460,16 @@ app.whenReady().then(() => {
   storage = libSetup?.storage ?? null;
   detector = setupGameDetection(capture);
   overlay = new OverlayController(capture.getSettings().overlayEnabled);
+  {
+    const s = capture.getSettings();
+    perfOverlay = new PerfOverlayController(s.perfOverlayEnabled, s.perfOverlay);
+    perfSampler = new PerfSampler({
+      sensors: createSensorsReader(),
+      presentMon: createPresentMonReader(),
+    });
+    perfSampler.on('snapshot', (snapshot: PerfSnapshot) => perfOverlay?.setSnapshot(snapshot));
+    perfSampler.configure(s.perfOverlayEnabled ? s.perfOverlay.metrics : null);
+  }
   tray = createTray({
     onShow: showMainWindow,
     onSaveReplay: () => void capture?.saveReplay(),
@@ -423,11 +480,19 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
   registerMediaProtocol();
-  registerIpcHandlers(capture, library, exporter, storage, () => pushToTalk.available, {
-    index: () => gamesIndex.current(),
-    rescan: () => refreshGameIndex(),
-    suggestName: (executable) => suggestGameName(executable, gameNames()),
-  });
+  registerIpcHandlers(
+    capture,
+    library,
+    exporter,
+    storage,
+    () => pushToTalk.available,
+    {
+      index: () => gamesIndex.current(),
+      rescan: () => refreshGameIndex(),
+      suggestName: (executable) => suggestGameName(executable, gameNames()),
+    },
+    (config) => perfOverlay?.preview(config),
+  );
 
   // Los launchers, en background: no bloquea la ventana, y hasta que termine la detección funciona
   // con el índice del arranque anterior (o solo con la lista curada, el primerísimo arranque).
@@ -463,11 +528,16 @@ app.whenReady().then(() => {
   }, 5000);
 
   // Si cambian los ajustes (p. ej. hotkeys, overlay, juegos manuales o auto-arranque), se re-aplican.
+  let elevadoAnterior = capture.getSettings().autoLaunchElevated;
   capture.on('settings', (settings: CaptureSettings) => {
     registerHotkeys(capture!);
     detector?.setCustomGames(settings.customGames);
     overlay?.setEnabled(settings.overlayEnabled);
+    perfOverlay?.configure(settings.perfOverlayEnabled, settings.perfOverlay);
+    perfSampler?.configure(settings.perfOverlayEnabled ? settings.perfOverlay.metrics : null);
     applyAutoLaunch(settings);
+    applyElevatedChange(elevadoAnterior, settings);
+    elevadoAnterior = settings.autoLaunchElevated;
     pushToTalk.configure(settings.pttEnabled && settings.micEnabled, settings.pttHotkey);
   });
 
@@ -485,6 +555,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  // El overlay de rendimiento y sus helpers no emiten hacia nadie: se apagan directo.
+  perfSampler?.stop();
+  perfOverlay?.destroy();
+  perfSampler = null;
+  perfOverlay = null;
   // El orden lo decide shutdown.ts: primero se apaga lo que emite (la captura emite un `status`
   // final), después se destruye lo que escucha (overlay y bandeja).
   teardown({

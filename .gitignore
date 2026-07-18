@@ -12,10 +12,17 @@ release/
 # build:portable). El fuente y el script sí van al repo; el binario no.
 resources/gc-app-audio-mute.exe
 resources/gc-controller-listen.exe
+resources/gc-perf-sensors.exe
+resources/LibreHardwareMonitorLib.dll
+resources/HidSharp.dll
+resources/gc-presentmon.exe
 
 # SDK de GameInput descargado del NuGet para compilar gc-controller-listen (cabeceras de Microsoft;
 # no se vendorizan por licencia). Lo baja scripts/build-controller-listen.ps1.
 build/gameinput-sdk/
+
+# Librerías del NuGet para compilar gc-perf-sensors. Las baja scripts/build-perf-sensors.ps1.
+build/perf-sensors-sdk/
 
 # Datos locales
 *.sqlite

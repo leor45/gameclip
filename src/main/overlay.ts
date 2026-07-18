@@ -133,6 +133,9 @@ export class OverlayController {
     }
     ventana.win.webContents.send(IpcEvent.OverlayState, state);
     if (!ventana.win.isVisible()) ventana.win.showInactive();
+    // Dentro de la banda topmost manda el orden Z: los avisos se re-elevan al mostrarse para
+    // quedar siempre por encima del overlay de rendimiento (que también es topmost).
+    ventana.win.moveTop();
   }
 
   private createWindow(zona: Zona): Ventana {

@@ -2,6 +2,8 @@
 
 import type { CustomGame } from './games';
 import { exeKey } from './games';
+import type { PerfOverlayConfig } from './perf';
+import { DEFAULT_PERF_OVERLAY, normalizePerfOverlay } from './perf';
 
 export type CaptureState = 'unavailable' | 'initializing' | 'idle' | 'buffering' | 'recording';
 
@@ -167,8 +169,20 @@ export interface CaptureSettings {
   bufferMode: BufferMode;
   /** Overlay in-game (indicador REC y confirmación de clip guardado). */
   overlayEnabled: boolean;
+  /** Overlay de rendimiento (FPS, GPU, CPU…). Ver spec/work/feature-overlay-rendimiento. */
+  perfOverlayEnabled: boolean;
+  /** Atajo global que muestra/oculta el overlay de rendimiento (no cambia su configuración). */
+  perfOverlayHotkey: string;
+  /** Métricas marcadas, posición, disposición, color y opacidad del overlay de rendimiento. */
+  perfOverlay: PerfOverlayConfig;
   /** Arrancar GameClip con Windows (minimizada a la bandeja). */
   autoLaunch: boolean;
+  /**
+   * Auto-inicio con privilegios de administrador vía tarea programada (una confirmación UAC al
+   * activarlo). Sin admin, los FPS (ETW) y la temperatura de CPU (driver ring0) no están
+   * disponibles; ver el plan de feature-overlay-rendimiento.
+   */
+  autoLaunchElevated: boolean;
   /** Captura de monitor vía Windows Graphics Capture (ventanas fuera de foco). */
   advancedWindowCapture: boolean;
   /** Captura experimental (incluye overlays de terceros en el game capture). */
@@ -244,7 +258,11 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   useRecycleBin: true,
   bufferMode: 'always',
   overlayEnabled: true,
+  perfOverlayEnabled: false,
+  perfOverlayHotkey: 'Alt+R',
+  perfOverlay: DEFAULT_PERF_OVERLAY,
   autoLaunch: false,
+  autoLaunchElevated: false,
   advancedWindowCapture: false,
   experimentalCapture: false,
   hdrCompatibility: false,
@@ -462,7 +480,14 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     useRecycleBin: bool(raw.useRecycleBin, d.useRecycleBin),
     bufferMode: oneOf(raw.bufferMode, ['always', 'game'], d.bufferMode),
     overlayEnabled: bool(raw.overlayEnabled, d.overlayEnabled),
+    perfOverlayEnabled: bool(raw.perfOverlayEnabled, d.perfOverlayEnabled),
+    perfOverlayHotkey:
+      typeof raw.perfOverlayHotkey === 'string' && raw.perfOverlayHotkey.trim()
+        ? raw.perfOverlayHotkey.trim()
+        : d.perfOverlayHotkey,
+    perfOverlay: normalizePerfOverlay(raw.perfOverlay),
     autoLaunch: bool(raw.autoLaunch, d.autoLaunch),
+    autoLaunchElevated: bool(raw.autoLaunchElevated, d.autoLaunchElevated),
     advancedWindowCapture: bool(raw.advancedWindowCapture, d.advancedWindowCapture),
     experimentalCapture: bool(raw.experimentalCapture, d.experimentalCapture),
     hdrCompatibility: bool(raw.hdrCompatibility, d.hdrCompatibility),

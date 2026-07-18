@@ -40,3 +40,29 @@ Los avisos completos viajan en LICENSES.chromium.html, dentro del paquete.
 --------------------------------------------------------------------------------
 El código fuente de GameClip está disponible en:
   https://github.com/leor45/gameclip
+
+--------------------------------------------------------------------------------
+LibreHardwareMonitor (LibreHardwareMonitorLib) y HidSharp
+--------------------------------------------------------------------------------
+Licencia: Mozilla Public License 2.0 (LibreHardwareMonitorLib) y Apache License
+2.0 (HidSharp).
+Se redistribuyen sin modificar junto a gc-perf-sensors.exe (helper propio, GPL-3.0
+como el resto del repo) para leer los sensores de GPU y CPU del overlay de
+rendimiento.
+Código fuente:
+  https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+  https://github.com/IntergatedCircuits/HidSharp
+Textos de las licencias:
+  https://www.mozilla.org/MPL/2.0/
+  https://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+PresentMon (Intel Corporation)
+--------------------------------------------------------------------------------
+Licencia: MIT.
+Se redistribuye el binario oficial (gc-presentmon.exe) para medir los FPS del
+juego activo en el overlay de rendimiento.
+Código fuente:
+  https://github.com/GameTechDev/PresentMon
+Texto de la licencia:
+  https://github.com/GameTechDev/PresentMon/blob/main/LICENSE.txt

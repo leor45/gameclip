@@ -2441,3 +2441,103 @@ body {
   font-family: ui-monospace, monospace;
   color: var(--text-dim);
 }
+
+/* Overlay de rendimiento (página aparte, transparente y click-through). La ventana es una caja
+   fija más grande que el contenido: el bloque se ancla dentro según la banda del preset. */
+
+.perf-root {
+  width: 100vw;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+}
+
+.perf-root[data-columna='left'] {
+  justify-content: flex-start;
+}
+.perf-root[data-columna='center'] {
+  justify-content: center;
+}
+.perf-root[data-columna='right'] {
+  justify-content: flex-end;
+}
+.perf-root[data-fila='top'] {
+  align-items: flex-start;
+}
+.perf-root[data-fila='middle'] {
+  align-items: center;
+}
+.perf-root[data-fila='bottom'] {
+  align-items: flex-end;
+}
+
+.perf-card {
+  display: flex;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.perf-vertical {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+}
+
+.perf-horizontal {
+  flex-direction: row;
+  gap: 18px;
+  white-space: nowrap;
+}
+
+.perf-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.perf-horizontal .perf-metric {
+  gap: 6px;
+}
+
+.perf-label {
+  opacity: 0.75;
+}
+
+/* Ajustes → Avanzado: controles del overlay de rendimiento */
+
+.perf-preset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.perf-preset-nombre {
+  flex: 1;
+  text-align: center;
+  min-width: 180px;
+}
+
+.perf-slider {
+  width: 100%;
+}
+
+.perf-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-subtitle {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #9aa4b2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

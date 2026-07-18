@@ -161,4 +161,4 @@ CPU funcionan desde el arranque.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-07-18
