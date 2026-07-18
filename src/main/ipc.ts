@@ -18,6 +18,7 @@ import {
 } from '@shared/tracks';
 import type { GameIndex } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
+import { isPawnIoInstalled } from './perf-metrics/pawnio';
 import { saveClipFrame } from './capture/frame-capture';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { checkForUpdates } from './updates';
@@ -70,6 +71,9 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.PerfOverlayPreview, (_event, config: unknown) => {
     perfPreview?.(normalizePerfOverlay(config));
   });
+  // Se consulta en cada apertura de Ajustes (no se cachea): el usuario puede instalar PawnIO con la
+  // app abierta —es justo lo que le pedimos al enseñarle el enlace— y volver a mirar sin reiniciar.
+  ipcMain.handle(IpcChannel.PerfPawnIoInstalled, () => isPawnIoInstalled());
   ipcMain.handle(IpcChannel.CaptureGetDisplays, async () => {
     const displays = screen.getAllDisplays();
     const primaryId = screen.getPrimaryDisplay().id;

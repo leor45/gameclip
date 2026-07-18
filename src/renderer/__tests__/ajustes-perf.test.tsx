@@ -65,6 +65,54 @@ describe('Ajustes — Overlay de rendimiento', () => {
     expect(screen.getByText(/crea una tarea programada elevada/i)).toBeInTheDocument();
   });
 
+  it('distingue los dos requisitos: FPS solo admin, Temp CPU admin + PawnIO', async () => {
+    // No son el mismo requisito y fundirlos engaña: los FPS salen de PresentMon (ETW, solo pide
+    // elevación) y la Temp CPU de los MSR, que además necesitan el driver.
+    await irAAvanzado();
+
+    const leyenda = screen.getByText(/crea una tarea programada elevada/i);
+    expect(leyenda.textContent).toMatch(/temperatura de CPU necesita\s+además el controlador PawnIO/i);
+    expect(leyenda.textContent).toMatch(/los FPS no/i);
+  });
+
+  it('sin PawnIO y con Temp CPU marcada, ofrece el enlace de descarga', async () => {
+    mock().perf.isPawnIoInstalled.mockResolvedValue(false);
+    const user = await irAAvanzado();
+
+    // Sin marcar la métrica no hay aviso: a quien no la use, contarle que le falta un driver de
+    // kernel es ruido —y ruido que suena a que la app pide privilegios.
+    expect(screen.queryByTestId('aviso-pawnio')).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Temperatura de CPU'));
+
+    const aviso = await screen.findByTestId('aviso-pawnio');
+    // Dice qué es y qué se pierde, sin prometer que la app lo instale.
+    expect(aviso.textContent).toMatch(/PawnIO/);
+    expect(aviso.textContent).toMatch(/otras ocho siguen funcionando/i);
+    expect(aviso.textContent).toMatch(/anti-cheat/i);
+
+    const enlace = screen.getByRole('link', { name: /Descargar PawnIO/i });
+    expect(enlace).toHaveAttribute('href', 'https://pawnio.eu');
+  });
+
+  it('con PawnIO instalado no aparece el aviso aunque Temp CPU esté marcada', async () => {
+    // El mock lo da por instalado (el caso normal, y el de la máquina del owner).
+    const user = await irAAvanzado();
+    await user.click(screen.getByLabelText('Temperatura de CPU'));
+
+    expect(screen.queryByTestId('aviso-pawnio')).not.toBeInTheDocument();
+  });
+
+  it('si la comprobación de PawnIO falla, no se inventa un aviso', async () => {
+    // Best-effort: ante un canal roto, callar es mejor que mandar a instalar un driver de kernel a
+    // quien quizá ya lo tiene.
+    mock().perf.isPawnIoInstalled.mockRejectedValue(new Error('canal caído'));
+    const user = await irAAvanzado();
+    await user.click(screen.getByLabelText('Temperatura de CPU'));
+
+    expect(screen.queryByTestId('aviso-pawnio')).not.toBeInTheDocument();
+  });
+
   it('guarda las métricas marcadas y el overlay activado', async () => {
     const user = await irAAvanzado();
 

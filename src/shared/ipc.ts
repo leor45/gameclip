@@ -54,6 +54,7 @@ export const IpcChannel = {
   ClipSaveAudioEdit: 'clip:save-audio-edit',
   ClipCaptureFrame: 'clip:capture-frame',
   PerfOverlayPreview: 'perf-overlay:preview',
+  PerfPawnIoInstalled: 'perf:pawnio-installed',
 } as const;
 
 // Eventos push main → renderer (webContents.send).
@@ -167,6 +168,8 @@ export interface IpcContract {
   };
   /** Preview en vivo del overlay de rendimiento mientras se ajusta en Ajustes (no persiste). */
   [IpcChannel.PerfOverlayPreview]: { request: PerfOverlayConfig; response: void };
+  /** ¿Está PawnIO instalado? Condiciona **solo** el aviso de Temp CPU (ver `perf-metrics/pawnio.ts`). */
+  [IpcChannel.PerfPawnIoInstalled]: { request: void; response: boolean };
 }
 
 /** Resultado de guardar un fotograma como captura. */
@@ -275,6 +278,11 @@ export interface PerfApi {
   preview(config: PerfOverlayConfig): Promise<void>;
   /** Suscribe a los datos del overlay de rendimiento (página del overlay). */
   onData(listener: (data: PerfOverlayData) => void): () => void;
+  /**
+   * ¿Está PawnIO instalado? Solo afecta a **Temp CPU**: sin él esa métrica queda en «—» y las otras
+   * ocho siguen igual. Ajustes lo usa para ofrecer el enlace de descarga cuando hace falta.
+   */
+  isPawnIoInstalled(): Promise<boolean>;
 }
 
 // API que el preload expone en window.gameclip.

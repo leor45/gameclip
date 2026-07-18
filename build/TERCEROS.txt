@@ -42,7 +42,7 @@ El código fuente de GameClip está disponible en:
   https://github.com/leor45/gameclip
 
 --------------------------------------------------------------------------------
-LibreHardwareMonitor (LibreHardwareMonitorLib) y HidSharp
+LibreHardwareMonitor (LibreHardwareMonitorLib), HidSharp y sus dependencias
 --------------------------------------------------------------------------------
 Licencia: Mozilla Public License 2.0 (LibreHardwareMonitorLib) y Apache License
 2.0 (HidSharp).
@@ -55,6 +55,22 @@ Código fuente:
 Textos de las licencias:
   https://www.mozilla.org/MPL/2.0/
   https://www.apache.org/licenses/LICENSE-2.0
+
+LibreHardwareMonitorLib 0.9.6 arrastra además estas librerías de Microsoft, que
+viajan sin modificar en la misma carpeta y se distribuyen bajo licencia MIT:
+  System.Memory, System.Buffers, System.Numerics.Vectors,
+  System.Runtime.CompilerServices.Unsafe, System.Management, System.CodeDom,
+  System.Threading.AccessControl, System.Security.AccessControl,
+  System.Security.Principal.Windows
+Texto de la licencia:
+  https://opensource.org/licenses/MIT
+
+NOTA sobre el acceso a hardware de bajo nivel: la temperatura de CPU se lee de los
+MSR del procesador y eso requiere un controlador de sistema. GameClip NO
+redistribuye ninguno. LibreHardwareMonitor 0.9.6 delega esa función en PawnIO
+(GPL-2.0 con excepción de enlazado por la interfaz IOCTL del dispositivo), que el
+usuario instala por su cuenta desde https://pawnio.eu si quiere esa métrica; las
+otras ocho del overlay no lo necesitan.
 
 --------------------------------------------------------------------------------
 PresentMon (Intel Corporation)

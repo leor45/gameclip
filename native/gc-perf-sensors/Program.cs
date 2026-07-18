@@ -11,8 +11,12 @@ using LibreHardwareMonitor.Hardware;
 // .NET Framework 4.8 (incluido en Windows 10/11): no necesita runtime aparte y el compilador de
 // C# 5 que trae Windows (csc.exe) alcanza — por eso el codigo evita sintaxis moderna.
 //
-// Sin permisos de administrador, LibreHardwareMonitor no puede cargar su driver ring0: la
-// temperatura de CPU queda en null, pero los sensores de GPU (NVAPI/ADL) siguen funcionando.
+// La temperatura de CPU se lee de los MSR del procesador, que exigen anillo 0. Eso lo aporta PawnIO
+// (el driver que LibreHardwareMonitor 0.9.6 usa en lugar del viejo WinRing0, marcado por Defender),
+// que se instala aparte, y ademas hace falta ejecutar elevado. Si falta cualquiera de las dos cosas
+// cpuTemp queda en null y GameClip lo pinta como "-"; los sensores de GPU van por NVAPI/ADL, que son
+// APIs de usuario, asi que siguen funcionando igual. De las nueve metricas del overlay, PawnIO
+// condiciona una sola.
 
 namespace GcPerfSensors
 {

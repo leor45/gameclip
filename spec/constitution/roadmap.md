@@ -851,6 +851,51 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > manuales (`customGames`) e **índice de launchers** (`games-index.json`), que es la que más juegos
 > aporta. Durante la E2E se dio una falsa alarma por revisar solo las dos primeras.
 >
+> ### ✅ Bloqueante del release resuelto: `fix/sensores-pawnio` (2026-07-18, en rama)
+>
+> **El overlay ya se puede publicar.** LibreHardwareMonitor sube 0.9.4 → **0.9.6**: fuera WinRing0,
+> dentro PawnIO. Verificado sobre los binarios que enviamos (no sobre el changelog): la 0.9.4 contenía
+> `WinRing0.gz`/`WinRing0x64.gz` y en la 0.9.6 no hay **ninguna** ocurrencia; el script lleva ahora la
+> comprobación dentro, así que el build falla si vuelve a colarse.
+>
+> **El salto no era cambiar un número** — tres cosas que el spec resolvió midiendo, no presumiendo:
+> (1) el paquete **ya no trae `lib/net472`**: ahora hay `ref/<tfm>/` para compilar y
+> `runtimes/win-<arch>/lib/<tfm>/` con la implementación, así que la ruta que el script pedía fallaba;
+> (2) las dependencias pasaron de **una a diez**; y (3) **sin binding redirects el `.exe` compila pero
+> no arranca** (LHM referencia `System.Memory 4.0.5.0` y el paquete envía `4.0.2.0`) — MSBuild los
+> genera solo y `csc` a pelo no, así que el `App.config` se mantiene a mano. `Program.cs` no necesitó
+> ni un cambio. Compilado con `/platform:x64` (la implementación ya es específica de arquitectura).
+>
+> **La comprobación anti-WinRing0 se ganó el sueldo el primer día:** rechazó el build porque
+> `RAMSPDToolkit-NDD.dll` contiene `WinRing0`/`IWinRing0Driver`. No es el driver embebido (solo una
+> interfaz; ni `.sys` ni recurso `.gz`), pero se excluye junto a `DiskInfoToolkit`: sirven a grupos que
+> el helper **nunca habilita** (solo `IsGpuEnabled`/`IsCpuEnabled`).
+>
+> **Empaquetado por carpeta con filtro**, no fichero a fichero: `extraResources` enumeraba a mano y el
+> `.config` y las DLLs nuevas no habrían viajado. El fallo era invisible en dev —el helper resuelve
+> `resources/` por `process.cwd()`— y en el portable no degrada una métrica: **mata el helper entero**.
+>
+> **Aviso de PawnIO ausente:** de las nueve métricas lo necesita **una**, Temp CPU (los MSR exigen
+> anillo 0; lo de GPU va por NVAPI/ADL y CPU-uso/RAM ni pasan por el helper). El aviso sale **solo si
+> esa métrica está marcada** —mismo criterio que `hotfix/aviso-metricas-admin`: la duda nace al marcar
+> la métrica— y enlaza a `https://pawnio.eu`, en una constante única compartida (para un driver de
+> kernel, que se cuele un mirror es un problema de seguridad). La detección mira si está **instalado**
+> (`PawnIOLib.dll`), no si su servicio corre: un servicio parado sigue instalado. **Instalarlo desde la
+> app queda fuera** —red, UAC y un binario de terceros dentro del portable son otra tarea—; por
+> licencias no habría impedimento (PawnIO es GPL-2.0 con excepción de enlazado por IOCTL).
+>
+> ⛔ **Restricción de la máquina del owner, respetada y anotada:** su PawnIO es de **FanControl**, que
+> gobierna los ventiladores del PC. **No se tocó el servicio** (verificado `Running` antes y después de
+> cada prueba elevada); el caso "sin PawnIO" se simula con `GAMECLIP_PAWNIO_DIR` apuntando a una
+> carpeta vacía, que además es **mejor prueba**: recorre la misma ruta de detección que un PC limpio.
+>
+> Verificado: `cpuTemp` **62,9 °C** elevado sobre el artefacto final y `null` sin elevar con los
+> sensores de GPU intactos; el aviso visto en la app real por CDP con su enlace; y el helper
+> arrancando **desde el portable empaquetado** (95 MB), sin `WinRing0` en nada del paquete. 846 tests
+> verdes (+14). `resources/` pasa de 939 KB a 2,15 MB.
+>
+> <details><summary>Estado anterior (bloqueante abierto)</summary>
+>
 > ### ⛔ Bloqueante del release: `fix/sensores-pawnio` — **lo siguiente que se hace**
 >
 > **El overlay no se publica hasta resolver esto**, por delante incluso de
@@ -880,6 +925,8 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > usuario recibió jamás una versión con WinRing0: no hay nada que comunicar ni de qué advertir. Es un
 > arreglo interno previo al estreno, no un fallo corregido de cara al público.
 >
+> </details>
+>
 > **`hotfix/aviso-metricas-admin` (2026-07-18, en `main` sin release):** la leyenda de que FPS y
 > Temp CPU necesitan administrador ya existía, pero al **final** del fieldset, colgada del checkbox
 > «Iniciar con Windows como administrador» — y la duda nace **arriba**, al marcar la métrica en «Qué
@@ -888,6 +935,29 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > **dos** métricas y nunca como «la app requiere admin»: verificado sobre los manifiestos, tanto
 > `GameClip.exe` como el portable y `gc-presentmon.exe` son `asInvoker`, **la app no pide UAC nunca**
 > y 7 de las 9 métricas funcionan sin elevar. 832 tests verdes.
+>
+> ### 📦 Release 0.9.0 — el overlay de rendimiento sale con tres tareas
+>
+> El overlay se publica **una sola vez**, cuando las tres estén entregadas (decisión del owner,
+> 2026-07-18). Ninguna se mergea a `main` sin su propio spec/plan aprobado.
+>
+> 1. **`fix/sensores-pawnio`** — ✅ entregado, pendiente de merge. Quita WinRing0 (ver arriba).
+> 2. **`fix/sensores-cpu-solo-si-hace-falta`** — 📋 spec escrito. Desmarcar «Temp CPU» hoy deja de
+>    **pintar** el número pero no cambia nada por debajo: el helper se lanza si hay **cualquier**
+>    métrica de sensores marcada (`gpuUsage` lo está por defecto), se lanza **sin argumentos**, y
+>    dentro pone `IsCpuEnabled = true` **incondicionalmente** — que es lo que engancha los MSR y con
+>    ellos PawnIO. O sea: quien solo quiere FPS y uso de GPU acaba cargando un driver de anillo 0 si lo
+>    tiene instalado. Importa porque PawnIO arregla el flag de Defender pero **no** la fricción con
+>    anti-cheats de kernel: esa fricción hay que pagarla solo cuando se pidió la métrica que la
+>    necesita. Detectado por el owner al revisar la entrega de `fix/sensores-pawnio`.
+> 3. **`fix/copy-sin-nvidia-app`** — 📋 spec escrito. La leyenda de posición dice «como en NVIDIA App»:
+>    la NVIDIA App fue **referencia de desarrollo**, y el producto no debe nombrarla (instrucción del
+>    owner). Se reescribe la frase conservando el dato útil —por qué el centro no es elegible— y se
+>    barre la copy entera. **No entra** el nombre del encoder `NVIDIA NVENC`, que es el nombre real
+>    del hardware. Quedan dos casos anotados a decidir en su plan: los **comentarios de código**
+>    (propuesta: se quedan, documentan el porqué) y el **diagnóstico de PresentMon** que nombra a la
+>    NVIDIA App como capturador que compite por las sesiones ETW (propuesta: se queda, es
+>    troubleshooting útil, no una referencia de diseño).
 >
 > **Candidato anotado (no entra aquí):** `fix/presentmon-no-reintenta-tras-morir` — si PresentMon
 > muere por una causa transitoria, `onExit` marca el reader como `failed` y **`start()` ya no vuelve
