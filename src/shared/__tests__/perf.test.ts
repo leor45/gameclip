@@ -87,6 +87,14 @@ describe('normalizePerfOverlay', () => {
     expect(config.bgOpacity).toBe(100);
   });
 
+  it('valida el tamaño de fuente contra el preset de tres', () => {
+    expect(normalizePerfOverlay({ fontSize: 'large' }).fontSize).toBe('large');
+    expect(normalizePerfOverlay({ fontSize: 'small' }).fontSize).toBe('small');
+    // Un valor inventado (o ajustes viejos sin el campo) cae al estándar.
+    expect(normalizePerfOverlay({ fontSize: 'gigante' }).fontSize).toBe('standard');
+    expect(normalizePerfOverlay({}).fontSize).toBe('standard');
+  });
+
   it('normaliza el color hex a mayúsculas y respeta posiciones válidas', () => {
     const config = normalizePerfOverlay({ textColor: ' #a1b2c3 ', posX: 67, posY: 40 });
     expect(config.textColor).toBe('#A1B2C3');

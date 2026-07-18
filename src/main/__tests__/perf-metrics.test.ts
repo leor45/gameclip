@@ -10,8 +10,7 @@ import {
 import {
   FpsTracker,
   PresentMonReader,
-  csvNumberAt,
-  msBetweenPresentsIndex,
+  parseCsvHeader,
   presentMonArgs,
 } from '../perf-metrics/presentmon';
 import { PerfSampler } from '../perf-metrics/sampler';
@@ -126,58 +125,129 @@ describe('SensorsReader', () => {
 
 // -------------------------------------------------------------------------------------- PresentMon
 
+const CABECERA = 'Application,ProcessID,SwapChainAddress,SyncInterval,msBetweenPresents,msInPresentAPI';
+
+/** Reader con un proceso falso y reloj controlado. */
+function readerFalso() {
+  const fake = procesoFalso();
+  let t = 0;
+  const spawn = vi.fn().mockReturnValue(fake.proc);
+  const reader = new PresentMonReader({
+    helperPath: () => 'C:\\pm.exe',
+    spawn,
+    selfExe: () => 'GameClip.exe',
+    now: () => t,
+  });
+  return {
+    reader,
+    fake,
+    spawn,
+    avanzar: (ms: number) => (t += ms),
+    ahora: () => t,
+    /** Emite `n` presents del proceso, uno cada `ms`, avanzando el reloj. */
+    presentar: (exe: string, ms: number, n: number) => {
+      for (let i = 0; i < n; i++) {
+        t += ms;
+        fake.emitLine(`${exe},123,0x0,0,${ms},1.0`);
+      }
+    },
+  };
+}
+
 describe('presentmon', () => {
-  it('los args siguen al proceso por nombre, sin relanzarse como admin', () => {
-    const args = presentMonArgs('cs2.exe');
-    expect(args).toContain('-process_name');
-    expect(args).toContain('cs2.exe');
+  it('captura todos los procesos y excluye compositor y la propia app', () => {
+    const args = presentMonArgs(['dwm.exe', 'gameclip.exe']);
+    expect(args).toContain('-captureall');
     expect(args).toContain('-output_stdout');
+    // La vista interactiva de swap chains iría por la misma salida y rompería el parseo del CSV.
+    expect(args).toContain('-no_top');
+    // No se apunta a un proceso concreto: los FPS no dependen del juego detectado.
+    expect(args).not.toContain('-process_name');
+    expect(args.join(' ')).toContain('-exclude dwm.exe');
+    expect(args.join(' ')).toContain('-exclude gameclip.exe');
     expect(args.join(' ')).not.toContain('restart_as_admin');
   });
 
-  it('encuentra la columna msBetweenPresents en la cabecera CSV', () => {
-    const header = 'Application,ProcessID,SwapChainAddress,SyncInterval,msBetweenPresents,msInPresentAPI';
-    expect(msBetweenPresentsIndex(header)).toBe(4);
-    expect(msBetweenPresentsIndex('a,b,c')).toBeNull();
-  });
-
-  it('csvNumberAt devuelve null para valores no numéricos', () => {
-    expect(csvNumberAt('game.exe,123,16.66', 2)).toBeCloseTo(16.66);
-    expect(csvNumberAt('game.exe,123,abc', 2)).toBeNull();
+  it('lee las columnas Application y msBetweenPresents de la cabecera', () => {
+    expect(parseCsvHeader(CABECERA)).toEqual({ application: 0, msBetweenPresents: 4 });
+    expect(parseCsvHeader('a,b,c')).toBeNull();
   });
 
   it('FpsTracker: media de la ventana y null cuando los datos envejecen', () => {
     const tracker = new FpsTracker();
     for (let i = 0; i < 10; i++) tracker.push(16.666, 1000 + i * 17);
     expect(Math.round(tracker.fps(1200)!)).toBe(60);
-    // Sin presents nuevos en 3 s → null (juego parado en un menú, no "60 fps" viejos).
+    // Sin presents nuevos → null (no se muestran "60 fps" viejos).
     expect(tracker.fps(6000)).toBeNull();
   });
 
-  it('PresentMonReader parsea el CSV tras la cabecera y expone los FPS', () => {
-    const fake = procesoFalso();
-    let t = 0;
-    const reader = new PresentMonReader({
-      helperPath: () => 'C:\\pm.exe',
-      spawn: () => fake.proc,
-      now: () => t,
-    });
-    reader.setTarget('cs2.exe');
-    fake.emitLine('Application,ProcessID,msBetweenPresents');
-    for (t = 0; t <= 500; t += 10) fake.emitLine(`cs2.exe,123,${10}`);
+  it('mide los FPS de una app aunque no sea un juego detectado', () => {
+    const { reader, fake, presentar } = readerFalso();
+    reader.start();
+    fake.emitLine(CABECERA);
+    // Un emulador cualquiera: nadie le dijo al reader qué proceso mirar.
+    presentar('eden.exe', 10, 60);
     expect(Math.round(reader.fps()!)).toBe(100);
   });
 
-  it('un target que falló no se reintenta, pero un juego nuevo sí', () => {
-    const fake = procesoFalso();
-    const spawn = vi.fn().mockReturnValue(fake.proc);
-    const reader = new PresentMonReader({ helperPath: () => 'C:\\pm.exe', spawn, now: () => 0 });
-    reader.setTarget('cs2.exe');
+  it('sigue mostrando los FPS de la app enganchada aunque otra tenga más tasa', () => {
+    const { reader, fake, presentar } = readerFalso();
+    reader.start();
+    fake.emitLine(CABECERA);
+    // El juego se engancha a 33 ms (~30 fps), como un emulador capado.
+    presentar('eden.exe', 33, 40);
+    expect(Math.round(reader.fps()!)).toBe(30);
+
+    // Aparece un vídeo de navegador a 60 fps: NO debe robar la lectura (enganchado al juego).
+    for (let i = 0; i < 40; i++) {
+      presentar('eden.exe', 33, 1);
+      fake.emitLine(`chrome.exe,999,0x0,0,16.6,1.0`);
+    }
+    expect(Math.round(reader.fps()!)).toBe(30);
+  });
+
+  it('re-engancha al de mayor tasa cuando el enganchado deja de presentar', () => {
+    const { reader, fake, presentar, avanzar } = readerFalso();
+    reader.start();
+    fake.emitLine(CABECERA);
+    presentar('eden.exe', 33, 40);
+    expect(Math.round(reader.fps()!)).toBe(30);
+
+    // El emulador se cierra; sigue habiendo otra app presentando.
+    avanzar(6000);
+    presentar('otrojuego.exe', 10, 60);
+    expect(Math.round(reader.fps()!)).toBe(100);
+  });
+
+  it('sin nada presentando devuelve null (el overlay pinta «—»)', () => {
+    const { reader, fake, presentar, avanzar } = readerFalso();
+    reader.start();
+    fake.emitLine(CABECERA);
+    presentar('eden.exe', 16, 40);
+    expect(reader.fps()).not.toBeNull();
+    avanzar(10_000);
+    expect(reader.fps()).toBeNull();
+  });
+
+  it('ignora los procesos de la denylist aunque presenten', () => {
+    const { reader, fake } = readerFalso();
+    reader.start();
+    fake.emitLine(CABECERA);
+    for (let i = 0; i < 40; i++) {
+      fake.emitLine('dwm.exe,4,0x0,0,16.6,1.0');
+      fake.emitLine('GameClip.exe,5,0x0,0,16.6,1.0');
+    }
+    expect(reader.fps()).toBeNull();
+  });
+
+  it('tras morir no se relanza solo, pero stop() + start() reintenta', () => {
+    const { reader, fake, spawn } = readerFalso();
+    reader.start();
     fake.emitExit(); // muerte temprana: sin permisos
-    reader.setTarget(null);
-    reader.setTarget('cs2.exe');
+    reader.start();
     expect(spawn).toHaveBeenCalledTimes(1);
-    reader.setTarget('otro.exe');
+    reader.stop();
+    reader.start();
     expect(spawn).toHaveBeenCalledTimes(2);
   });
 });
@@ -191,7 +261,7 @@ function samplerFalso() {
     latest: vi.fn().mockReturnValue({ ...EMPTY_SENSOR_READING, gpuUsage: 57, gpuTemp: 60 }),
   };
   const presentMon = {
-    setTarget: vi.fn(),
+    start: vi.fn(),
     stop: vi.fn(),
     fps: vi.fn().mockReturnValue(120),
   };
@@ -245,14 +315,13 @@ describe('PerfSampler', () => {
     expect(presentMon.stop).toHaveBeenCalled();
   });
 
-  it('el juego activo alimenta a PresentMon solo si los FPS están marcados', () => {
+  it('PresentMon vive solo mientras los FPS estén marcados (sin depender del juego)', () => {
     const { sampler, presentMon } = samplerFalso();
     sampler.configure({ ...DEFAULT_PERF_OVERLAY.metrics, fps: true });
-    sampler.setGameExe('cs2.exe');
-    expect(presentMon.setTarget).toHaveBeenLastCalledWith('cs2.exe');
+    expect(presentMon.start).toHaveBeenCalled();
 
     sampler.configure({ ...DEFAULT_PERF_OVERLAY.metrics, fps: false });
-    expect(presentMon.setTarget).toHaveBeenLastCalledWith(null);
+    expect(presentMon.stop).toHaveBeenCalled();
     sampler.stop();
   });
 });

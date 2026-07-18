@@ -25,7 +25,7 @@ export default function PerfOverlay() {
   return (
     <div className="perf-root" data-fila={fila} data-columna={columna} data-testid="perf-root">
       <div
-        className={`perf-card perf-${config.layout}`}
+        className={`perf-card perf-${config.layout} perf-font-${config.fontSize}`}
         role="status"
         style={{
           color: config.textColor,

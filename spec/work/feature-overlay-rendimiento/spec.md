@@ -32,6 +32,20 @@ juego activo que GameClip ya detecta, incluidos los añadidos a mano como juego 
     los sliders. Mientras se arrastra, el overlay (si está activo) se mueve **en tiempo real**.
   - Disposición: lineal (una línea) o desglosada (lista vertical).
   - Color del texto y opacidad del fondo.
+  - Tamaño de fuente: preset de tres (pequeño · estándar · grande). *(Refinamiento 2026-07-18.)*
+- **FPS independientes de la detección de juegos** *(refinamiento 2026-07-18)*: los FPS se miden
+  para cualquier aplicación que presente frames (juego, emulador, etc.), esté o no reconocida como
+  juego, y **se mantienen aunque la app pase a segundo plano** mientras siga presentando (como el
+  overlay de NVIDIA App). Se muestran los FPS de la app enganchada mientras siga presentando; si
+  deja de hacerlo, se engancha a la de mayor tasa de presentación (excluyendo el compositor de
+  Windows y la propia GameClip).
+- **FPS con multiplicadores de frames** *(refinamiento 2026-07-18)*: cuando hay una tecnología de
+  generación de frames activa (NVIDIA DLSS Frame Generation, AMD FSR 3 Frame Generation, Intel
+  XeSS-FG), los FPS mostrados incluyen los frames generados. Se cumple de forma natural al medir
+  **frames presentados** (los frames generados por estas tecnologías se presentan por el swap
+  chain, igual que cuenta el contador de la NVIDIA App).
+- **Visible sobre juegos en ventana sin bordes** *(refinamiento 2026-07-18)*: el overlay se ve sin
+  necesidad de alt+tab aunque el juego arranque después que él (caso detectado con RE Requiem).
 - Ventana overlay transparente, click-through, en el monitor primario, que pinta las métricas
   elegidas y se actualiza ~1 vez por segundo.
 - Exclusión de capturas: el overlay no sale en clips ni grabaciones (ni de juego ni de

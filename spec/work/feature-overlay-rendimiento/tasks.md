@@ -64,6 +64,32 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [ ] Comprobación manual pendiente (owner): REC/toast por encima en juego, Alt+R, clip real de
       game capture y grabación de escritorio sin el overlay, auto-inicio elevado tras relogon.
 
+## Refinamiento post-prueba (2026-07-18)
+
+- [x] R1. Tamaño de fuente: preset `small | standard | large` en la config, `<select>` en Ajustes y
+      clases CSS (11 / 14 / 19 px).
+- [x] R2+R3. FPS independientes de la detección y persistentes en segundo plano: PresentMon en
+      `-captureall` (+`-no_top`, +`-exclude` de `dwm.exe` y la propia app), un `FpsTracker` por
+      proceso y selección **enganchada al juego** (se mantiene mientras presente; si deja de hacerlo,
+      salta al de mayor tasa). Se quita `setGameExe`/`detectedGame` de la ruta de FPS.
+- [x] R4. Visible sobre juegos sin bordes: nivel `screen-saver` + re-elevado cada 2 s, re-elevando
+      los avisos detrás para que sigan por encima.
+- [x] Multiplicadores de frames (DLSS/FSR FG): se cumplen midiendo frames **presentados**; sin
+      cambio de código, documentado en el spec.
+- [x] Tests: tamaño de fuente (shared/página/UI), args de captura-todo, selección con enganche,
+      re-enganche, denylist, sin-nada-presentando → `—`. **817 tests verdes.**
+- [x] Verificación E2E (dev + CDP): fuente grande = 19 px, disposición lineal, esquina superior
+      derecha, color/opacidad correctos; **la captura GDI de esa esquina sigue sin contener el
+      overlay** tras subir a `screen-saver`; PresentMon sin admin degrada a `—` sin romper nada.
+- [ ] Pendiente del owner (requiere sesión elevada y un juego): FPS de una app **no detectada**,
+      FPS que **se mantienen en segundo plano**, FPS con multiplicador activo, y overlay visible en
+      RE Requiem sin alt+tab.
+
+### Hallazgo de permisos (documentado)
+
+Sin privilegios de administrador PresentMon **no arranca la sesión ETW** (`access denied`, exit 6):
+los FPS quedan en `—`. Con admin funcionan. Confirmado midiendo el binario a mano.
+
 ## Cierre
 
 - [ ] Aprobación del owner

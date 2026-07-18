@@ -86,6 +86,17 @@ export class OverlayController {
     this.sync();
   }
 
+  /**
+   * Re-eleva las ventanas visibles. Lo llama el overlay de rendimiento después de re-elevarse él:
+   * los dos son topmost, así que dentro de esa banda el último en subir gana, y estos avisos tienen
+   * que quedar siempre por encima.
+   */
+  raise(): void {
+    for (const ventana of this.ventanas.values()) {
+      if (ventana.win.isVisible()) ventana.win.moveTop();
+    }
+  }
+
   destroy(): void {
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.noticeTimer) clearTimeout(this.noticeTimer);

@@ -218,11 +218,6 @@ function setupCapture(): CaptureManager {
     mainWindow?.webContents.send(IpcEvent.CaptureStatusChanged, status);
     overlay?.setRecording(status.state === 'recording');
     tray?.setRecording(status.state === 'recording');
-    // El ejecutable del juego activo alimenta los FPS del overlay de rendimiento (PresentMon).
-    const activo = status.detectedGame
-      ? (manager.getRunningGames().find((g) => g.name === status.detectedGame)?.executable ?? null)
-      : null;
-    perfSampler?.setGameExe(activo);
 
     if (status.detectedGame && !juegoAnterior) {
       const aviso = buildGameNotice(manager.getSettings());
@@ -462,7 +457,10 @@ app.whenReady().then(() => {
   overlay = new OverlayController(capture.getSettings().overlayEnabled);
   {
     const s = capture.getSettings();
-    perfOverlay = new PerfOverlayController(s.perfOverlayEnabled, s.perfOverlay);
+    // Los avisos se re-elevan tras cada re-elevación del overlay: comparten banda topmost.
+    perfOverlay = new PerfOverlayController(s.perfOverlayEnabled, s.perfOverlay, () =>
+      overlay?.raise(),
+    );
     perfSampler = new PerfSampler({
       sensors: createSensorsReader(),
       presentMon: createPresentMonReader(),

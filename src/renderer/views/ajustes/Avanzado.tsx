@@ -265,6 +265,17 @@ export default function AjustesAvanzado() {
           </select>
         </label>
         <label>
+          Tamaño de fuente
+          <select
+            value={perf.fontSize}
+            onChange={(e) => setPerf({ fontSize: e.target.value as PerfOverlayConfig['fontSize'] })}
+          >
+            <option value="small">Pequeño</option>
+            <option value="standard">Estándar</option>
+            <option value="large">Grande</option>
+          </select>
+        </label>
+        <label>
           Opacidad del fondo ({perf.bgOpacity})
           <input
             className="perf-slider"

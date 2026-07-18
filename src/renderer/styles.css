@@ -2483,6 +2483,16 @@ body {
   box-sizing: border-box;
 }
 
+.perf-font-small {
+  font-size: 11px;
+}
+.perf-font-standard {
+  font-size: 14px;
+}
+.perf-font-large {
+  font-size: 19px;
+}
+
 .perf-vertical {
   flex-direction: column;
   gap: 2px;

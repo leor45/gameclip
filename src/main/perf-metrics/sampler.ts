@@ -22,7 +22,7 @@ function needsSensors(metrics: PerfMetricsEnabled): boolean {
 
 export interface PerfSamplerDeps {
   sensors: Pick<SensorsReader, 'start' | 'stop' | 'latest'>;
-  presentMon: Pick<PresentMonReader, 'setTarget' | 'stop' | 'fps'>;
+  presentMon: Pick<PresentMonReader, 'start' | 'stop' | 'fps'>;
   /** Fuente de datos de os, inyectable en tests. */
   osApi?: {
     cpus: () => ReturnType<typeof os.cpus>;
@@ -41,7 +41,6 @@ export class PerfSampler extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
   private metrics: PerfMetricsEnabled | null = null;
   private prevCpu: CpuTimes | null = null;
-  private gameExe: string | null = null;
   private readonly osApi: NonNullable<PerfSamplerDeps['osApi']>;
   private readonly intervalMs: number;
 
@@ -64,17 +63,14 @@ export class PerfSampler extends EventEmitter {
     }
     if (needsSensors(metrics)) this.deps.sensors.start();
     else this.deps.sensors.stop();
-    this.deps.presentMon.setTarget(metrics.fps ? this.gameExe : null);
+    // PresentMon captura TODOS los procesos: no depende del juego detectado, así que basta con
+    // encenderlo mientras la métrica de FPS esté marcada.
+    if (metrics.fps) this.deps.presentMon.start();
+    else this.deps.presentMon.stop();
     if (!this.timer) {
       this.prevCpu = null;
       this.timer = setInterval(() => this.tick(), this.intervalMs);
     }
-  }
-
-  /** Ejecutable del juego activo (para los FPS); null si no hay juego. */
-  setGameExe(executable: string | null): void {
-    this.gameExe = executable;
-    if (this.metrics?.fps) this.deps.presentMon.setTarget(executable);
   }
 
   stop(): void {

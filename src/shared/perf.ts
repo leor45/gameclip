@@ -22,6 +22,11 @@ export type PerfMetricsEnabled = Record<PerfMetricKey, boolean>;
 /** 'horizontal': todo en una línea (apaisado) · 'vertical': una métrica por línea (desglosado). */
 export type PerfLayout = 'horizontal' | 'vertical';
 
+/** Tamaño de fuente del overlay (preset de tres). */
+export type PerfFontSize = 'small' | 'standard' | 'large';
+
+export const PERF_FONT_SIZES: readonly PerfFontSize[] = ['small', 'standard', 'large'];
+
 /** Configuración visual del overlay de rendimiento (posición, disposición, color, métricas). */
 export interface PerfOverlayConfig {
   metrics: PerfMetricsEnabled;
@@ -30,6 +35,7 @@ export interface PerfOverlayConfig {
   /** Posición vertical 0–100 (slider). */
   posY: number;
   layout: PerfLayout;
+  fontSize: PerfFontSize;
   /** Color del texto, hex #RRGGBB. */
   textColor: string;
   /** Opacidad del fondo 0–100. */
@@ -51,6 +57,7 @@ export const DEFAULT_PERF_OVERLAY: PerfOverlayConfig = {
   posX: 0,
   posY: 0,
   layout: 'vertical',
+  fontSize: 'standard',
   textColor: '#FFFFFF',
   bgOpacity: 40,
 };
@@ -152,6 +159,9 @@ export function normalizePerfOverlay(input: unknown): PerfOverlayConfig {
     posX,
     posY,
     layout: raw.layout === 'horizontal' || raw.layout === 'vertical' ? raw.layout : d.layout,
+    fontSize: PERF_FONT_SIZES.includes(raw.fontSize as PerfFontSize)
+      ? (raw.fontSize as PerfFontSize)
+      : d.fontSize,
     textColor:
       typeof raw.textColor === 'string' && HEX_COLOR.test(raw.textColor.trim())
         ? raw.textColor.trim().toUpperCase()

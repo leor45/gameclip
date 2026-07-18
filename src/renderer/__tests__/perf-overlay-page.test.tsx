@@ -58,6 +58,14 @@ describe('PerfOverlay (página)', () => {
     expect(card.style.backgroundColor).toBe('rgba(0, 0, 0, 0.5)');
   });
 
+  it('aplica la clase del tamaño de fuente elegido', () => {
+    render(<PerfOverlay />);
+    act(() => emitir(data({ fontSize: 'large' })));
+    expect(screen.getByTestId('perf-root').querySelector('.perf-card')!.className).toContain(
+      'perf-font-large',
+    );
+  });
+
   it('sin ninguna métrica marcada no renderiza la tarjeta', () => {
     render(<PerfOverlay />);
     const apagadas = Object.fromEntries(

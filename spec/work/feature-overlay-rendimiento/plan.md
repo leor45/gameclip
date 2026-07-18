@@ -161,4 +161,75 @@ CPU funcionan desde el arranque.
 
 ---
 
-**Estado:** ✅ aprobado el 2026-07-18
+**Estado:** ✅ aprobado el 2026-07-18 · ⏳ refinamiento post-prueba pendiente de OK (ver abajo)
+
+---
+
+## Refinamiento post-prueba (2026-07-18) — pendiente de OK
+
+Tras probar la feature en la rama, el owner pidió tres ajustes. Alcance acotado, misma rama.
+
+### R1. Tamaño de fuente (preset de 3)
+
+`fontSize: 'small' | 'standard' | 'large'` nuevo en `PerfOverlayConfig` (default `standard`), con su
+normalización. Un `<select>` más en Ajustes → Avanzado y una clase en la tarjeta del overlay
+(`perf-font-small|standard|large`) que fija el `font-size`. Sin impacto en el resto.
+
+### R2 + R3. FPS independientes de la detección y persistentes en segundo plano
+
+**Causa raíz común:** hoy PresentMon apunta a `detectedGame` (`sampler.setGameExe`). Por eso los FPS
+solo salen para juegos detectados (R2) y son frágiles al perder foco (R3).
+
+**Rediseño de la fuente de FPS** (aislado a `perf-metrics/presentmon.ts` + wiring):
+
+- PresentMon corre en modo **`-captureall`** (todos los procesos), excluyendo `dwm.exe` (compositor)
+  y el ejecutable de la propia GameClip (`-exclude`). Ya **no** se relanza al cambiar de juego: un
+  solo proceso vive mientras la métrica FPS esté marcada.
+- Se mantiene **un `FpsTracker` por proceso** (mapa exe → tracker), alimentado por la columna
+  `Application` del CSV. Se poda lo que deja de presentar (TTL).
+- **Selección de qué FPS mostrar** — *enganchado al juego* (decisión del owner, 2026-07-18):
+  1. Si el proceso **enganchado** sigue presentando (presents frescos) → se mantiene, aunque otra
+     app tenga más tasa. Así los FPS del juego en segundo plano no desaparecen (R3) **y** nunca
+     saltan a un vídeo de navegador que abras encima.
+  2. Si el enganchado dejó de presentar (o no hay ninguno) → se engancha al proceso con **mayor
+     tasa de presents** fuera de la denylist. Cubre cualquier app sin depender de la detección (R2)
+     y, con dos juegos, elige el de mayor tasa.
+  3. Si nada presenta → `null` (`—`).
+- **Sin rastreo de primer plano**: la selección solo mira tasas de presentación, así que no hace
+  falta el foreground PID. `game-detector`/`detectedGame` dejan de alimentar los FPS.
+
+**Sin cambios** en: permisos (sigue siendo ETW = admin), exclusión de capturas del overlay, resto de
+métricas, empaquetado. `setGameExe` desaparece del sampler.
+
+### R4. Visible sobre juegos sin bordes (detectado probando RE Requiem)
+
+**Causa raíz:** el overlay se creaba con nivel topmost `'floating'` (elegido para quedar bajo los
+avisos). Ese nivel **no** basta contra una ventana sin bordes de un juego —el propio
+`OverlayController` ya documenta que solo `'screen-saver'` lo consigue—, así que un juego que toma
+el foco lo tapaba hasta que un alt+tab reordenaba las ventanas.
+
+**Arreglo:** el overlay pasa a `'screen-saver'` (mismo nivel que los avisos) y, mientras está
+visible, se **re-eleva cada 2 s**; justo después re-eleva los avisos (`OverlayController.raise()`),
+que comparten banda y por tanto siguen ganando. El re-elevado periódico cubre además el caso de un
+juego que arranca *después* del overlay.
+
+### Archivos del refinamiento
+
+- `src/shared/perf.ts` — `fontSize` en config + normalización.
+- `src/renderer/views/ajustes/Avanzado.tsx` — `<select>` de tamaño.
+- `src/renderer/perf-overlay/PerfOverlay.tsx` + `styles.css` — clase de tamaño.
+- `src/main/perf-metrics/presentmon.ts` — `-captureall`/`-exclude`, tracker por proceso, selección
+  con enganche.
+- `src/main/perf-metrics/sampler.ts` + `src/main/index.ts` — se quita `setGameExe`; PresentMon vive
+  mientras la métrica FPS esté marcada.
+- `src/main/perf-overlay.ts` — nivel `screen-saver` + re-elevado periódico (R4).
+- `src/main/overlay.ts` — `raise()` para re-elevar los avisos visibles (R4).
+- Tests de los cuatro puntos.
+
+### Riesgos del refinamiento
+
+- Cold start: si un vídeo a 60 fps ya está sonando cuando el juego arranca capado a 30, en la
+  primera selección ganaría el vídeo por tasa; en cuanto el juego pasa a primer plano y sube su
+  tasa, o el vídeo se pausa, se re-engancha al juego. Caso de borde poco común.
+- `-captureall` procesa más eventos ETW que el modo apuntado; los eventos Present son baratos y ya
+  se filtra por denylist, impacto esperado mínimo (se observa en la verificación).

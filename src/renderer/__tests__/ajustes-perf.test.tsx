@@ -132,6 +132,16 @@ describe('Ajustes — Overlay de rendimiento', () => {
     expect(screen.getByText('Mostrar/ocultar overlay de rendimiento')).toBeInTheDocument();
   });
 
+  it('guarda el tamaño de fuente elegido', async () => {
+    const user = await irAAvanzado();
+
+    expect(screen.getByLabelText('Tamaño de fuente')).toHaveValue('standard');
+    await user.selectOptions(screen.getByLabelText('Tamaño de fuente'), 'large');
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(mock().capture.setSettings.mock.calls[0][0].perfOverlay.fontSize).toBe('large');
+  });
+
   it('guarda el opt-in de iniciar con Windows como administrador', async () => {
     const user = await irAAvanzado();
     await user.click(screen.getByLabelText('Iniciar con Windows como administrador'));
