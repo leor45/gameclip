@@ -5,9 +5,35 @@ import {
   REPLAY_SECONDS_MAX,
   REPLAY_SECONDS_MIN,
   captureProfile,
+  needsContentProtection,
   normalizeCaptureSettings,
   orderedActiveAudioApps,
 } from '../capture';
+
+describe('needsContentProtection', () => {
+  it('solo se oculta de las capturas cuando se está capturando el MONITOR', () => {
+    // La matriz entera: solo una celda protege.
+    expect(needsContentProtection('desktop', true)).toBe(true);
+    expect(needsContentProtection('desktop', false)).toBe(false);
+    expect(needsContentProtection('game', true)).toBe(false);
+    expect(needsContentProtection('game', false)).toBe(false);
+    expect(needsContentProtection('none', true)).toBe(false);
+    expect(needsContentProtection('none', false)).toBe(false);
+  });
+
+  it('jugando NO se protege, y aun así el clip sale limpio', () => {
+    // Es el corazón de la feature: con perfil `game` la fuente es `game_capture`, que solo ve la
+    // swapchain del juego y no puede ver una ventana ajena. Por eso se puede desproteger sin que el
+    // overlay se cuele en el clip — y así sí aparece al compartir pantalla o en un recorte.
+    expect(needsContentProtection('game', true)).toBe(false);
+  });
+
+  it('en el escritorio con el búfer corriendo se protege aunque nadie haya pulsado grabar', () => {
+    // El búfer de repetición corre en continuo: si aquí se desprotegiera, el overlay entraría en el
+    // búfer y aparecería en cualquier clip retroactivo que se guardara después.
+    expect(needsContentProtection('desktop', true)).toBe(true);
+  });
+});
 
 describe('captureProfile', () => {
   const s = DEFAULT_CAPTURE_SETTINGS; // escritorio activo + auto-switch activo

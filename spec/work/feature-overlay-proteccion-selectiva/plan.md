@@ -74,4 +74,12 @@ Electron) para poder testearla contra la matriz de perfiles × estados sin levan
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-07-18 (aprobación delegada por el owner)
+
+> Antes de aprobarlo se comprobó que los anclajes de código que cita siguen siendo válidos, ya que el
+> plan se escribió en una sesión anterior: `rebuildPipeline()` (`manager.ts:589`), `this.builtProfile`
+> (`:597`), `shouldBuffer()` (`:552`), `settleAfterRecording()` (`:575`),
+> `doStartRecording`/`doStopRecording` (`:465`/`:485`), `captureProfile()` (`shared/capture.ts:384`) y
+> `setContentProtection(true)` (`perf-overlay.ts:162`). Todos existen y las líneas siguen coincidiendo.
+> De paso: `setAlwaysOnTop(true, 'screen-saver')` está en `:165`, justo al lado — relevante para el
+> riesgo de perder ese nivel al conmutar.

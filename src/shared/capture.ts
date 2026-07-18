@@ -387,6 +387,23 @@ export function captureProfile(settings: CaptureSettings, gameDetected: boolean)
   return 'desktop';
 }
 
+/**
+ * ¿Hay que ocultar el overlay de rendimiento de **toda** captura (`WDA_EXCLUDEFROMCAPTURE`)?
+ *
+ * Solo cuando el pipeline está capturando **el monitor**, que es lo único que puede llevárselo
+ * dentro. Con perfil `game` la fuente es `game_capture`, que solo ve la swapchain del juego y **no
+ * puede** ver una ventana ajena: ahí el clip sale limpio sin protección, y el overlay pasa a verse al
+ * compartir pantalla o en un recorte de Windows — que es el objetivo de la feature.
+ *
+ * El segundo término importa tanto como el primero: **no** basta con «el usuario pulsó grabar». El
+ * búfer de repetición corre en continuo, así que estando en el escritorio con el búfer activo hay que
+ * proteger igual; si no, el overlay entraría en el búfer y aparecería en cualquier clip que se
+ * guardara después.
+ */
+export function needsContentProtection(profile: CaptureProfile, capturing: boolean): boolean {
+  return profile === 'desktop' && capturing;
+}
+
 // Acepta un parcial de origen no confiable (disco/IPC) y devuelve settings válidos,
 // cayendo al default campo a campo.
 export function normalizeCaptureSettings(input: unknown): CaptureSettings {

@@ -1017,9 +1017,8 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    el watchdog ya aplicaba al caso mudo. Si algún día molesta, lo natural es alargar la cadencia
 >    cuando el proceso ni sobrevive un par de segundos (causa estructural, no pasajera).
 >
-> 5. **`feature/overlay-proteccion-selectiva`** — 📋 spec y plan escritos, **plan pendiente de
->    aprobación y sin código**. Es la que faltaba en esta lista: su propio spec ya decía que entra en
->    el **mismo release** que el overlay, así que la 0.9.0 no se publica sin ella.
+> 5. **`feature/overlay-proteccion-selectiva`** — ✅ entregado (2026-07-18, en rama). Faltaba en esta
+>    lista aunque su propio spec ya decía que entra en el mismo release que el overlay.
 >
 >    Hoy el overlay se crea con `setContentProtection(true)` (`WDA_EXCLUDEFROMCAPTURE`), que lo hace
 >    invisible para **toda** captura: cumple lo de no salir en los clips, pero se pasa de largo y
@@ -1028,9 +1027,30 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 >    el monitor** (perfil `desktop` capturando de verdad); con perfil `game` queda siempre quitada,
 >    porque el `game_capture` solo ve la swapchain del juego y los clips salen limpios igual.
 >
->    **Riesgo principal, sin verificar:** conmutar `setContentProtection` en caliente podría alterar
->    la ventana (perder el nivel `screen-saver`, parpadear, o no aplicarse hasta el siguiente
->    repintado). Se comprueba a mano en su E2E.
+>    La decisión vive en `needsContentProtection(profile, capturing)` (pura, en `@shared/capture`), el
+>    `CaptureManager` la recalcula en cada transición y la emite **solo al cambiar**, e `index.ts` la
+>    puentea al controlador del overlay — sin acoplar manager y overlay, igual que con
+>    `settings:changed`. Orden seguro: **proteger antes** de arrancar la salida y **desproteger
+>    después** de pararla, para no dejar frames con el overlay dentro del búfer. La ventana **nace
+>    protegida**: si el cable se rompiera, el fallo sería «no se ve en una captura externa» —lo de
+>    siempre— y nunca «se coló en un clip».
+>
+>    **El riesgo principal del plan estaba sin verificar y se midió:** conmutar `setContentProtection`
+>    sobre una `BrowserWindow` real (ida, vuelta y 10 veces seguidas) **no** altera topmost,
+>    visibilidad ni geometría. La mitigación (reaplicar `setAlwaysOnTop`) **se conserva igualmente**,
+>    porque `isAlwaysOnTop()` devuelve la bandera de Electron y no el nivel Win32: la sonda no puede
+>    descartar que el nivel `screen-saver` se pierda.
+>
+>    **Verificado E2E con captura GDI** —la misma vía que un recorte de Windows o el compartir pantalla
+>    de Discord—: escritorio con búfer → overlay **ausente**; juego detectado → overlay **visible**
+>    («FPS — GPU 18 % Temp G…»); juego cerrado → **ausente** otra vez. Y sobre un **clip real** de
+>    escritorio, el fotograma no contiene el overlay: desproteger no lo filtra a los clips.
+>    872 tests verdes (+8).
+>
+>    ⚠️ **Queda para la E2E del owner:** un **clip con un juego real**. Un juego falso (`cmd.exe`
+>    renombrado) no tiene swapchain que enganchar, así que no valida que el `game_capture` siga sin ver
+>    el overlay ahora que está desprotegido. Es el argumento en el que se apoya toda la feature y
+>    conviene confirmarlo con un juego de verdad antes de publicar.
 >
 > **Con las cinco entregadas, la 0.9.0 queda lista para publicarse.**
 

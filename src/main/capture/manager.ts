@@ -7,7 +7,7 @@ import type {
   CaptureStatus,
   EncoderInfo,
 } from '@shared/capture';
-import { captureProfile } from '@shared/capture';
+import { captureProfile, needsContentProtection } from '@shared/capture';
 import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
@@ -113,6 +113,12 @@ export class CaptureManager extends EventEmitter {
   private builtProfile: CaptureProfile | null = null;
   /** Rebuild pendiente porque el perfil cambió durante una grabación (se hace al terminarla). */
   private pendingRebuild = false;
+  /**
+   * Último estado de protección emitido. Arranca en `true` porque la ventana del overlay **se crea
+   * protegida**: si algo no se cableara, el fallo es «no se ve en una captura externa» —el
+   * comportamiento de siempre— y nunca «se coló en un clip del usuario».
+   */
+  private overlayProtected = true;
 
   constructor(
     private readonly store: SettingsStore,
@@ -470,6 +476,7 @@ export class CaptureManager extends EventEmitter {
     }
     if (this.status.state !== 'buffering' && this.status.state !== 'idle') return;
     try {
+      this.syncOverlayProtection(true); // proteger antes de que la salida arranque
       await this.obs.startRecording();
       this.setStatus({ state: 'recording', error: null });
     } catch (err) {
@@ -489,6 +496,7 @@ export class CaptureManager extends EventEmitter {
       const file = await this.finishSavedClip(raw, this.status.detectedGame);
       this.sessionGameName = null;
       await this.settleAfterRecording();
+      this.syncOverlayProtection(); // la salida ya paró: desproteger tarde
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',
         error: null,
@@ -530,6 +538,9 @@ export class CaptureManager extends EventEmitter {
     this.hapticListener.stop();
     this.controllerListener.stop();
     this.bufferRunning = false;
+    this.builtProfile = null;
+    // Ya no se captura nada: que no quede una ventana protegida de más si la app sigue viva un rato.
+    this.syncOverlayProtection();
     this.setStatus({ state: 'unavailable', error: null });
   }
 
@@ -559,6 +570,9 @@ export class CaptureManager extends EventEmitter {
   }
 
   private async startBuffer(): Promise<void> {
+    // Proteger ANTES de que la salida empiece: desproteger tarde y proteger pronto. Al revés
+    // quedarían unos frames con el overlay dentro del búfer, y ese búfer se puede guardar después.
+    this.syncOverlayProtection(true);
     await this.obs.startReplayBuffer();
     this.bufferRunning = true;
   }
@@ -566,6 +580,21 @@ export class CaptureManager extends EventEmitter {
   private async stopBuffer(): Promise<void> {
     await this.obs.stopReplayBuffer();
     this.bufferRunning = false;
+    this.syncOverlayProtection();
+  }
+
+  /**
+   * Recalcula si el overlay de rendimiento debe ocultarse de las capturas y lo emite **solo si
+   * cambió**. `capturandoForzado` sirve para adelantarse a una salida que está a punto de arrancar:
+   * el estado interno aún no lo refleja y hay que proteger antes, no después.
+   */
+  private syncOverlayProtection(capturandoForzado?: boolean): void {
+    const capturando =
+      capturandoForzado ?? (this.bufferRunning || this.status.state === 'recording');
+    const proteger = needsContentProtection(this.builtProfile ?? 'none', capturando);
+    if (proteger === this.overlayProtected) return;
+    this.overlayProtected = proteger;
+    this.emit('overlay-protection', proteger);
   }
 
   /**
@@ -604,6 +633,10 @@ export class CaptureManager extends EventEmitter {
     } else {
       this.setStatus({ state: 'idle', error: null });
     }
+    // Es el único camino por el que pasan todos los cambios de perfil: aquí se recoge el caso de
+    // pasar a `game` (se desprotege) o a `desktop` (lo cubre `startBuffer`, pero también el de
+    // quedarse sin buffer, que desprotege).
+    this.syncOverlayProtection();
   }
 
   private emitClipSaved(
