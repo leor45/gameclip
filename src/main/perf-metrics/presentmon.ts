@@ -44,6 +44,12 @@ const MAX_REINTENTOS = 3;
  */
 const REINTENTO_LENTO_MS = 60_000;
 /**
+ * Espera antes de los primeros reintentos cuando el proceso **muere** (distinto de quedarse mudo:
+ * ahí hay que darle `NO_DATA_MS` para ver si arranca a entregar datos; aquí ya no hay nada que
+ * esperar, solo evitar encadenar arranques en caliente).
+ */
+const REINTENTO_MUERTE_MS = 5_000;
+/**
  * Cuánto tiene que superar un proceso al enganchado para robarle la lectura. El enganche evita que
  * el contador salte entre apps, pero NO puede ser permanente: apps de escritorio (Discord, editores,
  * navegadores) presentan sin parar, y si el overlay arranca antes que el juego se quedaba pegado a
@@ -200,13 +206,20 @@ export interface PresentMonDeps {
 
 /**
  * Corre PresentMon en modo captura-todo y expone los FPS del proceso enganchado. Un solo proceso
- * mientras la métrica FPS esté activa: `start()` lo lanza, `stop()` lo mata. Si el proceso muere
- * (sin permisos, cierre) no se relanza solo (evita un bucle de crashes); `stop()`+`start()` reintenta.
+ * mientras la métrica FPS esté activa: `start()` lo lanza, `stop()` lo mata.
+ *
+ * Si el proceso muere por su cuenta **se relanza solo**, con la misma espera escalonada que el
+ * watchdog usa para «vivo pero mudo» — antes se marcaba como fallido para siempre y los FPS quedaban
+ * en «—» el resto de la sesión, en silencio. El único fallo permanente que queda es que falte el
+ * binario: eso no se arregla esperando.
  */
 export class PresentMonReader {
   private child: LineProcess | null = null;
   private cols: CsvColumns | null = null;
+  /** Fallo del que no se vuelve: hoy, solo «no está el .exe». */
   private failed = false;
+  /** Cuándo murió por su cuenta, o null si está vivo (o parado a propósito). */
+  private muertoEn: number | null = null;
   /** exe (lowercase) → tracker de FPS. */
   private trackers = new Map<string, FpsTracker>();
   private denylist: Set<string>;
@@ -229,7 +242,8 @@ export class PresentMonReader {
   }
 
   start(): void {
-    if (this.child || this.failed) return;
+    // Si murió y espera su reintento espaciado, no se adelanta aquí: `reintentarSiMurio` lo hará.
+    if (this.child || this.failed || this.muertoEn !== null) return;
     this.reintentos = 0;
     this.spawnChild();
   }
@@ -253,9 +267,10 @@ export class PresentMonReader {
       this.child = null;
       this.trackers.clear();
       this.locked = null;
-      // Una muerte por su cuenta (típicamente: sin permisos para la sesión ETW) no se reintenta,
-      // para no encadenar arranques fallidos. Un reinicio nuestro sí vuelve a levantarlo.
-      if (!this.reiniciando) this.failed = true;
+      // Una muerte por su cuenta (típicamente: sin permisos para la sesión ETW) se anota con la
+      // hora, no se marca como fallo terminal: `reintentarSiMurio` la recupera espaciada. Un
+      // reinicio nuestro no cuenta como muerte — lo relanza el propio watchdog.
+      if (!this.reiniciando) this.muertoEn = this.now();
     });
     this.child = child;
   }
@@ -292,6 +307,27 @@ export class PresentMonReader {
     this.spawnChild();
   }
 
+  /**
+   * Relanza PresentMon si murió y ya toca. Camino aparte del watchdog: aquel cubre «vivo pero mudo»
+   * y este «se fue». Comparten reloj, contador y cadencia, así que un proceso que alterna entre
+   * caerse y quedarse mudo escala igual hacia la cadencia lenta en vez de reintentar sin freno.
+   */
+  private reintentarSiMurio(now: number): void {
+    if (this.child || this.muertoEn === null || this.failed) return;
+    const lento = this.reintentos >= MAX_REINTENTOS;
+    if (now - this.muertoEn < (lento ? REINTENTO_LENTO_MS : REINTENTO_MUERTE_MS)) return;
+    this.reintentos++;
+    if (!lento) {
+      console.warn(`[perf] PresentMon murió; reintento ${this.reintentos}/${MAX_REINTENTOS}`);
+    } else if (this.reintentos === MAX_REINTENTOS + 1) {
+      console.warn(
+        `[perf] PresentMon sigue cayéndose; se reintentará cada ${REINTENTO_LENTO_MS / 1000}s.`,
+      );
+    }
+    this.muertoEn = null;
+    this.spawnChild();
+  }
+
   stop(): void {
     // El kill dispara `exit`; sin esta marca se interpretaría como muerte por su cuenta.
     this.reiniciando = true;
@@ -299,6 +335,7 @@ export class PresentMonReader {
     this.reiniciando = false;
     this.child = null;
     this.failed = false;
+    this.muertoEn = null;
     this.cols = null;
     this.lineas = 0;
     this.reintentos = 0;
@@ -359,6 +396,9 @@ export class PresentMonReader {
    */
   fps(): number | null {
     const now = this.now();
+    // Primero recuperar al muerto (si toca) y luego vigilar al vivo: así el watchdog no evalúa a un
+    // proceso recién nacido, que aún no ha tenido tiempo de entregar nada.
+    this.reintentarSiMurio(now);
     this.watchdog(now);
     for (const [exe, tracker] of this.trackers) {
       if (now - tracker.lastAt() > PRUNE_MS) this.trackers.delete(exe);

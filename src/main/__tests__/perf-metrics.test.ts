@@ -109,7 +109,10 @@ describe('SensorsReader', () => {
     expect(reader.latest()).toEqual(EMPTY_SENSOR_READING);
   });
 
-  it('tras morir no se relanza solo, pero stop() + start() sí reintenta', () => {
+  it('tras morir, start() no lo relanza en caliente; stop() + start() sí fuerza', () => {
+    // El relanzado automático existe pero es ESPACIADO (ver los tests de recuperación de más abajo):
+    // un `start()` inmediato —p. ej. al guardar otro ajuste cualquiera— no debe saltárselo. `stop()`
+    // sí borra el estado, así que es la vía explícita para forzar un intento ya.
     const fake = procesoFalso();
     const spawn = vi.fn().mockReturnValue(fake.proc);
     const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn });
@@ -195,6 +198,96 @@ describe('SensorsReader', () => {
 
     expect(reader.latest()).toEqual(EMPTY_SENSOR_READING);
   });
+
+  // --- Recuperación tras una muerte inesperada ---------------------------------------------------
+  //
+  // Antes, morir una vez dejaba las SIETE métricas de hardware en «—» el resto de la sesión, sin
+  // aviso: `failed` no se levantaba nunca. Ahora se relanza solo, espaciado.
+
+  it('si el helper muere, vuelve solo pasado el tiempo de reintento', () => {
+    let t = 0;
+    const primero = procesoFalso();
+    const segundo = procesoFalso();
+    const spawn = vi.fn().mockReturnValueOnce(primero.proc).mockReturnValueOnce(segundo.proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn, now: () => t });
+
+    reader.start({ cpu: false });
+    primero.emitExit();
+
+    // Enseguida no: relanzar en caliente encadenaría arranques fallidos.
+    reader.latest();
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    t += 10_000;
+    reader.latest();
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('al relanzarse tras morir conserva el modo que tenía', () => {
+    let t = 0;
+    const primero = procesoFalso();
+    const segundo = procesoFalso();
+    const spawn = vi.fn().mockReturnValueOnce(primero.proc).mockReturnValueOnce(segundo.proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn, now: () => t });
+
+    reader.start({ cpu: true });
+    primero.emitExit();
+    t += 10_000;
+    reader.latest();
+
+    // Si volviera sin `--cpu`, la temperatura no regresaría nunca aunque el helper sí.
+    expect(spawn).toHaveBeenLastCalledWith('C:\\fake.exe', ['--cpu']);
+  });
+
+  it('mientras está muerto no enseña cifras viejas', () => {
+    const fake = procesoFalso();
+    const reader = new SensorsReader({
+      helperPath: () => 'C:\\fake.exe',
+      spawn: () => fake.proc,
+      now: () => 0, // el reloj no avanza: aquí solo interesa el instante de la muerte
+    });
+
+    reader.start({ cpu: false });
+    fake.emitLine('{"gpuUsage":50}');
+    fake.emitExit();
+
+    // Un valor de hace un minuto presentado como actual es peor que un guion: el usuario no puede
+    // distinguirlo. (Distinto del relanzado por cambio de modo, donde el hueco es de ~1 s.)
+    expect(reader.latest()).toEqual(EMPTY_SENSOR_READING);
+  });
+
+  it('dos ticks seguidos no lo relanzan dos veces', () => {
+    let t = 0;
+    const primero = procesoFalso();
+    const spawn = vi.fn().mockReturnValue(primero.proc);
+    const reader = new SensorsReader({ helperPath: () => 'C:\\fake.exe', spawn, now: () => t });
+
+    reader.start({ cpu: false });
+    primero.emitExit();
+    t += 10_000;
+    reader.latest();
+    reader.latest();
+    reader.latest();
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('sin binario sigue sin reintentar (eso no se arregla esperando)', () => {
+    let t = 0;
+    const helperPath = vi.fn().mockReturnValue(null);
+    const reader = new SensorsReader({
+      helperPath,
+      spawn: () => procesoFalso().proc,
+      now: () => t,
+    });
+
+    reader.start({ cpu: false });
+    t += 120_000;
+    reader.latest();
+    reader.latest();
+
+    expect(helperPath).toHaveBeenCalledTimes(1);
+  });
 });
 
 // -------------------------------------------------------------------------------------- PresentMon
@@ -247,6 +340,74 @@ function readerFalso() {
     },
   };
 }
+
+describe('presentmon — recuperación tras morir', () => {
+  /** Como `readerFalso`, pero cada spawn devuelve un proceso nuevo (hace falta para relanzados). */
+  function readerConRelanzado() {
+    let t = 0;
+    const procesos: ReturnType<typeof procesoFalso>[] = [];
+    const spawn = vi.fn().mockImplementation(() => {
+      const p = procesoFalso();
+      procesos.push(p);
+      return p.proc;
+    });
+    const reader = new PresentMonReader({
+      helperPath: () => 'C:\\pm.exe',
+      spawn,
+      selfExe: () => 'GameClip.exe',
+      now: () => t,
+    });
+    return { reader, spawn, procesos, avanzar: (ms: number) => (t += ms) };
+  }
+
+  it('si PresentMon muere, vuelve solo pasado el tiempo de reintento', () => {
+    // Antes esto dejaba los FPS en «—» el resto de la sesión, en silencio.
+    const { reader, spawn, procesos, avanzar } = readerConRelanzado();
+    reader.start();
+    procesos[0].emitExit();
+
+    reader.fps();
+    expect(spawn).toHaveBeenCalledTimes(1); // en caliente no
+
+    avanzar(10_000);
+    reader.fps();
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('los reintentos por muerte se espacian en vez de encadenarse', () => {
+    const { reader, spawn, procesos, avanzar } = readerConRelanzado();
+    reader.start();
+
+    // Muere una y otra vez nada más arrancar: el peor caso para un bucle de arranques.
+    for (let i = 0; i < 6; i++) {
+      procesos[procesos.length - 1].emitExit();
+      avanzar(10_000);
+      reader.fps();
+    }
+
+    // Con cadencia lenta (60 s) los últimos intentos ya no caben en ventanas de 10 s: se frena solo.
+    expect(spawn.mock.calls.length).toBeLessThan(7);
+    expect(spawn.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('sin binario no reintenta', () => {
+    let t = 0;
+    const helperPath = vi.fn().mockReturnValue(null);
+    const reader = new PresentMonReader({
+      helperPath,
+      spawn: vi.fn(),
+      selfExe: () => 'GameClip.exe',
+      now: () => t,
+    });
+
+    reader.start();
+    t += 120_000;
+    reader.fps();
+    reader.fps();
+
+    expect(helperPath).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('presentmon', () => {
   it('captura todos los procesos y excluye compositor y la propia app', () => {
@@ -576,7 +737,9 @@ describe('presentmon', () => {
     expect(Math.round(reader.fps()!)).toBe(100);
   });
 
-  it('tras morir no se relanza solo, pero stop() + start() reintenta', () => {
+  it('tras morir, start() no lo relanza en caliente; stop() + start() sí fuerza', () => {
+    // El relanzado automático es espaciado (ver «recuperación tras morir»): un `start()` inmediato
+    // no debe adelantarlo. `stop()` borra el estado y por eso sí fuerza un intento ya.
     const { reader, fake, spawn } = readerFalso();
     reader.start();
     fake.emitExit(); // muerte temprana: sin permisos
