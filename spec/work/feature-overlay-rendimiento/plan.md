@@ -213,6 +213,33 @@ visible, se **re-eleva cada 2 s**; justo después re-eleva los avisos (`OverlayC
 que comparten banda y por tanto siguen ganando. El re-elevado periódico cubre además el caso de un
 juego que arranca *después* del overlay.
 
+### R5. PresentMon 2.x (obligatorio para multiplicadores de frames)
+
+**Causa raíz:** PresentMon **1.10 no contabiliza los frames generados** por DLSS Frame Generation y
+equivalentes; peor aún, en `Composed: Flip` (ventana sin bordes) subcontaba incluso los renderizados.
+Medido en RE Requiem con DLSS FG activo, contra el overlay de Steam que mostraba `DLSS 128 | FPS 64`:
+
+| Medición | Resultado |
+|---|---|
+| PresentMon 1.10 | ~19–61 fps (por debajo incluso de los 64 renderizados) |
+| PresentMon 2.5.1 | **133 fps** ≈ los 128 con generación de frames de Steam |
+
+**Arreglo:** migración a PresentMon 2.5.1. Los flags pasan a doble guion, `-captureall` desaparece
+(omitir `--process_name` ya captura todo) y `-no_top` se llama `--no_console_stats`. Las columnas que
+leemos (`Application`, `MsBetweenPresents`) existen igual en la 2.x, así que el parseo no cambia.
+
+### R6. Watchdog de "vivo pero mudo"
+
+**Causa raíz:** las sesiones ETW **sobreviven al proceso** que las creó. Con sesiones huérfanas
+acumuladas (de cierres sucios propios o de otros capturadores: overlay de Steam, NVIDIA App) Windows
+agota los cupos del proveedor y PresentMon arranca **sin error pero sin recibir un solo evento**. Los
+FPS quedaban en «—» para siempre, en silencio y sin rastro en logs — costó una sesión entera de
+diagnóstico.
+
+**Arreglo:** si el proceso lleva `NO_DATA_MS` (12 s) vivo sin entregar una línea, se reinicia (hasta
+3 veces, avisando por consola). El reinicio recupera de paso la sesión huérfana propia vía
+`--stop_existing_session`.
+
 ### Archivos del refinamiento
 
 - `src/shared/perf.ts` — `fontSize` en config + normalización.

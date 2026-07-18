@@ -85,6 +85,26 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
       FPS que **se mantienen en segundo plano**, FPS con multiplicador activo, y overlay visible en
       RE Requiem sin alt+tab.
 
+### Segunda ronda (2026-07-18, probando RE Requiem con DLSS FG)
+
+- [x] R5. Migración a **PresentMon 2.5.1**: la 1.10 no cuenta los frames generados por DLSS Frame
+      Generation (daba ~19–61 fps donde Steam marcaba `DLSS 128 | FPS 64`); la 2.5.1 mide **133 fps**,
+      coincidiendo con el total con generación. Flags a doble guion, `--no_console_stats` y sin
+      `--process_name` (captura todo). El parseo no cambió: las columnas siguen siendo `Application`
+      y `MsBetweenPresents`.
+- [x] R6. Watchdog de "vivo pero mudo": reinicia PresentMon si no entrega ninguna línea en 12 s
+      (máx. 3 intentos). Cubre el caso de cupos ETW agotados por sesiones huérfanas.
+- [x] Tests de ambos: cabecera real de la 2.x, flags de doble guion, watchdog (reintenta, se rinde
+      al tope, y no actúa si llegan líneas). **820 tests verdes.**
+- [ ] Pendiente del owner: confirmar en pantalla que el contador coincide con el `DLSS` de Steam.
+
+### Hallazgo de sesiones ETW (documentado)
+
+Las sesiones ETW **sobreviven al proceso** que las creó: matar PresentMon deja la sesión viva. Con
+varias huérfanas (propias o de Steam/NVIDIA App, que capturan igual) Windows agota los cupos del
+proveedor y PresentMon arranca sin error pero **no recibe ni un evento** — síntoma: FPS en «—» sin
+ninguna pista. Se limpian con `logman stop <nombre> -ets`. El watchdog de R6 lo mitiga.
+
 ### Hallazgo de permisos (documentado)
 
 Sin privilegios de administrador PresentMon **no arranca la sesión ETW** (`access denied`, exit 6):

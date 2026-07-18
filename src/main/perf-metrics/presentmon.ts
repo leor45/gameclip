@@ -4,12 +4,17 @@ import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { LineProcess } from './sensors';
 
-// Wrapper de PresentMon (Intel, MIT): mide los FPS reales leyendo por ETW los eventos Present. Corre
-// en modo -captureall (todos los procesos) y mantiene un contador por proceso; el overlay muestra
-// los FPS del proceso "enganchado" (el juego) mientras siga presentando, y si deja de hacerlo salta
-// al de mayor tasa. Así los FPS no dependen de la detección de juegos ni se pierden al pasar la app
-// a segundo plano (mientras siga presentando). Los frames generados por multiplicadores (DLSS/FSR
-// Frame Generation) cuentan solos: se presentan por el swap chain, así que entran en msBetweenPresents.
+// Wrapper de PresentMon 2.x (Intel, MIT): mide los FPS leyendo por ETW los eventos de presentación.
+// Captura TODOS los procesos y mantiene un contador por proceso; el overlay muestra los FPS del
+// proceso "enganchado" (el juego) mientras siga presentando, y si deja de hacerlo salta al de mayor
+// tasa. Así los FPS no dependen de la detección de juegos ni se pierden al pasar la app a segundo
+// plano (mientras siga presentando).
+//
+// Por qué la 2.x y no la 1.x: la 1.10 NO contabiliza los frames que generan los multiplicadores
+// (DLSS Frame Generation y equivalentes). Medido en RE Requiem con DLSS FG activo contra el overlay
+// de Steam (que mostraba «DLSS 128 | FPS 64»): la 1.10 daba ~19-61 fps y la 2.5.1 daba 133, que es
+// el total con frames generados. Las columnas que leemos (`Application`, `MsBetweenPresents`) están
+// en ambas, así que el parseo no cambió al migrar.
 //
 // Requiere admin (sesión ETW); sin permisos el proceso muere enseguida y los FPS quedan en null.
 
@@ -22,27 +27,38 @@ const FPS_WINDOW_MS = 1000;
 const STALE_MS = 2000;
 /** Proceso sin muestras en este margen: se olvida (poda del mapa). */
 const PRUNE_MS = 5000;
+/**
+ * PresentMon vivo pero sin entregar UNA sola línea en este tiempo = su sesión ETW no está
+ * recibiendo eventos. Pasa de verdad: si quedan sesiones huérfanas (de un cierre sucio propio o de
+ * otros capturadores como el overlay de Steam o la NVIDIA App), Windows agota los cupos del
+ * proveedor y PresentMon arranca «bien» pero mudo, sin error ni salida. Sin este watchdog los FPS
+ * se quedaban en «—» para siempre y en silencio.
+ */
+const NO_DATA_MS = 12_000;
+/** Reintentos antes de rendirse (no insistir eternamente si la máquina no puede capturar). */
+const MAX_REINTENTOS = 3;
 
 // Procesos que nunca son "el juego": el compositor de Windows y (se añade en runtime) la propia
 // GameClip. El overlay y la ventana de la app presentan frames pero no son lo que el usuario mide.
 const DENYLIST_BASE = ['dwm.exe'];
 
 /**
- * Argumentos para capturar todos los procesos por stdout. `-captureall` es el modo por defecto pero
- * se explicita; `-exclude` quita el compositor y GameClip; `-stop_existing_session` limpia una
- * sesión ETW huérfana de un cierre sucio. Sin elevación PresentMon NO se relanza como admin por su
- * cuenta (eso es opt-in con `-restart_as_admin`, que no se pasa): falla y GameClip degrada a «—».
+ * Argumentos de PresentMon 2.x (flags con doble guion). Sin `--process_name` captura TODOS los
+ * procesos, que es lo que queremos: los FPS no dependen de la detección de juegos. `--exclude` quita
+ * el compositor y GameClip; `--no_console_stats` evita que la vista de swap chains salga por la
+ * misma salida y ensucie el CSV; `--stop_existing_session` recupera una sesión ETW huérfana de un
+ * cierre sucio anterior.
+ *
+ * Sin elevación PresentMon no puede abrir la sesión ETW y muere: GameClip degrada los FPS a «—».
  */
 export function presentMonArgs(excludeExe: string[]): string[] {
   const args = [
-    '-captureall',
-    '-output_stdout',
-    // Sin esto PresentMon puede pintar su vista de swap chains por la misma salida y ensuciar el CSV.
-    '-no_top',
-    '-stop_existing_session',
-    '-session_name', 'GameClipPerf',
+    '--output_stdout',
+    '--no_console_stats',
+    '--stop_existing_session',
+    '--session_name', 'GameClipPerf',
   ];
-  for (const exe of excludeExe) args.push('-exclude', exe);
+  for (const exe of excludeExe) args.push('--exclude', exe);
   return args;
 }
 
@@ -129,6 +145,12 @@ export class PresentMonReader {
   /** Proceso cuyos FPS se muestran; se mantiene mientras presente. */
   private locked: string | null = null;
   private readonly now: () => number;
+  /** Líneas recibidas del proceso vivo; 0 tras `NO_DATA_MS` dispara el watchdog. */
+  private lineas = 0;
+  private arrancadoEn = 0;
+  private reintentos = 0;
+  /** Reinicio propio en curso: su `exit` no debe marcar el reader como fallido. */
+  private reiniciando = false;
 
   constructor(private readonly deps: PresentMonDeps) {
     this.now = deps.now ?? (() => Date.now());
@@ -138,31 +160,67 @@ export class PresentMonReader {
 
   start(): void {
     if (this.child || this.failed) return;
+    this.reintentos = 0;
+    this.spawnChild();
+  }
+
+  private spawnChild(): void {
     const exePath = this.deps.helperPath();
     if (!exePath) {
       this.failed = true;
       return;
     }
-    const exclude = [...this.denylist];
-    const child = this.deps.spawn(exePath, presentMonArgs(exclude));
+    const child = this.deps.spawn(exePath, presentMonArgs([...this.denylist]));
     this.cols = null;
-    child.onLine((line) => this.onLine(line));
+    this.lineas = 0;
+    this.arrancadoEn = this.now();
+    child.onLine((line) => {
+      this.lineas++;
+      this.onLine(line);
+    });
     child.onExit(() => {
-      if (this.child === child) {
-        this.child = null;
-        this.failed = true; // muerte temprana = sin permisos: no reintentar hasta stop()+start()
-        this.trackers.clear();
-        this.locked = null;
-      }
+      if (this.child !== child) return;
+      this.child = null;
+      this.trackers.clear();
+      this.locked = null;
+      // Una muerte por su cuenta (típicamente: sin permisos para la sesión ETW) no se reintenta,
+      // para no encadenar arranques fallidos. Un reinicio nuestro sí vuelve a levantarlo.
+      if (!this.reiniciando) this.failed = true;
     });
     this.child = child;
   }
 
+  /**
+   * PresentMon vivo pero sin entregar una sola línea: su sesión no recibe eventos (cupos del
+   * proveedor agotados por sesiones huérfanas, propias o de otros capturadores). Se reinicia el
+   * proceso —`-stop_existing_session` recupera de paso nuestra propia sesión huérfana— con un tope
+   * de reintentos.
+   */
+  private watchdog(now: number): void {
+    if (!this.child || this.lineas > 0) return;
+    if (now - this.arrancadoEn < NO_DATA_MS) return;
+    if (this.reintentos >= MAX_REINTENTOS) return;
+    this.reintentos++;
+    console.warn(
+      `[perf] PresentMon no entregó datos en ${NO_DATA_MS / 1000}s; reintento ${this.reintentos}/${MAX_REINTENTOS}`,
+    );
+    this.reiniciando = true;
+    this.child.kill();
+    this.child = null;
+    this.reiniciando = false;
+    this.spawnChild();
+  }
+
   stop(): void {
+    // El kill dispara `exit`; sin esta marca se interpretaría como muerte por su cuenta.
+    this.reiniciando = true;
     this.child?.kill();
+    this.reiniciando = false;
     this.child = null;
     this.failed = false;
     this.cols = null;
+    this.lineas = 0;
+    this.reintentos = 0;
     this.trackers.clear();
     this.locked = null;
   }
@@ -191,6 +249,7 @@ export class PresentMonReader {
    */
   fps(): number | null {
     const now = this.now();
+    this.watchdog(now);
     // Poda.
     for (const [exe, tracker] of this.trackers) {
       if (now - tracker.lastAt() > PRUNE_MS) this.trackers.delete(exe);

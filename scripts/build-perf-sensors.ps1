@@ -54,13 +54,22 @@ Copy-Item $lhmDll (Join-Path $outDir "LibreHardwareMonitorLib.dll") -Force
 Copy-Item $hidDll (Join-Path $outDir "HidSharp.dll") -Force
 
 # --- PresentMon (Intel, MIT): FPS reales por ETW ---------------------------------------------------
-# No se compila: se descarga el binario oficial del release de GitHub (x64, ~380 KB) y se cachea.
-$pmVersion = "1.10.0"
+# No se compila: se descarga el binario oficial del release de GitHub (x64, ~0,9 MB) y se cachea.
+#
+# La 2.x es OBLIGATORIA, no un capricho de estar al dia: la 1.10 no contabiliza los frames que
+# generan las tecnologias de multiplicacion (DLSS Frame Generation y equivalentes). Medido contra
+# el overlay de Steam en RE Requiem con DLSS FG activo: la 1.10 reportaba ~19-61 fps (por debajo
+# incluso de los 64 renderizados) mientras la 2.5.1 daba 133 fps, coincidiendo con los 128 que
+# marcaba Steam como total con generacion de frames.
+$pmVersion = "2.5.1"
 $pmExe = Join-Path $outDir "gc-presentmon.exe"
-if (-not (Test-Path $pmExe)) {
+$pmMarker = Join-Path $outDir "gc-presentmon.version"
+$pmActual = if (Test-Path $pmMarker) { (Get-Content $pmMarker -Raw).Trim() } else { "" }
+if ((-not (Test-Path $pmExe)) -or ($pmActual -ne $pmVersion)) {
     Write-Host "Descargando PresentMon $pmVersion..."
     $pmUrl = "https://github.com/GameTechDev/PresentMon/releases/download/v$pmVersion/PresentMon-$pmVersion-x64.exe"
     Invoke-WebRequest -Uri $pmUrl -OutFile $pmExe
+    Set-Content -Path $pmMarker -Value $pmVersion -Encoding ascii
 }
 
 Write-Host "OK: $outExe (+ LibreHardwareMonitorLib.dll, HidSharp.dll) y $pmExe"

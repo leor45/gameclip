@@ -125,7 +125,14 @@ describe('SensorsReader', () => {
 
 // -------------------------------------------------------------------------------------- PresentMon
 
-const CABECERA = 'Application,ProcessID,SwapChainAddress,SyncInterval,msBetweenPresents,msInPresentAPI';
+// Cabecera real de PresentMon 2.5.1 (recortada): las columnas que leemos van en 0 y 11.
+const CABECERA =
+  'Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,FrameType,TimeInMs,MsBetweenSimulationStart,MsBetweenPresents,MsBetweenDisplayChange';
+
+/** Fila CSV con el layout de PresentMon 2.x (MsBetweenPresents en la columna 11). */
+function fila(exe: string, ms: number): string {
+  return [exe, '123', '0x0', 'DXGI', '0', '0', '0', 'Composed: Flip', 'Application', '0', '0', String(ms), String(ms)].join(',');
+}
 
 /** Reader con un proceso falso y reloj controlado. */
 function readerFalso() {
@@ -148,7 +155,7 @@ function readerFalso() {
     presentar: (exe: string, ms: number, n: number) => {
       for (let i = 0; i < n; i++) {
         t += ms;
-        fake.emitLine(`${exe},123,0x0,0,${ms},1.0`);
+        fake.emitLine(fila(exe, ms));
       }
     },
   };
@@ -157,19 +164,19 @@ function readerFalso() {
 describe('presentmon', () => {
   it('captura todos los procesos y excluye compositor y la propia app', () => {
     const args = presentMonArgs(['dwm.exe', 'gameclip.exe']);
-    expect(args).toContain('-captureall');
-    expect(args).toContain('-output_stdout');
-    // La vista interactiva de swap chains iría por la misma salida y rompería el parseo del CSV.
-    expect(args).toContain('-no_top');
-    // No se apunta a un proceso concreto: los FPS no dependen del juego detectado.
-    expect(args).not.toContain('-process_name');
-    expect(args.join(' ')).toContain('-exclude dwm.exe');
-    expect(args.join(' ')).toContain('-exclude gameclip.exe');
-    expect(args.join(' ')).not.toContain('restart_as_admin');
+    expect(args).toContain('--output_stdout');
+    // La vista de swap chains iría por la misma salida y rompería el parseo del CSV.
+    expect(args).toContain('--no_console_stats');
+    // Sin --process_name captura todo: los FPS no dependen del juego detectado.
+    expect(args).not.toContain('--process_name');
+    expect(args.join(' ')).toContain('--exclude dwm.exe');
+    expect(args.join(' ')).toContain('--exclude gameclip.exe');
+    // Flags de PresentMon 2.x: doble guion (los de la 1.x eran de guion simple).
+    expect(args.every((a) => !a.startsWith('-') || a.startsWith('--'))).toBe(true);
   });
 
-  it('lee las columnas Application y msBetweenPresents de la cabecera', () => {
-    expect(parseCsvHeader(CABECERA)).toEqual({ application: 0, msBetweenPresents: 4 });
+  it('lee las columnas Application y MsBetweenPresents de la cabecera de PresentMon 2.x', () => {
+    expect(parseCsvHeader(CABECERA)).toEqual({ application: 0, msBetweenPresents: 11 });
     expect(parseCsvHeader('a,b,c')).toBeNull();
   });
 
@@ -201,7 +208,7 @@ describe('presentmon', () => {
     // Aparece un vídeo de navegador a 60 fps: NO debe robar la lectura (enganchado al juego).
     for (let i = 0; i < 40; i++) {
       presentar('eden.exe', 33, 1);
-      fake.emitLine(`chrome.exe,999,0x0,0,16.6,1.0`);
+      fake.emitLine(fila('chrome.exe', 16.6));
     }
     expect(Math.round(reader.fps()!)).toBe(30);
   });
@@ -234,10 +241,76 @@ describe('presentmon', () => {
     reader.start();
     fake.emitLine(CABECERA);
     for (let i = 0; i < 40; i++) {
-      fake.emitLine('dwm.exe,4,0x0,0,16.6,1.0');
-      fake.emitLine('GameClip.exe,5,0x0,0,16.6,1.0');
+      fake.emitLine(fila('dwm.exe', 16.6));
+      fake.emitLine(fila('GameClip.exe', 16.6));
     }
     expect(reader.fps()).toBeNull();
+  });
+
+  it('reinicia PresentMon si arranca vivo pero mudo (sesión ETW sin eventos)', () => {
+    // Caso real: con los cupos del proveedor ETW agotados por sesiones huérfanas, PresentMon
+    // arranca sin error pero no entrega una sola línea, y los FPS quedaban en «—» en silencio.
+    const fake = procesoFalso();
+    let t = 0;
+    const spawn = vi.fn().mockReturnValue(fake.proc);
+    const reader = new PresentMonReader({
+      helperPath: () => 'C:\\pm.exe',
+      spawn,
+      selfExe: () => 'GameClip.exe',
+      now: () => t,
+    });
+    reader.start();
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    // Aún dentro del margen: no se toca.
+    t = 5000;
+    expect(reader.fps()).toBeNull();
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    // Pasado el margen sin una sola línea: se reinicia el proceso.
+    t = 13_000;
+    expect(reader.fps()).toBeNull();
+    expect(spawn).toHaveBeenCalledTimes(2);
+    // Y el reinicio propio NO debe marcarlo como fallido para siempre.
+    t = 26_000;
+    reader.fps();
+    expect(spawn).toHaveBeenCalledTimes(3);
+  });
+
+  it('el watchdog se rinde tras los reintentos y no insiste eternamente', () => {
+    const fake = procesoFalso();
+    let t = 0;
+    const spawn = vi.fn().mockReturnValue(fake.proc);
+    const reader = new PresentMonReader({
+      helperPath: () => 'C:\\pm.exe',
+      spawn,
+      selfExe: () => 'GameClip.exe',
+      now: () => t,
+    });
+    reader.start();
+    for (let i = 1; i <= 6; i++) {
+      t += 13_000;
+      reader.fps();
+    }
+    // 1 arranque + 3 reintentos como máximo.
+    expect(spawn).toHaveBeenCalledTimes(4);
+  });
+
+  it('si llegan líneas, el watchdog no reinicia nada', () => {
+    const fake = procesoFalso();
+    let t = 0;
+    const spawn = vi.fn().mockReturnValue(fake.proc);
+    const reader = new PresentMonReader({
+      helperPath: () => 'C:\\pm.exe',
+      spawn,
+      selfExe: () => 'GameClip.exe',
+      now: () => t,
+    });
+    reader.start();
+    fake.emitLine(CABECERA);
+    t = 30_000;
+    reader.fps();
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it('tras morir no se relanza solo, pero stop() + start() reintenta', () => {
