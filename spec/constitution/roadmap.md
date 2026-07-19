@@ -1117,67 +1117,74 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
-### 🐞 El game capture no engancha juegos con anti-cheat (Helldivers 2)
+### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
 
 **Síntoma:** con HD2 detectado, el clip sale **negro y sin audio del juego**. Reportado por un
-usuario y reproducido en la máquina del owner.
+usuario en la 0.8.1 y reproducido en la máquina del owner.
 
-**Causa raíz medida** (sonda `probe/captura-hook-diagnostico`, 2026-07-19): libobs **sí ve la
-ventana**, pero no puede resolver su proceso y escribe `unknown` en el campo del ejecutable:
+**Causa raíz (medida el 2026-07-19, tras descartar tres hipótesis):** nProtect GameGuard **deniega
+el acceso al proceso del juego a los binarios sin firma Authenticode**. El `obs64.exe` que
+distribuye `@streamlabs/obs-studio-node` —el proceso donde corre libobs y desde donde se hacen las
+llamadas— **va sin firmar**, y es el único eslabón sin firma de toda la cadena:
 
-```
-HELLDIVERS™ 2:stingray_window:unknown
-```
+| Binario | Firma |
+|---|---|
+| `Medal.exe` | Valid — `CN=Medal B.V.` |
+| `obs64.exe` de OBS Studio | Valid — `CN=OBS Project, LLC` |
+| **`obs64.exe` de obs-studio-node** | **NotSigned** |
+| `graphics-hook64.dll` (el nuestro) | Valid — OBS Project |
+| `inject-helper64.exe` (el nuestro) | Valid — OBS Project |
 
-El formato es `título:clase:ejecutable`, y `resolveGameWindow()` compara justo el último campo
-(`'unknown' === 'helldivers2.exe'` → false). O sea: **buscamos por el único campo que el anti-cheat
-oculta**, teniendo título y clase disponibles. Sin match cae a `any_fullscreen`, que tampoco engancha
-porque también pide el process id (`error acquiring, failed to get window thread/process ids: 2`).
+Sin firma, `get_window_exe` no puede resolver el proceso dueño de la ventana y libobs lista
+`HELLDIVERS™ 2:stingray_window:unknown`; `GetWindowThreadProcessId` devuelve 0; y `OpenProcess` con
+derechos de inyección da `ERROR_ACCESS_DENIED`. De ahí los 82 `error acquiring, failed to get window
+thread/process ids` y el lienzo negro.
 
-Lo mismo rompe el audio: `processCaptureSettings` monta `::<exe>`, otro matcher por ejecutable.
+**Verificado por contraste**, misma máquina y misma noche:
 
-**Descartado:** no son privilegios (`Running as administrator: true` falla idéntico). No es la
-versión 0.9.0 (pasa en 0.8.1). No es que HD2 sea incapturable: Medal lo captura.
-
-**Estado (2026-07-19):** implementado en `fix/game-capture-ventana-sin-ejecutable`, **pendiente de
-verificar con una sesión real de Helldivers 2**. `resolveGameWindow` gana un segundo criterio
-subordinado: si el match por ejecutable falla y la ventana trae `unknown`, empareja por **título
-normalizado** contra el ejecutable detectado (`'HELLDIVERS™ 2'` → `helldivers2`), y `priority` pasa
-a clase. Sin candidata inequívoca devuelve `null` y se queda como hoy. El camino de los juegos que
-ya enganchan no cambia (blindado con test de regresión).
-
-**Segunda causa, medida en la sesión 1 de verificación (2026-07-19):** el matcher arreglado **sí
-resolvía** la ventana (`SÍ → HELLDIVERS™ 2:stingray_window:unknown` en la sonda, donde antes salía
-`NO`), pero **no se aplicaba nunca**. El pipeline se construye al aparecer el **proceso**, y con
-anti-cheat la **ventana** aparece 8 s después (proceso 05:35:43 · ventana 05:35:51). Como solo se
-apuntaba una vez, el game capture se quedó en `any_fullscreen` los dos minutos de la sesión. Mismo
-problema en el audio: `::helldivers2.exe` fijado al crear la fuente y nunca re-apuntado.
-
-Arreglado con un bucle de re-apuntado acotado (`AIM_RETRY_INTERVAL_MS` 5 s × `AIM_RETRY_MAX` 24):
-para en cuanto apunta, y agotado el tope se queda como antes. **Pendiente de la sesión 2.**
-
-**Lo que sigue sin estar comprobado:** que el hook **enganche** una vez apuntado. Si GameGuard además
-bloquea la inyección de `graphics-hook64.dll`, esto no basta y hará falta otra estrategia. El audio
-por proceso puede fallar aunque el vídeo funcione: necesita el PID para la sesión de loopback, y
-encontrar la ventana no garantiza obtenerlo.
-
-**Lección de método:** en la investigación previa llegué a proponer el timing como causa y luego lo
-**descarté** al ver la ventana presente en la lista — pero aquellas muestras se tomaron con el juego
-ya arrancado. Generalizar «está en la lista» a «siempre estuvo» costó una sesión de verificación
-entera. Las dos causas eran reales y ambas necesarias.
-
-**Valores reales de `priority`** (volcados de la propiedad-lista de libobs el 2026-07-19; una
-anotación anterior de este roadmap tenía el 0 y el 1 **invertidos**):
-
-| Valor | Literal de libobs | Significado |
+| Escenario | Lista de libobs | Hook |
 |---|---|---|
-| `0` | «Coincidir con el título, de lo contrario buscar ventana del mismo **tipo**» | clase |
-| `1` | «El título de la ventana debe coincidir» | título |
-| `2` | «Coincidir con el título, de lo contrario buscar ventana del mismo **ejecutable**» | ejecutable |
+| `obs64.exe` sin firmar | `…:stingray_window:unknown` | `0x0` durante 3 min |
+| **`obs64.exe` firmado** (certificado de prueba) | `…:stingray_window:helldivers2.exe` | `2560x1440`, `d3d12 shared texture capture successful` |
+| OBS Studio (firmado por OBS Project) | `…:helldivers2.exe` | captura sin problema |
 
-Ojo con la semántica: **no** es «matchear solo por este campo». El título se intenta siempre
-primero y el valor elige el campo de respaldo. Mismos valores en `game_capture` y en
-`wasapi_process_output_capture`.
+Con la firma puesta, el clip salió con imagen (0 frames negros, YAVG 62.5) **y con la pista de audio
+del juego a −28.1 dB**, con las pistas separadas intactas.
+
+**Hipótesis descartadas por el camino** (anotadas para no repetirlas):
+
+- *«El matcher busca por el campo que el anti-cheat oculta.»* Se implementó emparejado por título
+  normalizado; resolvía la ventana y el hook fallaba igual. Retirado.
+- *«HD2 es Vulkan y hay que registrar una capa como hace Medal.»* HD2 es **D3D12**
+  (`d3d12_init` en el log). La carpeta Vulkan de Medal despistó.
+- *«Nuestro backend lleva vivo desde antes que el juego y por eso lo bloquean.»* Un `obs64.exe`
+  recién lanzado y muy posterior al juego enumera `unknown` igual.
+- *«Es cuestión de privilegios.»* Elevar a administrador no cambia **nada**, ni en PowerShell ni en
+  la app. Era el dato que no encajaba con ninguna teoría hasta que apareció la firma.
+- *«WGC (`window_capture`) esquivaría el bloqueo.»* Se congelaría al minimizar el juego, donde Medal
+  sigue capturando — HD2 sigue renderizando minimizado. Descartado por el owner con esa prueba.
+
+**Nota sobre Medal:** su captura es **libobs renombrado**. Su manifiesto de capa Vulkan conserva la
+función `OBS_Negotiate` y la variable `DISABLE_VULKAN_MEDAL_OBS_CAPTURE`. No usan otra tecnología:
+usan la misma, firmada.
+
+**Estado:** el arreglo **no es código**. Opciones, por orden de coste:
+
+1. **Pedir a Streamlabs que firme su `obs64.exe`** (`obs-studio-node` es open source). Gratis y
+   arreglaría el problema para todos los que usan la librería.
+2. **SignPath Foundation**: firma de código gratuita para proyectos open source. GameClip cumple los
+   requisitos aparentes (repo público, GPL-3.0, releases publicadas).
+3. **Certificado propio**: OV desde ~$219/año, y desde el 2026-02-23 con token hardware o HSM
+   obligatorio también para OV. Azure Artifact Signing sale a $9.99/mes pero para individuales solo
+   está disponible en EE.UU. y Canadá.
+4. **Autofirmado** para un círculo cerrado: funciona (así se verificó), pero exige que cada usuario
+   instale la raíz de confianza, con lo que eso implica. No debe publicarse en el repo.
+
+**Lección de método:** esta entrada tuvo **tres causas raíz distintas escritas como definitivas**
+antes de la correcta. Todas eran deducciones desde señales indirectas —la lista de ventanas, un
+overlay en un frame, la resolución de un clip— y las tres las tumbó el owner con datos. Lo que
+funcionó fue medir directamente: comparar la firma de los binarios. Cuando una explicación deje un
+dato sin encajar (aquí: que elevar a admin no cambiara nada), ese dato es la pista, no el ruido.
 
 ### 🐞 El perfil de juego se decide por proceso, no por ventana (menú de LoL)
 

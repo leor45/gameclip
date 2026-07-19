@@ -13,7 +13,6 @@ import {
   faderDeflection,
   gameCaptureSettings,
   monitorCaptureSettings,
-  processCaptureSettings,
   resolveGameWindow,
   resolveMonitorId,
 } from '../capture/obs';
@@ -292,61 +291,6 @@ describe('resolveGameWindow', () => {
   });
 });
 
-// Lista real de la sonda durante una misión de Helldivers 2 (probe 2026-07-19). El anti-cheat
-// (GameGuard) impide a libobs resolver el proceso dueño de la ventana, así que el campo del
-// ejecutable llega como `unknown` — pero el título y la clase son correctos.
-const VENTANAS_HD2 = [
-  { name: '', value: '' },
-  { name: 'Buscar', value: 'Buscar:Windows.UI.Core.CoreWindow:SearchHost.exe' },
-  { name: '[unknown]: HELLDIVERS™ 2', value: 'HELLDIVERS™ 2:stingray_window:unknown' },
-  {
-    name: '[Code.exe]: Visual Studio Code',
-    value: 'gameclip - Visual Studio Code:Chrome_WidgetWin_1:Code.exe',
-  },
-];
-
-describe('resolveGameWindow — ventanas cuyo ejecutable libobs no puede leer', () => {
-  it('regresión (HD2 negro): con el exe en `unknown`, empareja por título normalizado', () => {
-    // Antes devolvía null porque solo comparaba el último campo ('unknown' !== 'helldivers2.exe'),
-    // el game capture se quedaba en any_fullscreen y el clip salía negro.
-    expect(resolveGameWindow(VENTANAS_HD2, 'helldivers2.exe')).toBe(
-      'HELLDIVERS™ 2:stingray_window:unknown',
-    );
-  });
-
-  it('el camino por ejecutable manda: no se toca lo que ya funcionaba', () => {
-    // Con match por exe disponible, ese gana aunque haya candidatas `unknown` en la lista.
-    expect(resolveGameWindow(VENTANAS_HD2, 'Code.exe')).toBe(
-      'gameclip - Visual Studio Code:Chrome_WidgetWin_1:Code.exe',
-    );
-  });
-
-  it('normaliza símbolos, acentos, espacios y mayúsculas a ambos lados', () => {
-    // Los ':' del título llegan escapados como '#3A' (así los emite libobs); la normalización
-    // tiene que quitarlos, no convertirlos en un '3a' que ensucie la comparación.
-    const lista = [{ name: '', value: 'Café#3A Edición™ Especial:motor_x:unknown' }];
-    expect(resolveGameWindow(lista, 'CafeEdicionEspecial.exe')).toBe(
-      'Café#3A Edición™ Especial:motor_x:unknown',
-    );
-  });
-
-  it('caso borde: título que no casa con el ejecutable → null (no se adivina)', () => {
-    expect(resolveGameWindow(VENTANAS_HD2, 'otrojuego.exe')).toBeNull();
-  });
-
-  it('caso borde: dos candidatas que casan → null (mejor negro que la ventana equivocada)', () => {
-    const ambiguas = [
-      { name: '', value: 'Helldivers 2:stingray_window:unknown' },
-      { name: '', value: 'HELLDIVERS 2:otra_clase:unknown' },
-    ];
-    expect(resolveGameWindow(ambiguas, 'helldivers2.exe')).toBeNull();
-  });
-
-  it('caso borde: sin ejecutable detectado no hay con qué emparejar', () => {
-    expect(resolveGameWindow(VENTANAS_HD2, null)).toBeNull();
-  });
-});
-
 describe('gameCaptureSettings', () => {
   const ventana = "Marvel's Spider-Man#3A Miles Morales v4.630.0.0:GameNxApp:MilesMorales.exe";
 
@@ -356,18 +300,6 @@ describe('gameCaptureSettings', () => {
       window: ventana,
       priority: 2,
     });
-  });
-
-  it('regresión: una ventana con ejecutable legible sigue emitiendo priority 2 (ejecutable)', () => {
-    // Blindaje del camino que ya funcionaba: el fix de HD2 no debe cambiarlo.
-    expect(gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, ventana)).toMatchObject({ priority: 2 });
-  });
-
-  it('con el ejecutable en `unknown` pide priority 0 = clase', () => {
-    // Valores volcados de libobs (2026-07-19): 0 = clase · 1 = título · 2 = ejecutable.
-    // Pedir 2 aquí sería pedir respaldo por un campo que el anti-cheat oculta.
-    const s = gameCaptureSettings(DEFAULT_CAPTURE_SETTINGS, 'HELLDIVERS™ 2:stingray_window:unknown');
-    expect(s).toMatchObject({ capture_mode: 'window', priority: 0 });
   });
 
   it('regresión: nunca emite la forma abreviada ::exe (no matchea, clip negro)', () => {
@@ -399,31 +331,6 @@ describe('gameCaptureSettings', () => {
       ventana,
     );
     expect(s).toMatchObject({ rgb10a2_space: '2100pq', capture_overlays: true });
-  });
-});
-
-describe('processCaptureSettings — audio por proceso', () => {
-  it('regresión: con el ejecutable legible mantiene la forma ::exe de siempre', () => {
-    // Este matcher SÍ acepta '::<exe>' (a diferencia de las fuentes de vídeo). Cambiarlo tocaría
-    // el audio de todas las apps para arreglar un caso que no las afecta.
-    expect(processCaptureSettings('Discord.exe')).toEqual({
-      window: '::Discord.exe',
-      priority: 2,
-    });
-    expect(processCaptureSettings('Discord.exe', REAL_WINDOWS[3].value)).toEqual({
-      window: '::Discord.exe',
-      priority: 2,
-    });
-  });
-
-  it('sin ejecutable no matchea nada (fuente silenciosa a la espera)', () => {
-    expect(processCaptureSettings(null)).toEqual({ window: '', priority: 2 });
-  });
-
-  it('con el ejecutable en `unknown` apunta a la ventana completa con priority de clase', () => {
-    expect(
-      processCaptureSettings('helldivers2.exe', 'HELLDIVERS™ 2:stingray_window:unknown'),
-    ).toEqual({ window: 'HELLDIVERS™ 2:stingray_window:unknown', priority: 0 });
   });
 });
 

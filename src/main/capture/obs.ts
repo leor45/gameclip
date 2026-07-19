@@ -508,45 +508,15 @@ export interface WindowItem {
   value: string;
 }
 
-/** Ejecutable que libobs escribe cuando no puede resolver el proceso dueño de la ventana. */
-const EXE_DESCONOCIDO = 'unknown';
-
 /**
- * Valores del enum `priority` de libobs, volcados de la propia propiedad-lista el 2026-07-19
- * (no de memoria: una anotación anterior tenía el 0 y el 1 invertidos).
+ * Campo de RESPALDO que se le pide a libobs al matchear una ventana. Valor volcado de la propia
+ * propiedad-lista el 2026-07-19: `0 = clase · 1 = título · 2 = ejecutable`.
  *
- * OJO con la semántica: no es «matchea SOLO por este campo». El título se intenta siempre primero
- * y el valor elige el campo de RESPALDO — los literales de libobs son «coincidir con el título, de
- * lo contrario buscar ventana del mismo tipo/ejecutable».
+ * OJO con la semántica: no es «matchea SOLO por este campo». El título se intenta siempre primero y
+ * el valor elige el campo de respaldo — los literales de libobs son «coincidir con el título, de lo
+ * contrario buscar ventana del mismo tipo/ejecutable».
  */
-const PRIORITY_CLASE = 0;
 const PRIORITY_EJECUTABLE = 2;
-
-/** Campos de una cadena `título:clase:ejecutable` de libobs. */
-function partesVentana(value: string): { titulo: string; exe: string } | null {
-  const partes = String(value ?? '').split(':');
-  if (partes.length < 3) return null; // vacío o placeholder («Seleccionar ventana…»)
-  // El título va primero y sus ':' llegan escapados, pero se reconstruye por si acaso: los dos
-  // últimos campos (clase y ejecutable) son los que tienen posición fija.
-  return { titulo: partes.slice(0, -2).join(':'), exe: partes[partes.length - 1] };
-}
-
-/**
- * Clave de comparación entre el título de una ventana y el ejecutable del juego: minúsculas, sin
- * extensión, sin diacríticos y sin nada que no sea alfanumérico.
- *
- *     'HELLDIVERS™ 2'   → 'helldivers2'
- *     'helldivers2.exe' → 'helldivers2'
- */
-export function normalizeWindowKey(texto: string): string {
-  return texto
-    .replace(/#3A/gi, '') // ':' escapado en las cadenas de libobs; no debe dejar un '3a' suelto
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // diacríticos que deja sueltos el NFD
-    .toLowerCase()
-    .replace(/\.exe$/, '')
-    .replace(/[^a-z0-9]/g, '');
-}
 
 /**
  * Cadena de ventana del juego, resuelta contra la lista que expone el propio source (helper puro).
@@ -556,41 +526,20 @@ export function normalizeWindowKey(texto: string): string {
  * la cadena COMPLETA `título:clase:exe`, tal cual la lista en su propiedad `window`; con `::<exe>`
  * no engancha nada y el clip sale negro (bug de la v0.2.0).
  *
- * Dos criterios, en orden:
- *
- * 1. **Por ejecutable**, el de siempre: lo que ya funciona no cambia de camino.
- * 2. **Por título normalizado**, solo si el primero no encontró nada Y la ventana trae el
- *    ejecutable como `unknown`. Es el caso de los juegos con anti-cheat (Helldivers 2 y su
- *    GameGuard): libobs ve la ventana con título y clase correctos, pero no puede atribuirla a un
- *    proceso, así que buscar por el campo del ejecutable es buscar por el único dato que falta.
- *
- * El segundo criterio es una heurística y se comporta como tal: **si no hay una candidata
- * inequívoca devuelve `null`** y se cae a `any_fullscreen`, como hoy. Apuntar a la ventana
- * equivocada sería peor que no enganchar — grabaríamos otra cosa en vez de negro.
+ * Cuando libobs no puede atribuir la ventana a un proceso escribe `unknown` en el campo del
+ * ejecutable y aquí no hay match, así que se cae a `any_fullscreen`. Eso ocurre cuando el proceso
+ * que pregunta **no está firmado** y el juego lleva anti-cheat: se arregla firmando el binario, no
+ * aflojando este matcher (ver la entrada de Helldivers 2 en el roadmap).
  */
 export function resolveGameWindow(items: WindowItem[], executable: string | null): string | null {
   if (!executable) return null;
   const exe = executable.toLowerCase();
-  const porEjecutable = items.find((item) => partesVentana(item.value)?.exe.toLowerCase() === exe);
-  if (porEjecutable) return porEjecutable.value;
-
-  const clave = normalizeWindowKey(executable);
-  if (!clave) return null;
-  const candidatas = items.filter((item) => {
-    const partes = partesVentana(item.value);
-    if (!partes || partes.exe.toLowerCase() !== EXE_DESCONOCIDO) return false;
-    return normalizeWindowKey(partes.titulo) === clave;
+  const match = items.find((item) => {
+    const partes = String(item.value ?? '').split(':');
+    if (partes.length < 3) return false; // vacío o placeholder («Seleccionar ventana…»)
+    return partes[partes.length - 1].toLowerCase() === exe;
   });
-  return candidatas.length === 1 ? candidatas[0].value : null;
-}
-
-/**
- * Campo de respaldo que se le pide a libobs para esta ventana. Con el ejecutable oculto por un
- * anti-cheat hay que respaldarse en la clase: pedir el ejecutable sería pedir el campo que falta.
- */
-function windowPriority(gameWindow: string): number {
-  const partes = partesVentana(gameWindow);
-  return partes?.exe.toLowerCase() === EXE_DESCONOCIDO ? PRIORITY_CLASE : PRIORITY_EJECUTABLE;
+  return match?.value ?? null;
 }
 
 /**
@@ -615,7 +564,7 @@ export function gameCaptureSettings(
   };
   if (gameWindow) {
     s.window = gameWindow;
-    s.priority = windowPriority(gameWindow);
+    s.priority = PRIORITY_EJECUTABLE;
   }
   if (settings.experimentalCapture) s.capture_overlays = true;
   // Convierte HDR → SDR indicando el espacio de color de origen del juego.
@@ -628,18 +577,8 @@ export function gameCaptureSettings(
  *
  * A diferencia de las fuentes de vídeo, este matcher SÍ acepta la forma abreviada `::<exe>`, y esa
  * es la vía normal: sin ejecutable no matchea nada (fuente silenciosa a la espera).
- *
- * `ventanaResuelta` solo se usa para el caso en que el ejecutable llega como `unknown` (anti-cheat),
- * donde `::<exe>` no puede casar con nada. Con el ejecutable legible se mantiene la forma de
- * siempre: cambiarla ahí tocaría el audio de todas las apps para arreglar un caso que no las afecta.
  */
-export function processCaptureSettings(
-  executable: string | null,
-  ventanaResuelta: string | null = null,
-): object {
-  if (ventanaResuelta && windowPriority(ventanaResuelta) === PRIORITY_CLASE) {
-    return { window: ventanaResuelta, priority: PRIORITY_CLASE };
-  }
+function processCaptureSettings(executable: string | null): object {
   return { window: executable ? `::${executable}` : '', priority: PRIORITY_EJECUTABLE };
 }
 
@@ -1105,22 +1044,7 @@ export class ObsCapture extends EventEmitter {
 
   /** Religa la fuente de audio del juego a otro ejecutable sin reconstruir el pipeline. */
   updateGameAudioTarget(executable: string | null): void {
-    const src = this.gameAudioSource;
-    if (src) src.update(processCaptureSettings(executable, this.ventanaSinEjecutable(src, executable)));
-  }
-
-  /**
-   * Ventana a la que apuntar cuando el ejecutable no sirve como criterio (anti-cheat: libobs la
-   * lista con el exe en `unknown`). Devuelve null en el caso normal, donde `::<exe>` ya funciona.
-   */
-  private ventanaSinEjecutable(source: OsnInput, executable: string | null): string | null {
-    try {
-      const items = this.findProperty(source.properties, 'window')?.details?.items ?? [];
-      return resolveGameWindow(items as WindowItem[], executable);
-    } catch {
-      // enumerar es best-effort: sin lista se usa la forma `::<exe>` de siempre
-      return null;
-    }
+    this.gameAudioSource?.update(processCaptureSettings(executable));
   }
 
   /**
@@ -1151,10 +1075,13 @@ export class ObsCapture extends EventEmitter {
    * Reintenta apuntar a la ventana del juego. Devuelve `true` cuando ya no hay nada que reintentar
    * (se apuntó, o no hay game capture en el pipeline vigente).
    *
-   * Existe porque el pipeline se construye al aparecer el **proceso**, y en los juegos con
-   * anti-cheat la **ventana** tarda en existir: en Helldivers 2 se midieron 8 s de diferencia
-   * (sonda del 2026-07-19). Apuntando una sola vez, el game capture se quedaba en `any_fullscreen`
-   * toda la sesión aunque la ventana apareciera después → clip negro.
+   * Existe porque el pipeline se construye al aparecer el **proceso**, y la **ventana** del juego
+   * puede tardar en existir: en Helldivers 2 se midieron 12 s de diferencia (sonda del 2026-07-19,
+   * proceso 07:20:47 · ventana aplicada 07:20:59 · hook 07:21:03). Apuntando una sola vez, el game
+   * capture se quedaba en `any_fullscreen` toda la sesión aunque la ventana apareciera después.
+   *
+   * Solo toca el vídeo: el audio por proceso apunta con `::<exe>` desde que se crea la fuente y no
+   * necesita re-apuntado (verificado en esa misma sesión, con la pista del juego a −28 dB).
    */
   retryAimGameWindow(settings: CaptureSettings, executable: string | null): boolean {
     const game = this.gameCaptureSource;
@@ -1163,8 +1090,6 @@ export class ObsCapture extends EventEmitter {
     const ventana = resolveGameWindow(items as WindowItem[], executable);
     if (!ventana) return false; // la ventana aún no existe; que el manager vuelva a preguntar
     game.update(gameCaptureSettings(settings, ventana));
-    // El audio por proceso se queda mudo por la misma razón cuando el exe llega como `unknown`.
-    this.gameAudioSource?.update(processCaptureSettings(executable, ventana));
     return true;
   }
 
@@ -1185,10 +1110,6 @@ export class ObsCapture extends EventEmitter {
         `gameclip-app-${executable ?? 'juego'}`,
         processCaptureSettings(executable),
       );
-      // La lista de ventanas solo existe en el source ya creado, así que el caso del ejecutable
-      // ilegible (anti-cheat) se corrige en un segundo paso, igual que el monitor_id del monitor.
-      const ventana = this.ventanaSinEjecutable(src, executable);
-      if (ventana) src.update(processCaptureSettings(executable, ventana));
       this.applyVolume(osn, src, volume);
       return src;
     } catch {

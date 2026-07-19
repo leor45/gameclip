@@ -1,100 +1,78 @@
-# Spec — El game capture no engancha ventanas cuyo ejecutable libobs no puede leer
+# Spec — El game capture no se re-apunta cuando la ventana del juego aparece tarde
 
 **Tipo:** Fix
 **Rama:** `fix/game-capture-ventana-sin-ejecutable`
-**Fecha:** 2026-07-18
+**Fecha:** 2026-07-19
+
+> **El nombre de la rama es histórico.** Nació investigando por qué Helldivers 2 salía en negro, con
+> la hipótesis de que el problema era el matcher de ventanas. La investigación demostró que la causa
+> raíz era **otra** (ver abajo) y que el matcher no tenía nada que arreglar. Lo que esta rama entrega
+> es el re-apuntado, que sí resultó necesario y está verificado.
 
 ## Problema / Objetivo
 
-Los clips de **Helldivers 2** salen **en negro y sin audio de juego**. Reportado por un usuario en
-la v0.8.1 y reproducido en esta máquina, así que no tiene relación con el overlay de rendimiento
-de la 0.9.0.
+El pipeline de captura se construye cuando el **detector ve el proceso** del juego. Pero la
+**ventana** puede no existir todavía en ese instante: en Helldivers 2 se midieron **12 segundos** de
+diferencia (el anti-cheat corre primero).
 
-### Causa raíz (medida, no inferida)
+Como el game capture se apuntaba **una sola vez**, al construir el pipeline, se quedaba en
+`any_fullscreen` durante **toda la sesión** aunque la ventana apareciera después. Nadie volvía a
+mirar.
 
-La sonda de diagnóstico (`probe/captura-hook-diagnostico`) volcó la lista de ventanas que expone
-libobs durante una misión real. La ventana **está ahí**:
-
-```
-HELLDIVERS™ 2:stingray_window:unknown
-```
-
-Título y clase correctos (`stingray_window` es el motor de Arrowhead), pero el campo del
-ejecutable es **`unknown`**: el anti-cheat (nProtect GameGuard) impide que libobs resuelva el
-proceso dueño de la ventana, y libobs escribe ese literal en su lugar.
-
-`resolveGameWindow()` (`src/main/capture/obs.ts`) compara **solo el último campo** de la cadena
-contra el ejecutable detectado:
-
-```ts
-return partes[partes.length - 1].toLowerCase() === exe;   // 'unknown' !== 'helldivers2.exe'
-```
-
-No hay match → devuelve `null` → el `game_capture` se queda en `any_fullscreen`, que **también**
-falla porque necesita resolver el mismo proceso (`error acquiring, failed to get window
-thread/process ids: 2` en el log). Resultado: `dimensiones game_capture: 0x0`, sin hook, lienzo
-negro.
-
-El mismo `unknown` deja mudo el audio del juego: `wasapi_process_output_capture` se configura con
-`::helldivers2.exe` y tampoco encuentra a quién engancharse.
-
-**Correlación directa en la sesión medida:**
+Medido con la sonda el 2026-07-19:
 
 | Hora (UTC) | Evento |
 |---|---|
-| 04:13:12 | perfil → `game`, `any_fullscreen`, falla el audio de HD2 |
-| 04:15:05 | `Wrote replay buffer to 'Replay 2026-07-18 23-15-05.mp4'` (el clip negro) |
-| 04:15:06 | sonda: `dimensiones game_capture: 0x0` |
-| 04:15:43 | HD2 cerrado, perfil → `desktop` |
+| 07:20:47 | perfil → `game`; la ventana **aún no existe** → `any_fullscreen` (decisión correcta) |
+| 07:20:59 | el re-apuntado encuentra la ventana y la aplica (`capture_mode: window`) |
+| 07:21:03 | `dimensiones game_capture: 2560x1440` — **el hook engancha** |
 
-**Descartado por medición:** que haga falta ejecutar como administrador (con privilegios elevados
-falla igual); que sea de la 0.9.0 (pasa en la 0.8.1); que HD2 sea incapturable (Medal la captura).
+Sin el bucle, el estado de las 07:20:47 se habría quedado congelado hasta cerrar el juego.
 
-### Objetivo
+## La causa raíz de los clips negros de HD2 NO era esta
 
-Que una ventana que libobs ve pero **no puede atribuir a un proceso** se pueda enganchar igual,
-resolviéndola por un campo que sí es fiable. Sin tocar el camino de los juegos que hoy funcionan.
+Conviene dejarlo escrito porque costó una noche entera y tres hipótesis equivocadas.
+
+**Los clips negros de Helldivers 2 los causaba que `obs64.exe` no está firmado.** nProtect GameGuard
+deniega el acceso al proceso del juego a binarios sin firma Authenticode, así que libobs no podía
+resolver el proceso dueño de la ventana (`unknown` en la lista) ni inyectar el hook.
+
+Comprobado firmando `obs64.exe` con un certificado de prueba: con la firma puesta, misma máquina y
+mismo código, libobs lista `HELLDIVERS™ 2:stingray_window:helldivers2.exe`, el hook engancha
+(`d3d12 shared texture capture successful`) y el clip sale con imagen y con **la pista de audio del
+juego a −28 dB**.
+
+Detalle completo, evidencias y descartes en `spec/constitution/roadmap.md`.
 
 ## Alcance
 
 **Dentro:**
 
-- `resolveGameWindow()`: cuando el ejecutable de la lista viene como `unknown`, resolver por
-  **clase de ventana**, usando el juego detectado para elegir la candidata.
-- `gameCaptureSettings()`: acompañar esa resolución con la `priority` correcta, en vez del `2`
-  hardcodeado de hoy.
-- **Determinar los valores reales del enum `priority`** volcándolos de la propia propiedad-lista
-  de libobs, no de memoria (ver Riesgos en el plan).
-- Mismo tratamiento en el audio por proceso del juego (`processCaptureSettings`), que falla por
-  la misma razón.
-- Que los juegos que hoy enganchan sigan tomando **exactamente** el mismo camino, con test de
-  regresión que lo fije.
+- Bucle acotado de re-apuntado a la ventana del juego mientras el perfil sea `game` y la ventana no
+  se haya resuelto.
+- El valor de `priority` que se emite pasa a estar respaldado por un volcado de la propiedad-lista
+  de libobs, no por memoria (`0 = clase · 1 = título · 2 = ejecutable`; la anotación previa del
+  roadmap tenía el 0 y el 1 invertidos).
 
 **Fuera (explícito):**
 
-- **Comprobación de salud del vídeo** (detectar `0x0` o lienzo negro y caer a otra fuente). Es la
-  red de seguridad genérica para cualquier juego que no enganche, y necesita antes desacoplar
-  `audioMode` del perfil de vídeo en `effectiveCapture` para no degradar el audio por app. Lleva
-  su propio spec.
-- **El bug del menú de LoL** (el perfil se decide por proceso, no por ventana). Anotado en el
-  roadmap, rama aparte.
-- Cablear `forceWindowCapture`, que existe en ajustes y UI pero no está conectado a nada.
-- Reducir la frecuencia de reconstrucción del pipeline.
+- **Firmar los binarios.** Es la causa raíz de HD2 y no es código: va por su propia vía (certificado
+  de firma, o que Streamlabs firme su `obs64.exe` upstream).
+- **Emparejar ventanas con el ejecutable en `unknown`.** Se llegó a implementar y **se retiró**: no
+  arregla nada. Sin firma resolvía la ventana y el hook fallaba igual; con firma no se activa porque
+  el ejecutable ya resuelve. Era una heurística con riesgo de falso positivo y cero valor demostrado.
+- **Comprobación de salud del vídeo** (detectar `0x0` y avisar en la UI en vez de guardar clips
+  negros en silencio). Muy deseable a la luz de todo esto, pero lleva su propio spec.
+- El bug del menú de LoL y cablear `forceWindowCapture`.
 
 ## Criterios de aceptación
 
-Observables y verificables uno a uno:
-
-- [ ] Con la lista de ventanas de la sesión medida de HD2, `resolveGameWindow` devuelve
-      `HELLDIVERS™ 2:stingray_window:unknown` en vez de `null` (test con el volcado real).
-- [ ] Un juego cuyo ejecutable **sí** aparece en la lista resuelve por ejecutable y produce los
-      mismos settings que hoy, `priority` incluida (test de regresión).
-- [ ] Con varias ventanas `unknown` de clases distintas no se engancha la equivocada: sin
-      candidata inequívoca se prefiere no resolver (`null`) antes que apuntar a una ventana ajena.
-- [ ] El valor de `priority` que se emite está respaldado por el volcado de la propiedad de
-      libobs, y el comentario del código cita esa medición.
-- [ ] **En máquina real con Helldivers 2**: el clip tiene imagen (sin frames negros según
-      `blackdetect`, YAVG > 0) y la sonda reporta dimensiones distintas de `0x0`.
-- [ ] **En máquina real con un juego que ya funcionaba**: sigue grabando con imagen, sin
-      regresión.
-- [ ] Las pistas de audio siguen separadas y con contenido donde toca (tono de referencia).
+- [ ] Con el perfil de juego y la ventana sin resolver, se reintenta; en cuanto resuelve, para.
+- [ ] Hay un tope de intentos: un juego que nunca resuelve deja de sondearse y se queda en
+      `any_fullscreen`, el comportamiento previo.
+- [ ] Fuera del perfil de juego no se reintenta nada.
+- [ ] Cerrar el juego corta los reintentos en curso.
+- [ ] Un fallo del backend al reintentar no tumba el manager ni el bucle.
+- [ ] Un juego que ya enganchaba sigue haciéndolo, con los mismos settings de siempre.
+- [ ] **En máquina real**: el re-apuntado aplica la ventana y el hook engancha (verificado con
+      Helldivers 2 y el binario firmado).
