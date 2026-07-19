@@ -1089,7 +1089,93 @@ Grabación, o el desplegable del índice en Ajustes → Desarrollo.
 error, así que un formato inesperado deja el índice sin esos juegos —se siguen pudiendo añadir a
 mano— pero no rompe la detección de Steam/Epic ni la app.
 
+### 🐞 Las fuentes de vídeo se acumulan en cada rebuild — ✅ arreglado (`fix/fuga-fuentes-video-en-rebuild`, 2026-07-18)
+
+Cada reconstrucción del pipeline dejaba viva la fuente de vídeo de la anterior. libobs las renumeraba
+al chocar los nombres, así que una sesión acumulaba `gameclip-monitor 2`, `3`, `4`… y
+`gameclip-game 2`, `3`… Al cerrar: `9 source(s) were remaining` + timeout. Visto en dos máquinas
+distintas (AMD + x264 y NVIDIA + nvenc), así que no era del entorno.
+
+Dos referencias colgadas, ambas por no cerrar el ciclo de vida de lo que vive **en la escena**:
+
+1. **Las fuentes.** `scene.add(input)` devuelve un scene item con su propia referencia; el item solo
+   se usaba para `applyBounds` y se descartaba. `input.release()` soltaba la nuestra, no la del item,
+   así que el `obs_source_t` nunca llegaba a refcount 0.
+2. **La escena misma.** El getter `scene.source` entrega un wrapper con su propia referencia; se
+   colgaba del canal 1 sin guardarlo, y nadie lo soltaba. Por eso `gameclip-scene` seguía renumerando
+   incluso tras arreglar (1).
+
+El audio nunca sufrió el problema: no pasa por la escena, va a canales de salida globales que el
+teardown ya anulaba uno a uno.
+
+Arreglo: guardar `sceneItems` y `sceneSource`, y en el teardown eliminar los items y soltar el
+wrapper **antes** de `scene.release()` — después ya no hay a quién pedirle que quite el item.
+Verificado en máquina real con juego falso (`cs2.exe`) para forzar transiciones de perfil: 12
+reconstrucciones con **0 nombres duplicados** (antes: 6 rebuilds → 6 duplicados), cierre sin fuentes
+pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido con un tono de 440 Hz
+(pista `pc` −28.7 dB, `mic` −91 dB correcto).
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
+
+### 🐞 El game capture no engancha juegos con anti-cheat (Helldivers 2)
+
+**Síntoma:** con HD2 detectado, el clip sale **negro y sin audio del juego**. Reportado por un
+usuario y reproducido en la máquina del owner.
+
+**Causa raíz medida** (sonda `probe/captura-hook-diagnostico`, 2026-07-19): libobs **sí ve la
+ventana**, pero no puede resolver su proceso y escribe `unknown` en el campo del ejecutable:
+
+```
+HELLDIVERS™ 2:stingray_window:unknown
+```
+
+El formato es `título:clase:ejecutable`, y `resolveGameWindow()` compara justo el último campo
+(`'unknown' === 'helldivers2.exe'` → false). O sea: **buscamos por el único campo que el anti-cheat
+oculta**, teniendo título y clase disponibles. Sin match cae a `any_fullscreen`, que tampoco engancha
+porque también pide el process id (`error acquiring, failed to get window thread/process ids: 2`).
+
+Lo mismo rompe el audio: `processCaptureSettings` monta `::<exe>`, otro matcher por ejecutable.
+
+**Descartado:** no son privilegios (`Running as administrator: true` falla idéntico). No es la
+versión 0.9.0 (pasa en 0.8.1). No es que HD2 sea incapturable: Medal lo captura.
+
+**Dirección del arreglo:** cuando el ejecutable de la lista venga como `unknown`, resolver por
+**clase** (más estable que el título, que puede estar localizado) y ajustar `priority`
+(`0 = título · 1 = clase · 2 = ejecutable`; hoy hardcodeado a 2). Mismo tratamiento en el audio.
+**Sin verificar**: falta comprobar en máquina real que con la prioridad correcta el hook engancha.
+
+### 🐞 El perfil de juego se decide por proceso, no por ventana (menú de LoL)
+
+**Síntoma:** con el cliente de LoL abierto (menú, aún sin partida) el clip sale negro. En partida
+real funciona.
+
+**Causa raíz:** el detector es puramente por nombre de proceso (`tasklist` cada 5 s,
+`game-detector.ts`). `leagueclient.exe` arranca **antes** que su ventana, así que `resolveGameWindow()`
+no encuentra nada, se cae a `any_fullscreen` y **no se re-resuelve nunca**. Con el juego en ventana,
+`any_fullscreen` no lo engancha — y llega a agarrar cualquier **otra** cosa a pantalla completa: en
+el log del usuario intentó enganchar `brave.exe` unas 90 veces en 13 minutos. Ninguno prosperó, pero
+con una app menos protegida habría grabado el navegador (fuga de privacidad, no solo clip feo).
+
+Riesgo ya anticipado en `spec/work/fix-game-capture-negro/plan.md`; ahora confirmado en producción.
+Afecta a **todo juego con launcher** (LoL, Valorant, arranques en dos fases de Steam).
+
+**Dirección del arreglo:** que el perfil `game` entre cuando aparece una **ventana enganchable** del
+ejecutable, no cuando aparece el proceso. Efecto secundario deseable: el aviso de clipear dejaría de
+saltar durante el anti-cheat.
+
+### 🐞 Nadie comprueba que la fuente de vídeo dé píxeles
+
+**Síntoma:** los dos bugs de arriba (y cualquier hook fallido) terminan en un clip negro **guardado
+en silencio**. La app no mira en ningún momento si la escena está produciendo imagen: los
+`signalHandler` solo escuchan `start`/`stop`/`wrote` de las *salidas*.
+
+Un `game_capture` sin hook reporta `0×0` (medido con la sonda en el instante exacto en que se guardó
+un clip negro), así que la señal existe y es barata de leer.
+
+**Dirección del arreglo:** detectar `0×0` pasado un margen y caer a `monitor_capture`, avisando en la
+UI. **Ojo con el alcance:** `effectiveCapture` hoy ata el modo de audio al perfil de vídeo
+(`audioMode: 'desktop'` forzado fuera del perfil `game`); un fallback que arrastre eso degradaría el
+audio por app a «todo el PC junto» sin necesidad. Los dos ejes deben desacoplarse.
 
 ### 🐞 La grabación manual escribe un solo frame (MP4 de 261 bytes)
 
@@ -1128,6 +1214,12 @@ en el log de libobs (`userData/obs-data/node-obs/logs/`).
 
 **Recordatorio del flujo:** es un Fix, así que va con **test de regresión primero** (rojo → verde) y
 la causa raíz en el `spec.md`.
+
+> ⚠️ **Posiblemente obsoleto (2026-07-18).** Durante la verificación de
+> `fix/fuga-fuentes-video-en-rebuild` se corrió `GAMECLIP_SELFTEST=recording` tres veces y las tres
+> produjeron un MP4 **válido**: 4.86 MB, 4 s de vídeo con imagen (0 frames negros) y 3 pistas de
+> audio capturando. No se investigó por qué; confirmar antes de abrirle rama, puede que ya lo
+> arreglara otra tarea.
 
 ## Futuro (fuera de alcance por ahora)
 

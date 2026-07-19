@@ -529,3 +529,90 @@ describe('computePipelineSizes', () => {
     });
   });
 });
+
+/**
+ * Estado interno del teardown. Se llega por cast, igual que con `buildAudioSources` arriba:
+ * `teardownPipeline` es privado y montar un `buildPipeline` falso entero (contexto de vídeo,
+ * encoders, salidas) sería mucho andamiaje para cubrir el mismo comportamiento.
+ */
+type TeardownInternals = {
+  osn: unknown;
+  sceneItems: { remove(): void }[];
+  sceneSource: { release(): void } | null;
+  inputs: { release(): void }[];
+  scene: { release(): void } | null;
+  outputChannels: number[];
+  teardownPipeline(): void;
+};
+
+describe('teardownPipeline — fuga de fuentes de vídeo', () => {
+  /** osn mínimo: el teardown solo necesita Global.setOutputSource y las factorías de salidas. */
+  function fakeOsnTeardown() {
+    return {
+      Global: { setOutputSource: () => {} },
+      AdvancedReplayBufferFactory: { destroy: () => {} },
+      AdvancedRecordingFactory: { destroy: () => {} },
+    };
+  }
+
+  it('regresión: elimina los scene items, y ANTES de soltar la escena', () => {
+    // El bug: `scene.add(input)` deja un scene item con su propia referencia a la fuente. Soltar
+    // solo el input no baja el refcount a 0, la fuente sobrevive y libobs renumera la siguiente
+    // ("gameclip-monitor 2", "3"…). Al cerrar quedaban 9 fuentes de vídeo vivas.
+    const orden: string[] = [];
+    const capture = new ObsCapture() as unknown as TeardownInternals;
+    capture.osn = fakeOsnTeardown();
+    capture.sceneItems = [
+      { remove: () => orden.push('item1.remove') },
+      { remove: () => orden.push('item2.remove') },
+    ];
+    capture.inputs = [{ release: () => orden.push('input.release') }];
+    capture.sceneSource = { release: () => orden.push('sceneSource.release') };
+    capture.scene = { release: () => orden.push('scene.release') };
+    capture.outputChannels = [1, 2];
+
+    capture.teardownPipeline();
+
+    // Los dos items eliminados…
+    expect(orden.filter((o) => o.endsWith('.remove'))).toEqual(['item1.remove', 'item2.remove']);
+    // …y ambos ANTES de soltar la escena: después ya no hay a quién pedirle que quite el item.
+    expect(orden.indexOf('item2.remove')).toBeLessThan(orden.indexOf('scene.release'));
+    // El input se sigue soltando: son DOS referencias distintas (la de la escena y la nuestra).
+    expect(orden).toContain('input.release');
+    // La escena misma también fugaba: el wrapper de `scene.source` (el del canal 1) trae su propia
+    // referencia, y sin soltarla libobs renumeraba «gameclip-scene 2», «3»…
+    expect(orden.indexOf('sceneSource.release')).toBeLessThan(orden.indexOf('scene.release'));
+  });
+
+  it('deja el registro de scene items vacío para el pipeline siguiente', () => {
+    const capture = new ObsCapture() as unknown as TeardownInternals;
+    capture.osn = fakeOsnTeardown();
+    capture.sceneItems = [{ remove: () => {} }];
+    capture.sceneSource = null;
+    capture.inputs = [];
+    capture.scene = null;
+    capture.outputChannels = [];
+
+    capture.teardownPipeline();
+
+    expect(capture.sceneItems).toEqual([]);
+  });
+
+  it('un remove() que falla no tumba el teardown (best-effort, como el resto)', () => {
+    const capture = new ObsCapture() as unknown as TeardownInternals;
+    capture.osn = fakeOsnTeardown();
+    capture.sceneItems = [
+      {
+        remove: () => {
+          throw new Error('scene item ya inválido');
+        },
+      },
+    ];
+    capture.inputs = [];
+    capture.scene = null;
+    capture.outputChannels = [];
+
+    expect(() => capture.teardownPipeline()).not.toThrow();
+    expect(capture.sceneItems).toEqual([]);
+  });
+});
