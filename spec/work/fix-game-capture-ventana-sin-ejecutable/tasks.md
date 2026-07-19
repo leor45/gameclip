@@ -47,12 +47,13 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner — 2026-07-19
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado con la causa raíz real (la firma)
-- [ ] **Release 0.9.1** con este fix + `fix/fuga-fuentes-video-en-rebuild` (ya en `main`).
+- [x] **Release 0.9.1** con este fix + `fix/fuga-fuentes-video-en-rebuild` (ya en `main`).
       **Ojo con las notas de la release:** la 0.9.1 **no** arregla Helldivers 2 en las builds sin
       firmar; eso depende del certificado, que es otra tarea.
-- [ ] Borrar las ramas de sonda (`probe/captura-hook-diagnostico`, `probe/verificacion-fix-hd2`):
+- [x] Borrar las ramas de sonda (`probe/captura-hook-diagnostico`, `probe/verificacion-fix-hd2`):
       eran diagnóstico y nunca van a `main`.
-- [ ] Revertir el certificado de prueba de la máquina del owner (`revertir-firma.ps1`).
+- [x] Revertir el certificado de prueba de la máquina del owner — hecho el 2026-07-19:
+      binario restaurado (`NotSigned`) y 0 certificados de prueba en los tres almacenes.
