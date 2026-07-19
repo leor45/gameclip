@@ -1115,6 +1115,19 @@ reconstrucciones con **0 nombres duplicados** (antes: 6 rebuilds → 6 duplicado
 pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido con un tono de 440 Hz
 (pista `pc` −28.7 dB, `mic` −91 dB correcto).
 
+### ✅ v0.9.1 (2026-07-19, portable) — dos fixes de captura
+
+1. **La escena y sus fuentes se destruyen de verdad** (arriba): se acabó la acumulación en cada
+   reconstrucción del pipeline.
+2. **Re-apuntado a la ventana del juego.** El pipeline se construye cuando el detector ve el
+   **proceso**, pero la **ventana** puede aparecer después (12 s en Helldivers 2). Apuntando una
+   sola vez, el game capture se quedaba en `any_fullscreen` toda la sesión. Bucle acotado de 5 s ×
+   24 intentos: para en cuanto apunta y agotado el tope deja el comportamiento previo.
+
+> ⚠️ **Lo que la 0.9.1 NO arregla:** los clips negros de **Helldivers 2** en las builds publicadas.
+> Su causa raíz es que `obs64.exe` no lleva firma Authenticode y el anti-cheat le deniega el acceso
+> al proceso del juego (entrada propia más abajo). Las notas del release no deben prometerlo.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
