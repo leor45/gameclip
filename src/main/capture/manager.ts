@@ -36,6 +36,21 @@ export function gameExecutableForName(game: string | null): string | null {
 export const NOTHING_TO_CAPTURE =
   'Sin juego detectado y con la grabación de escritorio desactivada no hay nada que capturar.';
 
+/**
+ * Cada cuánto se reintenta apuntar a la ventana del juego mientras no exista, y cuántas veces.
+ *
+ * El pipeline se construye al ver el **proceso**; con anti-cheat la **ventana** aparece después
+ * (8 s en Helldivers 2, medido con la sonda el 2026-07-19). 5 s × 24 = 2 min de margen, de sobra
+ * para una carga lenta. Agotado el tope se deja de mirar y el game capture se queda en
+ * `any_fullscreen`, que es exactamente el comportamiento previo a este fix.
+ *
+ * Coste: una enumeración de la lista de ventanas por intento, y SOLO mientras no se haya
+ * resuelto. Medido por debajo del umbral de `long_calls.txt` de libobs (~100 ms) con la sonda
+ * pidiéndola cada 2 s durante 4 min sin registrar ni una.
+ */
+export const AIM_RETRY_INTERVAL_MS = 5000;
+export const AIM_RETRY_MAX = 24;
+
 export interface CaptureEnvironment {
   /** Carpeta de datos para libobs (config interna). */
   obsDataPath: string;
@@ -72,6 +87,11 @@ export interface CaptureBackend {
   updateGameAudioTarget(executable: string | null): void;
   /** Re-apunta el game capture de VIDEO a la ventana de otro juego, sin reconstruir. */
   updateGameCaptureTarget(executable: string | null, settings: CaptureSettings): void;
+  /**
+   * Reintenta apuntar a la ventana del juego; `true` cuando ya no hay nada que reintentar.
+   * Para juegos cuya ventana aparece después que el proceso (anti-cheat).
+   */
+  retryAimGameWindow(settings: CaptureSettings, executable: string | null): boolean;
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
   setMicMuted(muted: boolean): void;
   startReplayBuffer(): Promise<void>;
@@ -101,6 +121,9 @@ export class CaptureManager extends EventEmitter {
   private bufferRunning = false;
   /** Ejecutable del juego activo (el proceso real que vio el detector). */
   private detectedGameExe: string | null = null;
+  /** Bucle de re-apuntado a la ventana del juego (ver AIM_RETRY_INTERVAL_MS). */
+  private aimTimer: ReturnType<typeof setInterval> | null = null;
+  private aimAttempts = 0;
   /** Juego de la grabación en curso: el clip pertenece a él, no al que esté activo al cortarla. */
   private sessionGameName: string | null = null;
   /** Todos los juegos en ejecución (el activo es uno de ellos). */
@@ -534,6 +557,7 @@ export class CaptureManager extends EventEmitter {
   }
 
   shutdown(): void {
+    this.stopAimRetries();
     this.obs.shutdown();
     this.hapticListener.stop();
     this.controllerListener.stop();
@@ -637,6 +661,37 @@ export class CaptureManager extends EventEmitter {
     // pasar a `game` (se desprotege) o a `desktop` (lo cubre `startBuffer`, pero también el de
     // quedarse sin buffer, que desprotege).
     this.syncOverlayProtection();
+    this.startAimRetries();
+  }
+
+  /**
+   * Arranca el re-apuntado a la ventana del juego. El pipeline recién construido ya intentó
+   * apuntar; esto cubre el caso en que la ventana todavía no existía (anti-cheat: el proceso
+   * aparece antes que la ventana). Fuera del perfil de juego no hay nada que esperar.
+   */
+  private startAimRetries(): void {
+    this.stopAimRetries();
+    if (this.builtProfile !== 'game') return;
+    this.aimAttempts = 0;
+    this.aimTimer = setInterval(() => this.tickAimRetry(), AIM_RETRY_INTERVAL_MS);
+    this.aimTimer.unref?.();
+  }
+
+  private stopAimRetries(): void {
+    if (this.aimTimer) clearInterval(this.aimTimer);
+    this.aimTimer = null;
+  }
+
+  /** Un intento: si el backend dice que ya está apuntado, o se agota el tope, se para el bucle. */
+  private tickAimRetry(): void {
+    this.aimAttempts++;
+    let listo = false;
+    try {
+      listo = this.obs.retryAimGameWindow(this.getSettings(), this.detectedGameExe);
+    } catch {
+      // Reintentar es best-effort: un fallo puntual de libobs no debe tumbar el bucle ni la app.
+    }
+    if (listo || this.aimAttempts >= AIM_RETRY_MAX) this.stopAimRetries();
   }
 
   private emitClipSaved(

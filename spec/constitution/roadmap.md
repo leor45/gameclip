@@ -1146,11 +1146,25 @@ normalizado** contra el ejecutable detectado (`'HELLDIVERS™ 2'` → `helldiver
 a clase. Sin candidata inequívoca devuelve `null` y se queda como hoy. El camino de los juegos que
 ya enganchan no cambia (blindado con test de regresión).
 
-**Lo que sigue sin estar comprobado:** lo medido es que *el matcher no encuentra la ventana*. Que el
-hook **enganche** una vez encontrada es la hipótesis. Si GameGuard además bloquea la inyección de
-`graphics-hook64.dll`, esto no basta y hará falta otra estrategia. El audio por proceso puede fallar
-aunque el vídeo funcione: necesita el PID para la sesión de loopback, y encontrar la ventana no
-garantiza obtenerlo.
+**Segunda causa, medida en la sesión 1 de verificación (2026-07-19):** el matcher arreglado **sí
+resolvía** la ventana (`SÍ → HELLDIVERS™ 2:stingray_window:unknown` en la sonda, donde antes salía
+`NO`), pero **no se aplicaba nunca**. El pipeline se construye al aparecer el **proceso**, y con
+anti-cheat la **ventana** aparece 8 s después (proceso 05:35:43 · ventana 05:35:51). Como solo se
+apuntaba una vez, el game capture se quedó en `any_fullscreen` los dos minutos de la sesión. Mismo
+problema en el audio: `::helldivers2.exe` fijado al crear la fuente y nunca re-apuntado.
+
+Arreglado con un bucle de re-apuntado acotado (`AIM_RETRY_INTERVAL_MS` 5 s × `AIM_RETRY_MAX` 24):
+para en cuanto apunta, y agotado el tope se queda como antes. **Pendiente de la sesión 2.**
+
+**Lo que sigue sin estar comprobado:** que el hook **enganche** una vez apuntado. Si GameGuard además
+bloquea la inyección de `graphics-hook64.dll`, esto no basta y hará falta otra estrategia. El audio
+por proceso puede fallar aunque el vídeo funcione: necesita el PID para la sesión de loopback, y
+encontrar la ventana no garantiza obtenerlo.
+
+**Lección de método:** en la investigación previa llegué a proponer el timing como causa y luego lo
+**descarté** al ver la ventana presente en la lista — pero aquellas muestras se tomaron con el juego
+ya arrancado. Generalizar «está en la lista» a «siempre estuvo» costó una sesión de verificación
+entera. Las dos causas eran reales y ambas necesarias.
 
 **Valores reales de `priority`** (volcados de la propiedad-lista de libobs el 2026-07-19; una
 anotación anterior de este roadmap tenía el 0 y el 1 **invertidos**):

@@ -1147,6 +1147,27 @@ export class ObsCapture extends EventEmitter {
     }
   }
 
+  /**
+   * Reintenta apuntar a la ventana del juego. Devuelve `true` cuando ya no hay nada que reintentar
+   * (se apuntó, o no hay game capture en el pipeline vigente).
+   *
+   * Existe porque el pipeline se construye al aparecer el **proceso**, y en los juegos con
+   * anti-cheat la **ventana** tarda en existir: en Helldivers 2 se midieron 8 s de diferencia
+   * (sonda del 2026-07-19). Apuntando una sola vez, el game capture se quedaba en `any_fullscreen`
+   * toda la sesión aunque la ventana apareciera después → clip negro.
+   */
+  retryAimGameWindow(settings: CaptureSettings, executable: string | null): boolean {
+    const game = this.gameCaptureSource;
+    if (!game) return true; // perfil sin game capture: no hay nada que esperar
+    const items = this.findProperty(game.properties, 'window')?.details?.items ?? [];
+    const ventana = resolveGameWindow(items as WindowItem[], executable);
+    if (!ventana) return false; // la ventana aún no existe; que el manager vuelva a preguntar
+    game.update(gameCaptureSettings(settings, ventana));
+    // El audio por proceso se queda mudo por la misma razón cuando el exe llega como `unknown`.
+    this.gameAudioSource?.update(processCaptureSettings(executable, ventana));
+    return true;
+  }
+
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
   setMicMuted(muted: boolean): void {
     if (this.micSource) this.micSource.muted = muted;
