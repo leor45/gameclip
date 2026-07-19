@@ -1276,8 +1276,12 @@ la causa raíz en el `spec.md`.
 > verificación de `fix/game-capture-ventana-sin-ejecutable` (`Total frames output: 1` frente a
 > `Total drawn frames: 262`, clip de 261 bytes).
 >
-> **Frecuencia medida ese día:** 1 fallo en 8 ejecuciones (7 con el fix de HD2 aplicado, 1 sobre
-> `main`), y el fallo cayó en la primera de la tanda. No se encontró disparador: la detección del
+> **Frecuencia medida ese día:** 2 fallos en ~10 ejecuciones, y con **severidad variable**: una vez
+> `Total frames output: 1` (MP4 de 261 bytes) y otra `13` de ~240 esperados (MP4 de 0.2 MB con
+> imagen, pero entrecortado). O sea que no es «graba o no graba»: la salida de grabación se queda
+> sin frames en distinta medida cada vez. En las mismas ejecuciones el `replay-buffer` sacó sus
+> ~285 frames sin despeinarse, lo que refuerza que el problema es del encoder compartido entre las
+> dos salidas y no del pipeline. No se encontró disparador: la detección del
 > juego a mitad de la grabación ocurrió en **todas** las ejecuciones, incluidas las 7 correctas, así
 > que no es eso. El aviso `Cannot apply a new video_t object while the encoder is active` también
 > sale en las ejecuciones que funcionan, o sea que por sí solo no distingue.
