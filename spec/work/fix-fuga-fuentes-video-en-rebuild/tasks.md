@@ -42,6 +42,9 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner — 2026-07-18
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado
+
+Sale en la release **0.9.1** junto con `fix/game-capture-ventana-sin-ejecutable`; el bump de versión
+va en el commit de release, cuando los dos fixes estén en `main`.
