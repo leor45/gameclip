@@ -1117,32 +1117,74 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
-### 🐞 El game capture no engancha juegos con anti-cheat (Helldivers 2)
+### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
 
 **Síntoma:** con HD2 detectado, el clip sale **negro y sin audio del juego**. Reportado por un
-usuario y reproducido en la máquina del owner.
+usuario en la 0.8.1 y reproducido en la máquina del owner.
 
-**Causa raíz medida** (sonda `probe/captura-hook-diagnostico`, 2026-07-19): libobs **sí ve la
-ventana**, pero no puede resolver su proceso y escribe `unknown` en el campo del ejecutable:
+**Causa raíz (medida el 2026-07-19, tras descartar tres hipótesis):** nProtect GameGuard **deniega
+el acceso al proceso del juego a los binarios sin firma Authenticode**. El `obs64.exe` que
+distribuye `@streamlabs/obs-studio-node` —el proceso donde corre libobs y desde donde se hacen las
+llamadas— **va sin firmar**, y es el único eslabón sin firma de toda la cadena:
 
-```
-HELLDIVERS™ 2:stingray_window:unknown
-```
+| Binario | Firma |
+|---|---|
+| `Medal.exe` | Valid — `CN=Medal B.V.` |
+| `obs64.exe` de OBS Studio | Valid — `CN=OBS Project, LLC` |
+| **`obs64.exe` de obs-studio-node** | **NotSigned** |
+| `graphics-hook64.dll` (el nuestro) | Valid — OBS Project |
+| `inject-helper64.exe` (el nuestro) | Valid — OBS Project |
 
-El formato es `título:clase:ejecutable`, y `resolveGameWindow()` compara justo el último campo
-(`'unknown' === 'helldivers2.exe'` → false). O sea: **buscamos por el único campo que el anti-cheat
-oculta**, teniendo título y clase disponibles. Sin match cae a `any_fullscreen`, que tampoco engancha
-porque también pide el process id (`error acquiring, failed to get window thread/process ids: 2`).
+Sin firma, `get_window_exe` no puede resolver el proceso dueño de la ventana y libobs lista
+`HELLDIVERS™ 2:stingray_window:unknown`; `GetWindowThreadProcessId` devuelve 0; y `OpenProcess` con
+derechos de inyección da `ERROR_ACCESS_DENIED`. De ahí los 82 `error acquiring, failed to get window
+thread/process ids` y el lienzo negro.
 
-Lo mismo rompe el audio: `processCaptureSettings` monta `::<exe>`, otro matcher por ejecutable.
+**Verificado por contraste**, misma máquina y misma noche:
 
-**Descartado:** no son privilegios (`Running as administrator: true` falla idéntico). No es la
-versión 0.9.0 (pasa en 0.8.1). No es que HD2 sea incapturable: Medal lo captura.
+| Escenario | Lista de libobs | Hook |
+|---|---|---|
+| `obs64.exe` sin firmar | `…:stingray_window:unknown` | `0x0` durante 3 min |
+| **`obs64.exe` firmado** (certificado de prueba) | `…:stingray_window:helldivers2.exe` | `2560x1440`, `d3d12 shared texture capture successful` |
+| OBS Studio (firmado por OBS Project) | `…:helldivers2.exe` | captura sin problema |
 
-**Dirección del arreglo:** cuando el ejecutable de la lista venga como `unknown`, resolver por
-**clase** (más estable que el título, que puede estar localizado) y ajustar `priority`
-(`0 = título · 1 = clase · 2 = ejecutable`; hoy hardcodeado a 2). Mismo tratamiento en el audio.
-**Sin verificar**: falta comprobar en máquina real que con la prioridad correcta el hook engancha.
+Con la firma puesta, el clip salió con imagen (0 frames negros, YAVG 62.5) **y con la pista de audio
+del juego a −28.1 dB**, con las pistas separadas intactas.
+
+**Hipótesis descartadas por el camino** (anotadas para no repetirlas):
+
+- *«El matcher busca por el campo que el anti-cheat oculta.»* Se implementó emparejado por título
+  normalizado; resolvía la ventana y el hook fallaba igual. Retirado.
+- *«HD2 es Vulkan y hay que registrar una capa como hace Medal.»* HD2 es **D3D12**
+  (`d3d12_init` en el log). La carpeta Vulkan de Medal despistó.
+- *«Nuestro backend lleva vivo desde antes que el juego y por eso lo bloquean.»* Un `obs64.exe`
+  recién lanzado y muy posterior al juego enumera `unknown` igual.
+- *«Es cuestión de privilegios.»* Elevar a administrador no cambia **nada**, ni en PowerShell ni en
+  la app. Era el dato que no encajaba con ninguna teoría hasta que apareció la firma.
+- *«WGC (`window_capture`) esquivaría el bloqueo.»* Se congelaría al minimizar el juego, donde Medal
+  sigue capturando — HD2 sigue renderizando minimizado. Descartado por el owner con esa prueba.
+
+**Nota sobre Medal:** su captura es **libobs renombrado**. Su manifiesto de capa Vulkan conserva la
+función `OBS_Negotiate` y la variable `DISABLE_VULKAN_MEDAL_OBS_CAPTURE`. No usan otra tecnología:
+usan la misma, firmada.
+
+**Estado:** el arreglo **no es código**. Opciones, por orden de coste:
+
+1. **Pedir a Streamlabs que firme su `obs64.exe`** (`obs-studio-node` es open source). Gratis y
+   arreglaría el problema para todos los que usan la librería.
+2. **SignPath Foundation**: firma de código gratuita para proyectos open source. GameClip cumple los
+   requisitos aparentes (repo público, GPL-3.0, releases publicadas).
+3. **Certificado propio**: OV desde ~$219/año, y desde el 2026-02-23 con token hardware o HSM
+   obligatorio también para OV. Azure Artifact Signing sale a $9.99/mes pero para individuales solo
+   está disponible en EE.UU. y Canadá.
+4. **Autofirmado** para un círculo cerrado: funciona (así se verificó), pero exige que cada usuario
+   instale la raíz de confianza, con lo que eso implica. No debe publicarse en el repo.
+
+**Lección de método:** esta entrada tuvo **tres causas raíz distintas escritas como definitivas**
+antes de la correcta. Todas eran deducciones desde señales indirectas —la lista de ventanas, un
+overlay en un frame, la resolución de un clip— y las tres las tumbó el owner con datos. Lo que
+funcionó fue medir directamente: comparar la firma de los binarios. Cuando una explicación deje un
+dato sin encajar (aquí: que elevar a admin no cambiara nada), ese dato es la pista, no el ruido.
 
 ### 🐞 El perfil de juego se decide por proceso, no por ventana (menú de LoL)
 
@@ -1215,11 +1257,20 @@ en el log de libobs (`userData/obs-data/node-obs/logs/`).
 **Recordatorio del flujo:** es un Fix, así que va con **test de regresión primero** (rojo → verde) y
 la causa raíz en el `spec.md`.
 
-> ⚠️ **Posiblemente obsoleto (2026-07-18).** Durante la verificación de
-> `fix/fuga-fuentes-video-en-rebuild` se corrió `GAMECLIP_SELFTEST=recording` tres veces y las tres
-> produjeron un MP4 **válido**: 4.86 MB, 4 s de vídeo con imagen (0 frames negros) y 3 pistas de
-> audio capturando. No se investigó por qué; confirmar antes de abrirle rama, puede que ya lo
-> arreglara otra tarea.
+> ⚠️ **NO está obsoleto: es intermitente (2026-07-19).** El 2026-07-18 se anotó aquí que
+> «posiblemente ya estaba arreglado» porque tres selftests seguidos dieron un MP4 válido. Esa
+> lectura era **errónea**, y conviene no repetirla: el bug volvió a aparecer tal cual durante la
+> verificación de `fix/game-capture-ventana-sin-ejecutable` (`Total frames output: 1` frente a
+> `Total drawn frames: 262`, clip de 261 bytes).
+>
+> **Frecuencia medida ese día:** 1 fallo en 8 ejecuciones (7 con el fix de HD2 aplicado, 1 sobre
+> `main`), y el fallo cayó en la primera de la tanda. No se encontró disparador: la detección del
+> juego a mitad de la grabación ocurrió en **todas** las ejecuciones, incluidas las 7 correctas, así
+> que no es eso. El aviso `Cannot apply a new video_t object while the encoder is active` también
+> sale en las ejecuciones que funcionan, o sea que por sí solo no distingue.
+>
+> **Consecuencia para quien lo coja:** un puñado de ejecuciones verdes **no** demuestra nada aquí.
+> Hace falta una tanda larga y contar la tasa, no repetir hasta que salga bien.
 
 ## Futuro (fuera de alcance por ahora)
 

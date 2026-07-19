@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AudioDeviceInfo, CaptureSettings, EncoderInfo } from '@shared/capture';
 import { HapticMuteListener } from '../capture/app-audio-mute';
 import { ControllerCaptureListener } from '../capture/controller-capture';
-import { CaptureManager, gameExecutableForName } from '../capture/manager';
+import { AIM_RETRY_INTERVAL_MS, AIM_RETRY_MAX, CaptureManager, gameExecutableForName } from '../capture/manager';
 import type { CaptureBackend, ClipSavedInfo } from '../capture/manager';
 import { SettingsStore } from '../capture/settings-store';
 
@@ -57,6 +57,14 @@ class FakeObs implements CaptureBackend {
   updateGameCaptureTarget(executable: string | null): void {
     this.llamadas.push('updateGameCaptureTarget');
     this.ultimoGameCaptureTarget = executable;
+  }
+  /** Cuántos reintentos de apuntado pide el manager, y cuándo dice el backend que ya enganchó. */
+  reintentosApuntado = 0;
+  /** Nº de intento a partir del cual `retryAimGameWindow` devuelve true (Infinity = nunca). */
+  apuntaEnIntento = Number.POSITIVE_INFINITY;
+  retryAimGameWindow(): boolean {
+    this.reintentosApuntado++;
+    return this.reintentosApuntado >= this.apuntaEnIntento;
   }
   micMuted: boolean | null = null;
   setMicMuted(muted: boolean): void {
@@ -229,6 +237,83 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       await manager.setGameDetected(null);
       expect(obs.buildCount).toBe(buildsEnEscritorio + 2);
       expect(obs.ultimoGameExe).toBeNull();
+    });
+
+    /**
+     * Regresión de HD2: la ventana del juego aparece DESPUÉS que el proceso (el anti-cheat corre
+     * primero), y el pipeline se construye al ver el proceso. Como solo se apuntaba una vez, el
+     * game capture se quedaba en `any_fullscreen` toda la sesión → clip negro. Medido con la
+     * sonda el 2026-07-19: proceso a las 05:35:43, ventana a las 05:35:51.
+     */
+    describe('re-apuntado mientras la ventana del juego aún no existe', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('regresión: reintenta hasta que la ventana aparece, y entonces para', async () => {
+        obs.apuntaEnIntento = 3; // la ventana asoma al tercer intento
+        const manager = crear({ bufferMode: 'always' });
+        await manager.initialize();
+        await manager.setGameDetected('Helldivers 2', 'helldivers2.exe');
+
+        expect(obs.reintentosApuntado).toBe(0); // aún no ha pasado ningún tick
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 3);
+        expect(obs.reintentosApuntado).toBe(3);
+
+        // Apuntado: los ticks siguientes ya no piden nada.
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 5);
+        expect(obs.reintentosApuntado).toBe(3);
+      });
+
+      it('deja de reintentar al llegar al tope (no se queda sondeando para siempre)', async () => {
+        obs.apuntaEnIntento = Number.POSITIVE_INFINITY; // nunca resuelve
+        const manager = crear({ bufferMode: 'always' });
+        await manager.initialize();
+        await manager.setGameDetected('Helldivers 2', 'helldivers2.exe');
+
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * (AIM_RETRY_MAX + 20));
+        expect(obs.reintentosApuntado).toBe(AIM_RETRY_MAX);
+      });
+
+      it('en perfil de escritorio no reintenta nada (no hay ventana que apuntar)', async () => {
+        const manager = crear({ bufferMode: 'always' });
+        await manager.initialize(); // sin juego: perfil desktop
+
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 5);
+        expect(obs.reintentosApuntado).toBe(0);
+      });
+
+      it('cerrar el juego corta los reintentos en curso', async () => {
+        obs.apuntaEnIntento = Number.POSITIVE_INFINITY;
+        const manager = crear({ bufferMode: 'always' });
+        await manager.initialize();
+        await manager.setGameDetected('Helldivers 2', 'helldivers2.exe');
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 2);
+        const trasDosTicks = obs.reintentosApuntado;
+        expect(trasDosTicks).toBe(2);
+
+        await manager.setGameDetected(null); // vuelta a escritorio
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 5);
+        expect(obs.reintentosApuntado).toBe(trasDosTicks);
+      });
+
+      it('un backend que lanza al reintentar no tumba el manager ni el bucle', async () => {
+        const manager = crear({ bufferMode: 'always' });
+        await manager.initialize();
+        obs.retryAimGameWindow = () => {
+          obs.reintentosApuntado++;
+          throw new Error('libobs se quejó');
+        };
+        await manager.setGameDetected('Helldivers 2', 'helldivers2.exe');
+
+        // El bucle sigue vivo pese a los fallos: los 3 ticks se intentaron y nada propagó.
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 3);
+        expect(obs.reintentosApuntado).toBe(3);
+        expect(manager.getStatus().error).toBeNull();
+      });
     });
 
     it('sin auto-switch, lanzar un juego NO cambia el perfil (se sigue grabando el escritorio)', async () => {

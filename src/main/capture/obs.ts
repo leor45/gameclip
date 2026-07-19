@@ -509,12 +509,27 @@ export interface WindowItem {
 }
 
 /**
+ * Campo de RESPALDO que se le pide a libobs al matchear una ventana. Valor volcado de la propia
+ * propiedad-lista el 2026-07-19: `0 = clase · 1 = título · 2 = ejecutable`.
+ *
+ * OJO con la semántica: no es «matchea SOLO por este campo». El título se intenta siempre primero y
+ * el valor elige el campo de respaldo — los literales de libobs son «coincidir con el título, de lo
+ * contrario buscar ventana del mismo tipo/ejecutable».
+ */
+const PRIORITY_EJECUTABLE = 2;
+
+/**
  * Cadena de ventana del juego, resuelta contra la lista que expone el propio source (helper puro).
  *
  * OJO: las fuentes de VÍDEO de libobs NO matchean con la forma abreviada `::<exe>` — esa solo vale
  * para el audio por proceso (`wasapi_process_output_capture`, otro matcher). El game capture quiere
  * la cadena COMPLETA `título:clase:exe`, tal cual la lista en su propiedad `window`; con `::<exe>`
  * no engancha nada y el clip sale negro (bug de la v0.2.0).
+ *
+ * Cuando libobs no puede atribuir la ventana a un proceso escribe `unknown` en el campo del
+ * ejecutable y aquí no hay match, así que se cae a `any_fullscreen`. Eso ocurre cuando el proceso
+ * que pregunta **no está firmado** y el juego lleva anti-cheat: se arregla firmando el binario, no
+ * aflojando este matcher (ver la entrada de Helldivers 2 en el roadmap).
  */
 export function resolveGameWindow(items: WindowItem[], executable: string | null): string | null {
   if (!executable) return null;
@@ -549,7 +564,7 @@ export function gameCaptureSettings(
   };
   if (gameWindow) {
     s.window = gameWindow;
-    s.priority = 2; // 2 = coincidencia por ejecutable (el último campo de la cadena)
+    s.priority = PRIORITY_EJECUTABLE;
   }
   if (settings.experimentalCapture) s.capture_overlays = true;
   // Convierte HDR → SDR indicando el espacio de color de origen del juego.
@@ -557,10 +572,14 @@ export function gameCaptureSettings(
   return s;
 }
 
-/** Settings de wasapi_process_output_capture: match por ejecutable (priority 2). */
+/**
+ * Settings de wasapi_process_output_capture.
+ *
+ * A diferencia de las fuentes de vídeo, este matcher SÍ acepta la forma abreviada `::<exe>`, y esa
+ * es la vía normal: sin ejecutable no matchea nada (fuente silenciosa a la espera).
+ */
 function processCaptureSettings(executable: string | null): object {
-  // window "titulo:clase:exe"; sin ejecutable no matchea nada (fuente silenciosa a la espera).
-  return { window: executable ? `::${executable}` : '', priority: 2 };
+  return { window: executable ? `::${executable}` : '', priority: PRIORITY_EJECUTABLE };
 }
 
 export interface ObsPaths {
@@ -1050,6 +1069,28 @@ export class ObsCapture extends EventEmitter {
     if (this.gameCaptureSource) {
       this.aimGameCapture(settings, this.gameCaptureSource, executable);
     }
+  }
+
+  /**
+   * Reintenta apuntar a la ventana del juego. Devuelve `true` cuando ya no hay nada que reintentar
+   * (se apuntó, o no hay game capture en el pipeline vigente).
+   *
+   * Existe porque el pipeline se construye al aparecer el **proceso**, y la **ventana** del juego
+   * puede tardar en existir: en Helldivers 2 se midieron 12 s de diferencia (sonda del 2026-07-19,
+   * proceso 07:20:47 · ventana aplicada 07:20:59 · hook 07:21:03). Apuntando una sola vez, el game
+   * capture se quedaba en `any_fullscreen` toda la sesión aunque la ventana apareciera después.
+   *
+   * Solo toca el vídeo: el audio por proceso apunta con `::<exe>` desde que se crea la fuente y no
+   * necesita re-apuntado (verificado en esa misma sesión, con la pista del juego a −28 dB).
+   */
+  retryAimGameWindow(settings: CaptureSettings, executable: string | null): boolean {
+    const game = this.gameCaptureSource;
+    if (!game) return true; // perfil sin game capture: no hay nada que esperar
+    const items = this.findProperty(game.properties, 'window')?.details?.items ?? [];
+    const ventana = resolveGameWindow(items as WindowItem[], executable);
+    if (!ventana) return false; // la ventana aún no existe; que el manager vuelva a preguntar
+    game.update(gameCaptureSettings(settings, ventana));
+    return true;
   }
 
   /** Mutea/abre el micrófono sin reconstruir el pipeline (push-to-talk). */
