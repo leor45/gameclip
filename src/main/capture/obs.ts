@@ -61,6 +61,8 @@ interface OsnSceneItem {
   boundsType: number;
   alignment: number;
   boundsAlignment: number;
+  /** Saca la fuente de la escena y suelta la referencia que la escena tiene sobre ella. */
+  remove(): void;
 }
 interface OsnScene {
   source: OsnSource;
@@ -576,6 +578,14 @@ export class ObsCapture extends EventEmitter {
   private context: OsnVideoContext | null = null;
   private scene: OsnScene | null = null;
   private inputs: OsnInput[] = [];
+  /**
+   * Items de la escena (uno por fuente de vídeo). Hay que guardarlos para poder eliminarlos en el
+   * teardown: el item tiene su PROPIA referencia a la fuente, así que soltar solo el input no baja
+   * el refcount a 0 y la fuente sobrevive al rebuild (libobs renumera: «gameclip-monitor 2», «3»…).
+   */
+  private sceneItems: OsnSceneItem[] = [];
+  /** Wrapper de la fuente de la escena (el que se cuelga del canal 1); se suelta en el teardown. */
+  private sceneSource: OsnSource | null = null;
   private recording: OsnAdvancedRecording | null = null;
   private replayBuffer: OsnAdvancedReplayBuffer | null = null;
   private encoders: OsnEncoder[] = [];
@@ -727,10 +737,16 @@ export class ObsCapture extends EventEmitter {
     // Perfil `none`: escena vacía. El manager no arranca buffer ni grabación, pero las salidas
     // se construyen igual para que un cambio de ajustes/juego solo tenga que reconstruir.
     this.applyBounds(items, sizes);
+    this.sceneItems = items;
     this.scene = scene;
 
     // Canal 1 = escena; los canales 2.. quedan para las fuentes de audio.
-    osn.Global.setOutputSource(1, scene.source);
+    // El getter `scene.source` entrega un wrapper con su PROPIA referencia: se guarda para poder
+    // soltarlo en el teardown. Sin eso la escena sobrevive al rebuild igual que las fuentes de
+    // vídeo, y libobs renumera («gameclip-scene 2», «3»…).
+    const sceneSource = scene.source;
+    this.sceneSource = sceneSource;
+    osn.Global.setOutputSource(1, sceneSource);
     this.outputChannels.push(1);
     let channel = 2;
     const setSource = (src: OsnInput): void => {
@@ -832,7 +848,12 @@ export class ObsCapture extends EventEmitter {
         fader.detach();
         fader.destroy();
       }
+      // ANTES de soltar la escena: después ya no hay a quién pedirle que quite el item, y su
+      // referencia a la fuente se queda colgada (la fuente sobrevive al rebuild).
+      for (const item of this.sceneItems) item.remove();
       for (const input of this.inputs) input.release();
+      // El canal 1 ya está anulado arriba; esto suelta la referencia del wrapper `scene.source`.
+      this.sceneSource?.release();
       this.scene?.release();
       this.context?.destroy();
     } catch {
@@ -842,6 +863,8 @@ export class ObsCapture extends EventEmitter {
     this.recording = null;
     this.encoders = [];
     this.outputChannels = [];
+    this.sceneItems = [];
+    this.sceneSource = null;
     this.inputs = [];
     this.gameAudioSource = null;
     this.gameCaptureSource = null;
