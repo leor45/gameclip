@@ -114,4 +114,6 @@ necesita otra estrategia y otro spec, no más iteración aquí.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-07-19 por el owner. La mitad de audio queda condicionada a lo que
+se mida en las pruebas: si el vídeo engancha y el audio no, sale de esta rama y va a una tarea
+propia, también dentro de la 0.9.1.

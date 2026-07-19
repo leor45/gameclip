@@ -1139,10 +1139,31 @@ Lo mismo rompe el audio: `processCaptureSettings` monta `::<exe>`, otro matcher 
 **Descartado:** no son privilegios (`Running as administrator: true` falla idéntico). No es la
 versión 0.9.0 (pasa en 0.8.1). No es que HD2 sea incapturable: Medal lo captura.
 
-**Dirección del arreglo:** cuando el ejecutable de la lista venga como `unknown`, resolver por
-**clase** (más estable que el título, que puede estar localizado) y ajustar `priority`
-(`0 = título · 1 = clase · 2 = ejecutable`; hoy hardcodeado a 2). Mismo tratamiento en el audio.
-**Sin verificar**: falta comprobar en máquina real que con la prioridad correcta el hook engancha.
+**Estado (2026-07-19):** implementado en `fix/game-capture-ventana-sin-ejecutable`, **pendiente de
+verificar con una sesión real de Helldivers 2**. `resolveGameWindow` gana un segundo criterio
+subordinado: si el match por ejecutable falla y la ventana trae `unknown`, empareja por **título
+normalizado** contra el ejecutable detectado (`'HELLDIVERS™ 2'` → `helldivers2`), y `priority` pasa
+a clase. Sin candidata inequívoca devuelve `null` y se queda como hoy. El camino de los juegos que
+ya enganchan no cambia (blindado con test de regresión).
+
+**Lo que sigue sin estar comprobado:** lo medido es que *el matcher no encuentra la ventana*. Que el
+hook **enganche** una vez encontrada es la hipótesis. Si GameGuard además bloquea la inyección de
+`graphics-hook64.dll`, esto no basta y hará falta otra estrategia. El audio por proceso puede fallar
+aunque el vídeo funcione: necesita el PID para la sesión de loopback, y encontrar la ventana no
+garantiza obtenerlo.
+
+**Valores reales de `priority`** (volcados de la propiedad-lista de libobs el 2026-07-19; una
+anotación anterior de este roadmap tenía el 0 y el 1 **invertidos**):
+
+| Valor | Literal de libobs | Significado |
+|---|---|---|
+| `0` | «Coincidir con el título, de lo contrario buscar ventana del mismo **tipo**» | clase |
+| `1` | «El título de la ventana debe coincidir» | título |
+| `2` | «Coincidir con el título, de lo contrario buscar ventana del mismo **ejecutable**» | ejecutable |
+
+Ojo con la semántica: **no** es «matchear solo por este campo». El título se intenta siempre
+primero y el valor elige el campo de respaldo. Mismos valores en `game_capture` y en
+`wasapi_process_output_capture`.
 
 ### 🐞 El perfil de juego se decide por proceso, no por ventana (menú de LoL)
 
@@ -1215,11 +1236,20 @@ en el log de libobs (`userData/obs-data/node-obs/logs/`).
 **Recordatorio del flujo:** es un Fix, así que va con **test de regresión primero** (rojo → verde) y
 la causa raíz en el `spec.md`.
 
-> ⚠️ **Posiblemente obsoleto (2026-07-18).** Durante la verificación de
-> `fix/fuga-fuentes-video-en-rebuild` se corrió `GAMECLIP_SELFTEST=recording` tres veces y las tres
-> produjeron un MP4 **válido**: 4.86 MB, 4 s de vídeo con imagen (0 frames negros) y 3 pistas de
-> audio capturando. No se investigó por qué; confirmar antes de abrirle rama, puede que ya lo
-> arreglara otra tarea.
+> ⚠️ **NO está obsoleto: es intermitente (2026-07-19).** El 2026-07-18 se anotó aquí que
+> «posiblemente ya estaba arreglado» porque tres selftests seguidos dieron un MP4 válido. Esa
+> lectura era **errónea**, y conviene no repetirla: el bug volvió a aparecer tal cual durante la
+> verificación de `fix/game-capture-ventana-sin-ejecutable` (`Total frames output: 1` frente a
+> `Total drawn frames: 262`, clip de 261 bytes).
+>
+> **Frecuencia medida ese día:** 1 fallo en 8 ejecuciones (7 con el fix de HD2 aplicado, 1 sobre
+> `main`), y el fallo cayó en la primera de la tanda. No se encontró disparador: la detección del
+> juego a mitad de la grabación ocurrió en **todas** las ejecuciones, incluidas las 7 correctas, así
+> que no es eso. El aviso `Cannot apply a new video_t object while the encoder is active` también
+> sale en las ejecuciones que funcionan, o sea que por sí solo no distingue.
+>
+> **Consecuencia para quien lo coja:** un puñado de ejecuciones verdes **no** demuestra nada aquí.
+> Hace falta una tanda larga y contar la tasa, no repetir hasta que salga bien.
 
 ## Futuro (fuera de alcance por ahora)
 
