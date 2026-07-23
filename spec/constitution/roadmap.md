@@ -1154,6 +1154,16 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 - El atajo no se re-registra al alternar la visibilidad, evitando el autorepeat que hacía parpadear el
   overlay y bloqueaba la app.
 
+> **Hotfix pre-release (2026-07-22, `hotfix/firmar-helpers-nativos`):** dos helpers nativos
+> —`gc-app-audio-mute.exe` y `gc-controller-listen.exe`— viajaban **sin firma Authenticode** en la
+> build firmada, mientras el resto del paquete (incluido `obs64.exe`) sí iba firmado. Causa: en
+> `electron-builder.yml` se declaraban como `extraResources` con mapeo **fichero-a-fichero**, que
+> electron-builder no firma; el mapeo **de carpeta con filtro** (el que ya usaba `gc-perf-sensors.exe`)
+> sí. Se movieron los dos al filtro de carpeta. Verificado sobre el paquete: **21/21 `.exe` firmados**
+> (20 `CN=GameClip`, 1 `CN=Intel Corporation` = `gc-presentmon.exe`, prefirmado). Inocuo
+> funcionalmente (ninguno se inyecta en el proceso del juego), pero elimina la incoherencia de firma y
+> la fricción extra de SmartScreen/AV. Sin nombrar en las notas públicas del release. 891 tests verdes.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

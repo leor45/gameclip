@@ -53,27 +53,31 @@ extraResources:
     to: LICENSE
   - from: build/TERCEROS.txt
     to: TERCEROS.txt
-  # Helper nativo que silencia el háptico del DualSense en la sesión de obs64.exe. Se compila con
-  # scripts/build-haptic-mute.ps1 y se commitea; queda en resources/ del portable (process.resourcesPath).
-  - from: resources/gc-app-audio-mute.exe
-    to: gc-app-audio-mute.exe
-  # Helper nativo que escucha el botón de captura de los mandos (DualSense por HID, Xbox por
-  # GameInput). Se compila con scripts/build-controller-listen.ps1; queda en resources/ del portable.
-  - from: resources/gc-controller-listen.exe
-    to: gc-controller-listen.exe
-  # Sensores del overlay de rendimiento (GPU/CPU, LibreHardwareMonitor sobre .NET Framework 4.8,
-  # incluido en Windows). Se compila con scripts/build-perf-sensors.ps1.
+  # Helpers nativos, TODOS POR CARPETA CON FILTRO (no fichero a fichero). El motivo original era
+  # gc-perf-sensors (ver más abajo), pero el mapeo de carpeta tiene otra ventaja crítica: es el único
+  # que electron-builder FIRMA al empaquetar. Con mapeo fichero-a-fichero (`from: resources/x.exe`)
+  # los exe salían SIN firma Authenticode, aunque el resto del paquete (obs64.exe, elevate.exe) sí.
+  # Medido 2026-07-22: misma fuente NotSigned, y tras empaquetar solo lo que entra por este filtro
+  # sale `Valid CN=GameClip`. Firma incoherente = fricción extra de SmartScreen/AV, de ahí el cambio.
   #
-  # POR CARPETA Y NO FICHERO A FICHERO, al revés que los demás helpers: con LHM 0.9.6 el helper dejó
-  # de ser "un .exe y su DLL" y pasa a arrastrar un cierre de 10 dependencias del NuGet más un
-  # .config con binding redirects (sin el .config el .exe NO ARRANCA). Enumerarlas aquí obligaría a
-  # tocar dos ficheros cada vez que cambie una versión, y olvidar una rompe SOLO el portable: en dev
-  # el helper resuelve resources/ por process.cwd() y todo parece correcto. Peor aún, no degrada a
-  # «—» en una métrica: el proceso muere y se van TODAS las de hardware. Con el filtro, el
-  # empaquetado no puede desincronizarse del script de build.
+  #   - gc-app-audio-mute.exe : silencia el háptico del DualSense en la sesión de obs64.exe
+  #                             (scripts/build-haptic-mute.ps1).
+  #   - gc-controller-listen.exe : escucha el botón de captura de los mandos (DualSense por HID,
+  #                             Xbox por GameInput) (scripts/build-controller-listen.ps1).
+  #   - gc-perf-sensors.exe : sensores del overlay (GPU/CPU, LibreHardwareMonitor sobre .NET 4.8)
+  #                             (scripts/build-perf-sensors.ps1). Con LHM 0.9.6 dejó de ser "un .exe
+  #                             y su DLL" y arrastra 10 dependencias del NuGet + un .config con
+  #                             binding redirects (sin el .config NO ARRANCA). El filtro por carpeta
+  #                             evita enumerarlas y que el empaquetado se desincronice del build:
+  #                             olvidar una rompe SOLO el portable (en dev resuelve por process.cwd())
+  #                             y no degrada a «—», mata el proceso y se van TODAS las de hardware.
+  #
+  # Todos quedan en resources/ del portable (process.resourcesPath), con su nombre de siempre.
   - from: resources
     to: .
     filter:
+      - gc-app-audio-mute.exe
+      - gc-controller-listen.exe
       - gc-perf-sensors.exe
       - gc-perf-sensors.exe.config
       - '*.dll'
