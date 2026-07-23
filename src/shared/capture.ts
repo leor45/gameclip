@@ -171,6 +171,8 @@ export interface CaptureSettings {
   overlayEnabled: boolean;
   /** Overlay de rendimiento (FPS, GPU, CPU…). Ver spec/work/feature-overlay-rendimiento. */
   perfOverlayEnabled: boolean;
+  /** Estado de vista del overlay activo; la acción configurable de atajo lo alterna. */
+  perfOverlayVisible: boolean;
   /** Atajo global que muestra/oculta el overlay de rendimiento (no cambia su configuración). */
   perfOverlayHotkey: string;
   /** Métricas marcadas, posición, disposición, color y opacidad del overlay de rendimiento. */
@@ -259,6 +261,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   bufferMode: 'always',
   overlayEnabled: true,
   perfOverlayEnabled: false,
+  perfOverlayVisible: true,
   perfOverlayHotkey: 'Alt+R',
   perfOverlay: DEFAULT_PERF_OVERLAY,
   autoLaunch: false,
@@ -498,6 +501,7 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     bufferMode: oneOf(raw.bufferMode, ['always', 'game'], d.bufferMode),
     overlayEnabled: bool(raw.overlayEnabled, d.overlayEnabled),
     perfOverlayEnabled: bool(raw.perfOverlayEnabled, d.perfOverlayEnabled),
+    perfOverlayVisible: bool(raw.perfOverlayVisible, d.perfOverlayVisible),
     perfOverlayHotkey:
       typeof raw.perfOverlayHotkey === 'string' && raw.perfOverlayHotkey.trim()
         ? raw.perfOverlayHotkey.trim()

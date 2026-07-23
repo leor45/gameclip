@@ -5,7 +5,7 @@ import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { SERVER_PORT } from '@shared/config';
 import type { GameNameContext, RunningGameMatch } from '@shared/games';
 import type { HotkeyKey } from '@shared/hotkeys';
-import { HOTKEY_ACTIONS, hotkeyCollisions, isHotkeyActive } from '@shared/hotkeys';
+import { HOTKEY_ACTIONS, hotkeyCollisions, hotkeySettingsChanged, isHotkeyActive } from '@shared/hotkeys';
 import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
 import { startApi, type ApiHandle } from '../../server/api';
@@ -36,7 +36,7 @@ import { PerfOverlayController } from './perf-overlay';
 import { PerfSampler } from './perf-metrics/sampler';
 import { createSensorsReader } from './perf-metrics/sensors';
 import { createPresentMonReader } from './perf-metrics/presentmon';
-import { createElevatedAutoLaunch } from './elevated-launch';
+import { createElevatedAutoLaunch, createElevationRelaunch } from './elevated-launch';
 import type { PerfSnapshot } from '@shared/perf';
 import { createTray } from './tray';
 import type { AppTray } from './tray';
@@ -370,8 +370,11 @@ function registerHotkeys(manager: CaptureManager): void {
       });
     },
     gameSwitchHotkey: () => void manager.switchGame(),
-    // Solo alterna la visibilidad; qué se muestra lo deciden los checks de Ajustes.
-    perfOverlayHotkey: () => perfOverlay?.toggleVisibility(),
+    // La combinación es configurable; la acción persiste solo su visibilidad, no la configuración.
+    perfOverlayHotkey: () => {
+      const settings = manager.getSettings();
+      void manager.setSettings({ perfOverlayVisible: !settings.perfOverlayVisible });
+    },
   };
 
   for (const action of HOTKEY_ACTIONS) {
@@ -424,6 +427,32 @@ function applyAutoLaunch(settings: CaptureSettings): void {
  */
 let elevadoRevirtiendo = false;
 
+function currentExecutablePath(): string {
+  return process.env['PORTABLE_EXECUTABLE_FILE'] ?? process.execPath;
+}
+
+function currentAppArgs(): string[] {
+  // En portable solo nos interesan flags de la app (`--hidden`); no se reenvía la ruta del exe
+  // temporal, porque el relaunch usa explícitamente PORTABLE_EXECUTABLE_FILE.
+  return process.argv.slice(1).filter((arg) => arg.startsWith('--'));
+}
+
+async function relaunchElevatedIfNeeded(settings: CaptureSettings): Promise<boolean> {
+  if (!app.isPackaged || !settings.autoLaunchElevated) return false;
+  const elevation = createElevationRelaunch();
+  if (await elevation.isElevated()) return false;
+  app.releaseSingleInstanceLock();
+  const ok = await elevation.relaunch(currentExecutablePath(), currentAppArgs());
+  if (!ok) {
+    app.requestSingleInstanceLock();
+    console.error('[autolaunch] UAC cancelado o relaunch elevado falló; continúa sin admin');
+    return false;
+  }
+  quitting = true;
+  app.quit();
+  return true;
+}
+
 function applyElevatedChange(prev: boolean, next: CaptureSettings): void {
   if (prev === next.autoLaunchElevated) return;
   // El cambio que estamos deshaciendo nosotros no debe intentar tocar la tarea otra vez.
@@ -435,7 +464,7 @@ function applyElevatedChange(prev: boolean, next: CaptureSettings): void {
     console.log('[autolaunch] auto-inicio elevado ignorado en dev');
     return;
   }
-  const exePath = process.env['PORTABLE_EXECUTABLE_FILE'] ?? process.execPath;
+  const exePath = currentExecutablePath();
   void createElevatedAutoLaunch()
     .setEnabled(next.autoLaunchElevated, exePath)
     .then((ok) => {
@@ -446,11 +475,12 @@ function applyElevatedChange(prev: boolean, next: CaptureSettings): void {
     });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (!primeraInstancia) return;
   // Lo primero: si el arranque anterior murió mal (apagón, cuelgue), su staging sigue ahí ocupando
   // cientos de MB y nadie más va a limpiarlo. También deja anotado el de esta ejecución.
   barrerTemporales(true);
+  if (await relaunchElevatedIfNeeded(settingsStore.load())) return;
   // Antes de la ventana: el renderer llama a /api apenas carga (sesión persistida).
   if (app.isPackaged) setupApi();
   capture = setupCapture();
@@ -462,7 +492,7 @@ app.whenReady().then(() => {
   {
     const s = capture.getSettings();
     // Los avisos se re-elevan tras cada re-elevación del overlay: comparten banda topmost.
-    perfOverlay = new PerfOverlayController(s.perfOverlayEnabled, s.perfOverlay, () =>
+    perfOverlay = new PerfOverlayController(s.perfOverlayEnabled, s.perfOverlayVisible, s.perfOverlay, () =>
       overlay?.raise(),
     );
     perfSampler = new PerfSampler({
@@ -507,6 +537,19 @@ app.whenReady().then(() => {
     pushToTalk.configure(s.pttEnabled && s.micEnabled, s.pttHotkey);
   }
   applyAutoLaunch(capture.getSettings());
+  {
+    const s = capture.getSettings();
+    // Tras una actualización el nombre del portable puede cambiar. La consulta no eleva; solo si el
+    // action difiere se recrea la tarea y Windows pide UAC una vez para corregirla.
+    if (app.isPackaged && s.autoLaunchElevated) {
+      const exePath = currentExecutablePath();
+      void createElevatedAutoLaunch()
+        .ensureEnabled(exePath)
+        .then((ok) => {
+          if (!ok) console.error('[autolaunch] no se pudo comprobar o reparar la tarea elevada');
+        });
+    }
+  }
   createMainWindow({ hidden: process.argv.includes('--hidden') });
 
   // Init de libobs sin bloquear la ventana; el estado llega por evento.
@@ -537,16 +580,18 @@ app.whenReady().then(() => {
   });
 
   // Si cambian los ajustes (p. ej. hotkeys, overlay, juegos manuales o auto-arranque), se re-aplican.
-  let elevadoAnterior = capture.getSettings().autoLaunchElevated;
+  let ajustesAnteriores = capture.getSettings();
   capture.on('settings', (settings: CaptureSettings) => {
-    registerHotkeys(capture!);
+    // Re-registrar el atajo que acaba de dispararse mientras Alt/R siguen pulsados hace que Windows
+    // vuelva a invocarlo como autorepeat. Solo se tocan los global shortcuts si cambió alguno suyo.
+    if (hotkeySettingsChanged(ajustesAnteriores, settings)) registerHotkeys(capture!);
     detector?.setCustomGames(settings.customGames);
     overlay?.setEnabled(settings.overlayEnabled);
-    perfOverlay?.configure(settings.perfOverlayEnabled, settings.perfOverlay);
+    perfOverlay?.configure(settings.perfOverlayEnabled, settings.perfOverlayVisible, settings.perfOverlay);
     perfSampler?.configure(settings.perfOverlayEnabled ? settings.perfOverlay.metrics : null);
     applyAutoLaunch(settings);
-    applyElevatedChange(elevadoAnterior, settings);
-    elevadoAnterior = settings.autoLaunchElevated;
+    applyElevatedChange(ajustesAnteriores.autoLaunchElevated, settings);
+    ajustesAnteriores = settings;
     pushToTalk.configure(settings.pttEnabled && settings.micEnabled, settings.pttHotkey);
   });
 

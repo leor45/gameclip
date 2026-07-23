@@ -106,13 +106,21 @@ describe('normalizePerfOverlay', () => {
     const settings = normalizeCaptureSettings({ fps: 60, overlayEnabled: true });
     expect(settings.perfOverlay).toEqual(DEFAULT_PERF_OVERLAY);
     expect(settings.perfOverlayEnabled).toBe(false);
+    expect(settings.perfOverlayVisible).toBe(true);
     expect(settings.perfOverlayHotkey).toBe('Alt+R');
     expect(settings.autoLaunchElevated).toBe(false);
   });
 
   it('el default de CaptureSettings incluye el overlay apagado con Alt+R', () => {
     expect(DEFAULT_CAPTURE_SETTINGS.perfOverlayEnabled).toBe(false);
+    expect(DEFAULT_CAPTURE_SETTINGS.perfOverlayVisible).toBe(true);
     expect(DEFAULT_CAPTURE_SETTINGS.perfOverlayHotkey).toBe('Alt+R');
+  });
+
+  it('conserva oculto el overlay activo tras recargar los ajustes', () => {
+    const settings = normalizeCaptureSettings({ perfOverlayEnabled: true, perfOverlayVisible: false });
+    expect(settings.perfOverlayEnabled).toBe(true);
+    expect(settings.perfOverlayVisible).toBe(false);
   });
 });
 

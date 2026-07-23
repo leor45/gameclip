@@ -66,6 +66,24 @@ export function isHotkeyActive(action: HotkeyAction, settings: CaptureSettings):
   return true;
 }
 
+/** Campos que cambian qué aceleradores globales están registrados. */
+const HOTKEY_SETTING_KEYS = [
+  'replayHotkey',
+  'recordingHotkey',
+  'recordingMode',
+  'screenshotHotkey',
+  'screenshotsEnabled',
+  'gameSwitchHotkey',
+  'gameSwitchEnabled',
+  'perfOverlayHotkey',
+  'perfOverlayEnabled',
+] as const;
+
+/** Evita desregistrar/re-registrar una tecla que todavía está físicamente pulsada. */
+export function hotkeySettingsChanged(before: CaptureSettings, after: CaptureSettings): boolean {
+  return HOTKEY_SETTING_KEYS.some((key) => before[key] !== after[key]);
+}
+
 // Modificadores en el orden canónico de Electron.
 const MODIFIERS = ['Ctrl', 'Alt', 'Shift', 'Super'] as const;
 

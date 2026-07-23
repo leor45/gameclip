@@ -129,14 +129,14 @@ export function carpetasHuerfanas(
       // caso que este fix vino a resolver.
       if (anotadas.has(clave)) return true;
 
-      if (deAhora.has(clave)) return false; // el staging de ahora: el launcher lo tiene abierto
-      if (!esAnterior(carpeta)) return false; // de la ejecución en curso
+      // Payload versionado de GameClip: no es ambiguo como un `ns*.tmp`, así que se puede intentar
+      // borrar aunque sea reciente. Si realmente está en uso, el rename falla antes de tocarlo.
+      if (existe(join(carpeta, exe)) || existe(join(carpeta, OBS64))) return true;
 
-      return (
-        existe(join(carpeta, exe)) || // payload completo
-        existe(join(carpeta, '7z-out', exe)) || // staging del extractor
-        existe(join(carpeta, OBS64)) // payload a medio borrar
-      );
+      if (deAhora.has(clave)) return false; // el staging de ahora: el launcher lo tiene abierto
+      if (!esAnterior(carpeta)) return false; // staging de la ejecución en curso o demasiado reciente
+
+      return existe(join(carpeta, '7z-out', exe)); // staging del extractor
     });
 }
 

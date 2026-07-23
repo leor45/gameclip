@@ -142,6 +142,7 @@ describe('Ajustes — Overlay de rendimiento', () => {
 
     const guardado = mock().capture.setSettings.mock.calls[0][0];
     expect(guardado.perfOverlayEnabled).toBe(true);
+    expect(guardado.perfOverlayVisible).toBe(true);
     expect(guardado.perfOverlay.metrics.gpuTemp).toBe(true);
     expect(guardado.perfOverlay.metrics.fps).toBe(true);
   });
