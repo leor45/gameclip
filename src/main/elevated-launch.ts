@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 
 // Auto-inicio con privilegios de administrador: una tarea programada al logon con RunLevel
 // HIGHEST. Es la única vía sin prompt UAC recurrente —la clave Run no puede elevar y un manifest
@@ -22,6 +22,14 @@ export function schtasksDeleteArgs(): string {
   return `/Delete /TN ${ELEVATED_TASK_NAME} /F`;
 }
 
+/** La tarea correcta tiene que lanzar exactamente el portable actual y arrancar en bandeja. */
+export function elevatedTaskMatches(taskXml: string | null, exePath: string): boolean {
+  if (!taskXml) return false;
+  const command = taskXml.match(/<Command>([^<]*)<\/Command>/i)?.[1];
+  const arguments_ = taskXml.match(/<Arguments>([^<]*)<\/Arguments>/i)?.[1];
+  return command === exePath && arguments_ === '--hidden';
+}
+
 /**
  * Argumentos de powershell.exe para correr schtasks elevado (UAC) y esperar su resultado.
  * `-Wait` propaga el fin; si el usuario cancela el UAC, Start-Process lanza y el exit code de
@@ -40,6 +48,13 @@ export function powershellElevatedArgs(schtasksArgLine: string): string[] {
 export interface ElevatedLaunchDeps {
   /** Corre powershell.exe con estos args; resuelve true si terminó con exit code 0. */
   run: (args: string[]) => Promise<boolean>;
+  /** XML de la tarea actual; null si no existe o no se pudo consultar. */
+  query?: () => Promise<string | null>;
+}
+
+export interface ElevationRelaunchDeps {
+  isElevated: () => Promise<boolean>;
+  relaunch: (exePath: string, appArgs: string[]) => Promise<boolean>;
 }
 
 /**
@@ -58,6 +73,72 @@ export class ElevatedAutoLaunch {
       return false;
     }
   }
+
+  /** Repara la ruta tras actualizar el portable, sin UAC si la tarea ya es correcta. */
+  async ensureEnabled(exePath: string): Promise<boolean> {
+    try {
+      const current = await this.deps.query?.();
+      if (elevatedTaskMatches(current ?? null, exePath)) return true;
+      return this.setEnabled(true, exePath);
+    } catch {
+      // No se eleva a ciegas si ni siquiera pudimos saber si la tarea existe.
+      return false;
+    }
+  }
+}
+
+export class ElevationRelaunch {
+  constructor(private readonly deps: ElevationRelaunchDeps) {}
+
+  async isElevated(): Promise<boolean> {
+    try {
+      return await this.deps.isElevated();
+    } catch {
+      return false;
+    }
+  }
+
+  async relaunch(exePath: string, appArgs: string[]): Promise<boolean> {
+    try {
+      return await this.deps.relaunch(exePath, appArgs);
+    } catch {
+      return false;
+    }
+  }
+}
+
+function psSingle(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+/** Argumentos para relanzar el portable real como administrador, conservando flags como `--hidden`. */
+export function powershellRelaunchElevatedArgs(exePath: string, appArgs: string[]): string[] {
+  const file = psSingle(exePath);
+  const args = appArgs.map((arg) => `'${psSingle(arg)}'`).join(', ');
+  const argList = appArgs.length ? ` -ArgumentList @(${args})` : '';
+  return [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    `try { Start-Process -FilePath '${file}'${argList} -Verb RunAs; exit 0 } catch { exit 1 }`,
+  ];
+}
+
+function queryTask(): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'schtasks.exe',
+      ['/Query', '/TN', ELEVATED_TASK_NAME, '/XML'],
+      { windowsHide: true },
+      (error, stdout) => {
+        // schtasks usa 1 cuando la tarea no existe; eso sí se repara. Cualquier otro fallo (política,
+        // permisos, binario ausente) se propaga para evitar un prompt UAC inútil en cada arranque.
+        if (!error) resolve(stdout);
+        else if (error.code === 1) resolve(null);
+        else reject(error);
+      },
+    );
+  });
 }
 
 function realRun(args: string[]): Promise<boolean> {
@@ -68,6 +149,30 @@ function realRun(args: string[]): Promise<boolean> {
   });
 }
 
+function realIsElevated(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = execFile('net.exe', ['session'], { windowsHide: true }, (error) =>
+      resolve(!error),
+    );
+    child.on('error', () => resolve(false));
+  });
+}
+
+function realRelaunch(exePath: string, appArgs: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn('powershell.exe', powershellRelaunchElevatedArgs(exePath, appArgs), {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    child.on('error', () => resolve(false));
+    child.on('exit', (code) => resolve(code === 0));
+  });
+}
+
 export function createElevatedAutoLaunch(): ElevatedAutoLaunch {
-  return new ElevatedAutoLaunch({ run: realRun });
+  return new ElevatedAutoLaunch({ run: realRun, query: queryTask });
+}
+
+export function createElevationRelaunch(): ElevationRelaunch {
+  return new ElevationRelaunch({ isElevated: realIsElevated, relaunch: realRelaunch });
 }

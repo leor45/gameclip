@@ -5,6 +5,7 @@ import {
   HOTKEY_ACTIONS,
   accelFromKeyPress,
   hotkeyCollisions,
+  hotkeySettingsChanged,
   isHotkeyActive,
   isPttReserved,
   isValidAccelerator,
@@ -82,6 +83,32 @@ describe('hotkeyCollisions', () => {
   it("con el modo de grabación en 'off', clip y grabación no chocan (no se registran)", () => {
     const s = { ...base, recordingMode: 'off' as const, recordingHotkey: 'F8' };
     expect(hotkeyCollisions(s)).toEqual([]);
+  });
+});
+
+describe('hotkeySettingsChanged', () => {
+  it('no re-registra atajos al cambiar solo la visibilidad del overlay', () => {
+    expect(
+      hotkeySettingsChanged(DEFAULT_CAPTURE_SETTINGS, {
+        ...DEFAULT_CAPTURE_SETTINGS,
+        perfOverlayVisible: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('re-registra al cambiar una combinación o el interruptor que habilita una acción', () => {
+    expect(
+      hotkeySettingsChanged(DEFAULT_CAPTURE_SETTINGS, {
+        ...DEFAULT_CAPTURE_SETTINGS,
+        perfOverlayHotkey: 'Alt+P',
+      }),
+    ).toBe(true);
+    expect(
+      hotkeySettingsChanged(DEFAULT_CAPTURE_SETTINGS, {
+        ...DEFAULT_CAPTURE_SETTINGS,
+        perfOverlayEnabled: true,
+      }),
+    ).toBe(true);
   });
 });
 

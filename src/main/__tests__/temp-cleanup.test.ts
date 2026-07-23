@@ -83,6 +83,13 @@ describe('carpetasHuerfanas', () => {
     expect(carpetasHuerfanas(e)).toEqual([]);
   });
 
+  it('borra un payload de otra version aunque sea reciente', () => {
+    const viejo = `${TEMP}\\GameClip-0.0.9`;
+    const e = entorno(['GameClip-0.0.9', 'GameClip-0.1.0'], [`${viejo}\\GameClip.exe`, EXE], [viejo]);
+
+    expect(carpetasHuerfanas(e)).toEqual([viejo]);
+  });
+
   // El staging de ESTA ejecución lo tiene abierto el launcher (guarda su app-64.7z mientras la app
   // corre). Tocarlo dejaba una carpeta a medio borrar; se salta y lo limpia el cierre siguiente.
   it('NO toca el staging de la ejecución en curso', () => {

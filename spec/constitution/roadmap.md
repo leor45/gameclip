@@ -797,6 +797,23 @@ inexistente. Verificado con el juego real: el clip muestra el juego, sin nada de
 > overlay de Steam en RE Requiem con DLSS FG (`DLSS 128 | FPS 64`): la 1.10 daba ~19–61 fps y la 2.5.1,
 > 133. Las columnas que se parsean (`Application`, `MsBetweenPresents`) están en ambas.
 >
+> **Fix post-entrega (2026-07-22, `fix/persistencia-overlay-y-tarea-elevada`):** la acción
+> configurable "Mostrar/ocultar overlay de rendimiento" guardaba su estado solo en el controller,
+> por lo que al reiniciar reaparecía aunque se hubiera ocultado. `perfOverlayVisible` persiste ahora
+> separado de `perfOverlayEnabled`; el atajo configurable lo alterna sin apagar helpers ni métricas.
+> Además, la tarea elevada solo se creaba al cambiar el checkbox: tras una actualización seguía
+> apuntando al portable versionado anterior. Al arrancar, si el opt-in está activo, GameClip consulta
+> su XML y la recrea solo si el `Command`/`Arguments` ya no son el exe actual con `--hidden`; si ya
+> coincide no hay UAC adicional. Un ajuste inmediato corrigió el autorepeat: persistir la visibilidad
+> disparaba el re-registro de todos los `globalShortcut` mientras la combinación seguía pulsada y
+> Windows volvía a invocarla en bucle. Ahora solo se re-registran cuando cambia una combinación o su
+> condición de activación. El mismo fix suma relaunch elevado en arranque manual: si el ajuste elevado
+> está activo y el proceso no corre como administrador, se relanza el portable real con `RunAs` tras la
+> limpieza inicial de temporales y antes de inicializar la app; si UAC se cancela, sigue sin admin.
+> Además, la limpieza ya no espera el margen de 60s para payloads versionados identificables
+> (`GameClip-<version>`), porque durante el relaunch UAC eso dejaba viva la carpeta de la versión
+> anterior; el margen sigue aplicando al staging ambiguo `ns*.tmp`. 891 tests verdes.
+>
 > **Hallazgo de sesiones ETW:** sobreviven al proceso que las creó, así que matar PresentMon deja la
 > sesión viva. Con varias huérfanas —propias, o de Steam y la NVIDIA App, que capturan igual— Windows
 > agota los cupos del proveedor y PresentMon arranca **sin error pero mudo**, sin ninguna pista del
@@ -1127,6 +1144,15 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > ⚠️ **Lo que la 0.9.1 NO arregla:** los clips negros de **Helldivers 2** en las builds publicadas.
 > Su causa raíz es que `obs64.exe` no lleva firma Authenticode y el anti-cheat le deniega el acceso
 > al proceso del juego (entrada propia más abajo). Las notas del release no deben prometerlo.
+
+### 🧪 v0.9.2 (2026-07-22, portable de verificación) — overlay y auto-inicio elevado
+
+- El estado visible/oculto del overlay de rendimiento se conserva entre reinicios mediante la acción
+  configurable de atajo, sin apagar métricas ni helpers.
+- Con el auto-inicio elevado activo, el arranque corrige la tarea programada si sigue apuntando al
+  portable de una versión anterior; si ya coincide, no muestra UAC.
+- El atajo no se re-registra al alternar la visibilidad, evitando el autorepeat que hacía parpadear el
+  overlay y bloqueaba la app.
 
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 

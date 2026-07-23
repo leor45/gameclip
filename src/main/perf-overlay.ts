@@ -40,10 +40,9 @@ const RAISE_MS = 2000;
 export class PerfOverlayController {
   private win: BrowserWindow | null = null;
   private enabled: boolean;
+  private visible: boolean;
   private config: PerfOverlayConfig;
   private snapshot: PerfSnapshot = EMPTY_PERF_SNAPSHOT;
-  /** Ocultado con el hotkey. No persiste: reactivar el overlay lo devuelve visible. */
-  private oculto = false;
   private raiseTimer: NodeJS.Timeout | null = null;
   /**
    * ¿Oculto de las capturas ahora mismo? Nace en `true` (ver la creación de la ventana) y lo baja el
@@ -53,11 +52,13 @@ export class PerfOverlayController {
 
   constructor(
     enabled: boolean,
+    visible: boolean,
     config: PerfOverlayConfig,
     /** Vuelve a elevar los avisos, para que queden por encima tras cada re-elevación. */
     private readonly raiseNotices: () => void = () => undefined,
   ) {
     this.enabled = enabled;
+    this.visible = visible;
     this.config = config;
     this.sync();
   }
@@ -83,9 +84,9 @@ export class PerfOverlayController {
   }
 
   /** Ajustes guardados: estado nuevo completo. */
-  configure(enabled: boolean, config: PerfOverlayConfig): void {
-    if (enabled && !this.enabled) this.oculto = false; // renace visible
+  configure(enabled: boolean, visible: boolean, config: PerfOverlayConfig): void {
     this.enabled = enabled;
+    this.visible = visible;
     this.config = config;
     this.sync();
   }
@@ -101,13 +102,6 @@ export class PerfOverlayController {
   setSnapshot(snapshot: PerfSnapshot): void {
     this.snapshot = snapshot;
     if (this.win && this.win.isVisible()) this.pushData();
-  }
-
-  /** Hotkey global: alterna solo la visibilidad, sin tocar la configuración. */
-  toggleVisibility(): void {
-    if (!this.enabled) return;
-    this.oculto = !this.oculto;
-    this.sync();
   }
 
   /** ¿Hay ventana viva? (para tests/manual; con el overlay apagado no debe existir). */
@@ -150,7 +144,7 @@ export class PerfOverlayController {
     const { x, y } = perfWindowPosition(this.config.posX, this.config.posY, workArea, TAMANO, MARGIN);
     win.setBounds({ x, y, ...TAMANO });
     this.pushData();
-    if (this.oculto) {
+    if (!this.visible) {
       if (win.isVisible()) win.hide();
       this.stopRaiseTimer();
     } else {

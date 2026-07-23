@@ -198,7 +198,10 @@ export default function AjustesAvanzado() {
           <input
             type="checkbox"
             checked={settings.perfOverlayEnabled}
-            onChange={(e) => set('perfOverlayEnabled', e.target.checked)}
+            onChange={(e) => {
+              set('perfOverlayEnabled', e.target.checked);
+              if (e.target.checked) set('perfOverlayVisible', true);
+            }}
           />
           Mostrar overlay de rendimiento
         </label>
