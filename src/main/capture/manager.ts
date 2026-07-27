@@ -63,6 +63,11 @@ export interface CaptureEnvironment {
   displayByIndex?: (index: number) => DisplayInfo | null;
 }
 
+/** ¿Son el mismo monitor? Tamaño + origen físicos, que es justo lo que libobs matchea al elegirlo. */
+function sameDisplay(a: DisplayInfo, b: DisplayInfo): boolean {
+  return a.width === b.width && a.height === b.height && a.x === b.x && a.y === b.y;
+}
+
 /** Payload del evento 'clip-saved'. */
 export interface ClipSavedInfo {
   filePath: string;
@@ -134,6 +139,8 @@ export class CaptureManager extends EventEmitter {
   private micHeld = false;
   /** Perfil con el que se construyó el pipeline vigente (null: aún no hay pipeline). */
   private builtProfile: CaptureProfile | null = null;
+  /** Display con el que se construyó el pipeline vigente (null: aún no hay pipeline). */
+  private builtDisplay: DisplayInfo | null = null;
   /** Rebuild pendiente porque el perfil cambió durante una grabación (se hace al terminarla). */
   private pendingRebuild = false;
   /**
@@ -301,6 +308,28 @@ export class CaptureManager extends EventEmitter {
       await this.queueRebuild();
     }
     return next;
+  }
+
+  /**
+   * El sistema cambió de monitores: uno se encendió, se apagó o cambió de geometría.
+   *
+   * Hace falta porque el display objetivo se resuelve **al construir el pipeline** y libobs se queda
+   * con ese device id: arrancar con el monitor seleccionado apagado dejaba la captura clavada en el
+   * fallback para el resto de la sesión, aunque el monitor volviera (la única cura era guardar
+   * ajustes, que sí reconstruye).
+   *
+   * Solo reconstruye si el display objetivo **cambió**: cada rebuild vacía el búfer de repetición y
+   * estos eventos llegan por cualquier cosa (escala, work area, mover ventanas). Con una grabación
+   * en curso se aplaza igual que un cambio de perfil: el clip se termina entero.
+   */
+  async displaysChanged(): Promise<void> {
+    if (!this.obs.isInitialized || this.builtDisplay === null) return;
+    if (sameDisplay(this.resolveTargetDisplay(this.store.load()), this.builtDisplay)) return;
+    if (this.status.state === 'recording') {
+      this.pendingRebuild = true;
+      return;
+    }
+    await this.queueRebuild();
   }
 
   /**
@@ -639,15 +668,23 @@ export class CaptureManager extends EventEmitter {
     else if (!this.shouldBuffer() && this.bufferRunning) await this.stopBuffer();
   }
 
+  /**
+   * Display a grabar: el del índice configurado y, si no se resuelve (monitor apagado o
+   * desconectado), el primario como fallback. Único punto de resolución: `rebuildPipeline` y
+   * `displaysChanged` tienen que decidir igual o la comparación de «cambió el display» mentiría.
+   */
+  private resolveTargetDisplay(settings: CaptureSettings): DisplayInfo {
+    return this.env.displayByIndex?.(settings.screenMonitorIndex) ?? this.env.primaryDisplay;
+  }
+
   private async rebuildPipeline(): Promise<void> {
     const settings = this.store.load();
     const outputDir = this.outputDir();
     mkdirSync(outputDir, { recursive: true });
-    // El display a grabar lo decide el índice configurado; si no se resuelve, cae al primario.
-    const screen =
-      this.env.displayByIndex?.(settings.screenMonitorIndex) ?? this.env.primaryDisplay;
+    const screen = this.resolveTargetDisplay(settings);
     this.obs.buildPipeline(settings, screen, outputDir, this.detectedGameExe);
     this.builtProfile = captureProfile(settings, this.detectedGameExe !== null);
+    this.builtDisplay = screen;
     this.pendingRebuild = false;
     this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
     this.applyMicMute(); // el rebuild resetea el mute; re-aplicar el estado del PTT

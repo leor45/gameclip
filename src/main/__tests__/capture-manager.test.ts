@@ -7,6 +7,7 @@ import { HapticMuteListener } from '../capture/app-audio-mute';
 import { ControllerCaptureListener } from '../capture/controller-capture';
 import { AIM_RETRY_INTERVAL_MS, AIM_RETRY_MAX, CaptureManager, gameExecutableForName } from '../capture/manager';
 import type { CaptureBackend, ClipSavedInfo } from '../capture/manager';
+import type { DisplayInfo } from '../capture/obs';
 import { SettingsStore } from '../capture/settings-store';
 
 /** Listener del háptico sin binario: apply/stop son no-op, nunca spawnea un proceso real. */
@@ -37,14 +38,17 @@ class FakeObs implements CaptureBackend {
   getAudioDevices(): AudioDeviceInfo[] {
     return [];
   }
+  /** Último display con el que se construyó el pipeline (el que libobs traduce a monitor_id). */
+  ultimoScreen: { width: number; height: number; x: number; y: number } | null = null;
   buildPipeline(
     _settings: CaptureSettings,
-    _screen: { width: number; height: number; x: number; y: number },
+    screen: { width: number; height: number; x: number; y: number },
     _outputDir: string,
     gameExecutable: string | null,
   ): void {
     this.llamadas.push('buildPipeline');
     this.buildCount++;
+    this.ultimoScreen = screen;
     this.ultimoGameExe = gameExecutable;
     this.bufferActivo = false;
   }
@@ -121,7 +125,10 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function crear(ajustes: Partial<CaptureSettings> = {}): CaptureManager {
+  function crear(
+    ajustes: Partial<CaptureSettings> = {},
+    displayByIndex?: (index: number) => DisplayInfo | null,
+  ): CaptureManager {
     const store = new SettingsStore(join(dir, 'settings.json'));
     store.save({ ...ajustes, outputDir: join(dir, 'salida') });
     return new CaptureManager(
@@ -131,6 +138,7 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
         defaultOutputDir: join(dir, 'salida'),
         appVersion: '0.0.0-test',
         primaryDisplay: { width: 1920, height: 1080, x: 0, y: 0 },
+        displayByIndex,
       },
       obs,
       'ffmpeg-test',
@@ -219,6 +227,81 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       manager.shutdown();
 
       expect(emitidos[emitidos.length - 1]).toBe(false);
+    });
+  });
+
+  /**
+   * Regresión del monitor apagado al arrancar: el display objetivo se resolvía UNA vez, al construir
+   * el pipeline. Con el monitor seleccionado apagado, libobs se quedaba con el device id del que
+   * hubiera (el fallback) y seguía grabando ese aunque el principal se encendiera después; la única
+   * cura era abrir Ajustes y guardar (que sí encola un rebuild).
+   */
+  describe('reasignación del monitor al cambiar la topología de displays', () => {
+    const OLED: DisplayInfo = { width: 3840, height: 2160, x: 0, y: 0 };
+    const SECUNDARIO: DisplayInfo = { width: 1920, height: 1080, x: 0, y: 0 };
+
+    /** displayByIndex controlable: `presente` decide si el monitor seleccionado existe ya. */
+    function displaysConOled(estado: { encendido: boolean }) {
+      return (index: number): DisplayInfo | null => {
+        if (index !== 0) return null;
+        return estado.encendido ? OLED : null;
+      };
+    }
+
+    it('regresión: al encender el monitor seleccionado se reconstruye el pipeline con ese display', async () => {
+      const estado = { encendido: false }; // OLED apagado durante el arranque de Windows
+      const manager = crear({ bufferMode: 'always', screenMonitorIndex: 0 }, displaysConOled(estado));
+      await manager.initialize();
+      // Fallback: se graba el display disponible, no hay nada mejor que hacer.
+      expect(obs.ultimoScreen).toEqual(SECUNDARIO);
+      const buildsAntes = obs.buildCount;
+
+      estado.encendido = true; // el usuario enciende el OLED, ya con la app corriendo
+      await manager.displaysChanged();
+
+      expect(obs.buildCount).toBe(buildsAntes + 1);
+      expect(obs.ultimoScreen).toEqual(OLED); // el seleccionado, sin tocar Ajustes
+    });
+
+    it('el monitor seleccionado desaparece: cae al display disponible en vez de grabar negro', async () => {
+      const estado = { encendido: true };
+      const manager = crear({ bufferMode: 'always', screenMonitorIndex: 0 }, displaysConOled(estado));
+      await manager.initialize();
+      expect(obs.ultimoScreen).toEqual(OLED);
+
+      estado.encendido = false;
+      await manager.displaysChanged();
+
+      expect(obs.ultimoScreen).toEqual(SECUNDARIO);
+    });
+
+    it('un evento que no cambia el display objetivo no reconstruye (no vacía el búfer)', async () => {
+      const estado = { encendido: true };
+      const manager = crear({ bufferMode: 'always', screenMonitorIndex: 0 }, displaysConOled(estado));
+      await manager.initialize();
+      const buildsAntes = obs.buildCount;
+
+      await manager.displaysChanged();
+
+      expect(obs.buildCount).toBe(buildsAntes);
+      expect(obs.bufferActivo).toBe(true);
+    });
+
+    it('con una grabación en curso el rebuild se difiere hasta cerrarla', async () => {
+      const estado = { encendido: false };
+      const manager = crear({ bufferMode: 'always', screenMonitorIndex: 0 }, displaysConOled(estado));
+      await manager.initialize();
+      await manager.startRecording();
+      const buildsAntes = obs.buildCount;
+
+      estado.encendido = true;
+      await manager.displaysChanged();
+      // El clip en curso se termina entero con el display anterior: cortarlo sería peor.
+      expect(obs.buildCount).toBe(buildsAntes);
+
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(buildsAntes + 1);
+      expect(obs.ultimoScreen).toEqual(OLED);
     });
   });
 
