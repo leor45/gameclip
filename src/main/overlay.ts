@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { BrowserWindow, screen } from 'electron';
 import { IpcEvent } from '@shared/ipc';
 import type { OverlayState } from '@shared/ipc';
-import { overlayStateFor } from '@shared/overlay';
+import { overlayStateFor, overlayWindowPosition } from '@shared/overlay';
 import type { OverlayNotice, OverlayZone } from '@shared/overlay';
 
 const TOAST_MS = 3000;
@@ -87,6 +87,17 @@ export class OverlayController {
   }
 
   /**
+   * Recoloca las ventanas ya creadas en el monitor primario de ahora. `syncZona` ya lo hace en cada
+   * aparición; esto es para el aviso que está **visible** cuando cambian los monitores (el REC de una
+   * grabación en curso), que si no se quedaría en el monitor viejo hasta la siguiente vez.
+   */
+  reposition(): void {
+    for (const [zona, ventana] of this.ventanas) {
+      this.colocar(zona, ventana.win);
+    }
+  }
+
+  /**
    * Re-eleva las ventanas visibles. Lo llama el overlay de rendimiento después de re-elevarse él:
    * los dos son topmost, así que dentro de esa banda el último en subir gana, y estos avisos tienen
    * que quedar siempre por encima.
@@ -143,10 +154,22 @@ export class OverlayController {
       ventana.hideTimer = null;
     }
     ventana.win.webContents.send(IpcEvent.OverlayState, state);
+    // La esquina se recalcula en CADA aparición, no solo al crear la ventana: las ventanas se
+    // reutilizan (solo se ocultan) y el monitor primario pudo cambiar por debajo — encender una
+    // pantalla que estaba apagada al arrancar dejaba los avisos clavados en el monitor de respaldo
+    // mientras la grabación ya se había mudado. Cubre también mover la barra de tareas o la escala.
+    this.colocar(zona, ventana.win);
     if (!ventana.win.isVisible()) ventana.win.showInactive();
     // Dentro de la banda topmost manda el orden Z: los avisos se re-elevan al mostrarse para
     // quedar siempre por encima del overlay de rendimiento (que también es topmost).
     ventana.win.moveTop();
+  }
+
+  /** Lleva la ventana a su esquina del monitor primario **de ahora** (el work area se relee). */
+  private colocar(zona: Zona, win: BrowserWindow): void {
+    const tamano = TAMANO[zona];
+    const workArea = screen.getPrimaryDisplay().workArea;
+    win.setBounds({ ...overlayWindowPosition(zona, workArea, tamano, MARGIN), ...tamano });
   }
 
   private createWindow(zona: Zona): Ventana {
@@ -155,11 +178,7 @@ export class OverlayController {
     const win = new BrowserWindow({
       width,
       height,
-      x:
-        zona === 'left'
-          ? workArea.x + MARGIN
-          : workArea.x + workArea.width - width - MARGIN,
-      y: workArea.y + MARGIN,
+      ...overlayWindowPosition(zona, workArea, TAMANO[zona], MARGIN),
       frame: false,
       transparent: true,
       resizable: false,

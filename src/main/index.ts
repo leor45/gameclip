@@ -267,6 +267,8 @@ function watchDisplayChanges(screen: Electron.Screen, manager: CaptureManager): 
     if (displaysTimer) clearTimeout(displaysTimer);
     displaysTimer = setTimeout(() => {
       displaysTimer = null;
+      // Los avisos se recolocan solos al aparecer; esto es para el que ya está en pantalla.
+      overlay?.reposition();
       void manager
         .displaysChanged()
         .catch((err) => console.error('[capture] reasignar el monitor falló:', err));

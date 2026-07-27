@@ -13,6 +13,13 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
       `display-metrics-changed` con debounce ~2 s → `displaysChanged()`, y limpiar listeners + timer
       en el teardown.
 
+## Ampliación (overlay de avisos, aprobada el 2026-07-26)
+
+- [x] 4. Helper puro `overlayWindowPosition` en `src/shared/overlay.ts`.
+- [x] 5. `OverlayController`: `colocar()` privado, recolocado en cada aparición (`syncZona`) y
+      `reposition()` público para las ventanas ya visibles.
+- [x] 6. `index.ts`: el handler debounceado de monitores llama también a `overlay?.reposition()`.
+
 ## Tests unitarios (obligatorios)
 
 Camino feliz **y** casos borde. Si es un Fix: el test de regresión va primero (rojo → verde).
@@ -28,8 +35,12 @@ Camino feliz **y** casos borde. Si es un Fix: el test de regresión va primero (
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
+- [x] `overlayWindowPosition`: cada zona en su esquina, y con el origen del monitor (work area que no
+      empieza en 0,0 — es lo que hace que los avisos se muden de monitor).
 - [ ] Comprobación manual (owner): con GameClip corriendo y el OLED apagado, encenderlo y grabar escritorio
       sin tocar Ajustes → el clip sale del OLED. Apagarlo → cae al secundario en vez de grabar negro.
+- [ ] Comprobación manual (owner): tras encender el OLED, el REC y el toast «Clip guardado» salen en
+      el OLED, no en el secundario.
 
 ## Cierre
 

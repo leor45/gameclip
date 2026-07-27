@@ -27,6 +27,19 @@ Notas de comportamiento que salen gratis con este enfoque: apagar el monitor sel
 dispara la reasignación (fallback), y el rebuild re-resuelve además el lienzo base
 (`computePipelineSizes`), que también depende del display.
 
+## Ampliación aprobada (2026-07-26): overlay de avisos
+
+Misma causa raíz, otro sitio: `OverlayController.createWindow` calcula la esquina con el `workArea`
+del primario **al crear la ventana**, y las ventanas se reutilizan (solo se ocultan). Enfoque idéntico
+al del overlay de rendimiento, que no sufre el bug porque recalcula en cada `sync()`:
+
+1. Helper puro `overlayWindowPosition(zone, workArea, win, margin)` en `src/shared/overlay.ts`
+   (gemelo de `perfWindowPosition`), testeable sin Electron.
+2. `syncZona` recoloca (`setBounds`) **en cada aparición**, antes de mostrar.
+3. `OverlayController.reposition()` para las ventanas ya visibles, llamado desde el mismo handler
+   debounceado de cambios de monitores: si no, el REC de una grabación en curso se quedaría en el
+   monitor viejo hasta ocultarse.
+
 ## Archivos / módulos afectados
 
 - `src/main/capture/manager.ts` — campo `builtDisplay`, helper `resolveTargetDisplay()`, método
@@ -34,6 +47,10 @@ dispara la reasignación (fallback), y el rebuild re-resuelve además el lienzo 
 - `src/main/index.ts` — suscripción a los tres eventos de `screen` con debounce, y limpieza de los
   listeners/timer al cerrar (junto al resto del teardown de la app).
 - `src/main/__tests__/capture-manager.test.ts` — tests nuevos (ver abajo).
+- `src/shared/overlay.ts` + `src/shared/__tests__/overlay.test.ts` — helper puro `overlayWindowPosition`
+  y sus tests (ampliación).
+- `src/main/overlay.ts` — `colocar()` privado, recolocado en `syncZona` y `reposition()` público
+  (ampliación).
 
 ## Tests (regresión primero)
 

@@ -1180,6 +1180,16 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > caso inverso: apagar el monitor elegido reasigna al disponible en vez de grabar negro. La identidad
 > del monitor sigue siendo el **índice** de `getAllDisplays()` (migrar a un id estable de dispositivo
 > queda fuera, tarea aparte). 4 tests de regresión; 895 tests verdes.
+>
+> **Ampliación en la misma rama (aprobada por el owner tras verificar el fix):** la misma causa raíz
+> afectaba al **overlay de avisos** (REC y «Clip guardado»), que calculaba su esquina con el `workArea`
+> del primario **al crear la ventana**; como las ventanas se reutilizan (solo se ocultan), los avisos
+> seguían saliendo en el monitor de respaldo mientras la grabación ya se había mudado al correcto. El
+> overlay de **rendimiento** no lo sufría porque recalcula en cada `sync()`. Arreglo simétrico: helper
+> puro `overlayWindowPosition` en `shared/overlay.ts` (gemelo de `perfWindowPosition`), recolocado en
+> **cada aparición** (`syncZona`) y `OverlayController.reposition()` desde el handler de monitores para
+> el REC que ya está visible. Los dos overlays siguen al **primario de Windows**, no al monitor
+> configurado para grabar: eso queda como está. 897 tests verdes.
 
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 

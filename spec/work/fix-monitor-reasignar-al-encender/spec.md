@@ -36,10 +36,20 @@ guardado apunta al monitor equivocado mientras dure el apagón, sin que el usuar
 - Test de regresión que reproduce el bug: pipeline construido con un solo display → aparece el
   display seleccionado → el pipeline se reconstruye con el display correcto.
 
+**Ampliación aprobada por el owner (2026-07-26, tras verificar el fix en su máquina):** misma causa
+raíz en el **overlay de avisos** (REC y «Clip guardado»). Su posición se calcula **una sola vez, al
+crear la ventana** ([overlay.ts](../../../src/main/overlay.ts)); como las ventanas se reutilizan (solo
+se ocultan, nunca se destruyen), los avisos se quedaban en el monitor que era primario al arrancar
+mientras la grabación ya se había mudado al correcto. El overlay de **rendimiento** no lo sufre
+porque recalcula su posición en cada `sync()`. Entra en esta rama a petición del owner, en vez de en
+un hotfix aparte.
+
 **Fuera (explícito):**
 - Cambiar la identidad persistida del monitor (seguir con `screenMonitorIndex`; no se migra a un id
   estable de dispositivo).
 - Refrescar la lista/miniaturas de monitores de la vista de Ajustes en caliente.
+- Que los overlays sigan al **monitor configurado para grabar**: los dos siguen al primario de
+  Windows, como hasta ahora. Cambiar ese criterio es una decisión de producto, no este bug.
 - Cualquier cambio en la selección de ventana de juego o en el resto del pipeline.
 
 ## Criterios de aceptación
@@ -57,3 +67,7 @@ Observables y verificables uno a uno:
 - [x] Si hay una grabación en curso cuando cambia la topología, el clip termina completo y el rebuild
       se aplica al cerrarlo.
 - [x] Test de regresión en rojo antes del arreglo y en verde después; suite, type-check y lint verdes.
+- [ ] Ampliación: al encender el monitor seleccionado, el REC y el toast «Clip guardado» aparecen en
+      el monitor primario de ese momento, no en el que lo era al arrancar la app.
+- [ ] Ampliación: un REC **ya visible** cuando cambian los monitores se recoloca sin esperar a que se
+      oculte.
