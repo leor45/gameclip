@@ -1164,7 +1164,16 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > funcionalmente (ninguno se inyecta en el proceso del juego), pero elimina la incoherencia de firma y
 > la fricción extra de SmartScreen/AV. Sin nombrar en las notas públicas del release. 891 tests verdes.
 
-> **Fix (2026-07-26, `fix/monitor-reasignar-al-encender`, en `main` sin release):** con el monitor
+### ✅ v0.9.3 (2026-07-26, portable) — el monitor seleccionado se recupera al encenderlo
+
+- Encender el monitor configurado **después** de arrancar la app ya no deja la grabación de escritorio
+  clavada en el monitor de respaldo: se reasigna sola, sin pasar por Ajustes.
+- Apagar o desconectar el monitor configurado con la app abierta cae al monitor disponible en vez de
+  grabar una pantalla que ya no existe.
+- El aviso de grabación (REC) y el toast «Clip guardado» acompañan al monitor primario del momento, en
+  vez de quedarse donde estaban al abrir la app.
+
+> **Fix (2026-07-26, `fix/monitor-reasignar-al-encender`):** con el monitor
 > seleccionado **apagado durante el arranque de Windows**, la grabación de escritorio se quedaba en el
 > monitor de respaldo **el resto de la sesión**, aunque el principal se encendiera después y Ajustes
 > siguiera mostrándolo seleccionado; la única cura era abrir Ajustes y guardar. Causa raíz: el display
