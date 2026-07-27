@@ -1164,6 +1164,33 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > funcionalmente (ninguno se inyecta en el proceso del juego), pero elimina la incoherencia de firma y
 > la fricción extra de SmartScreen/AV. Sin nombrar en las notas públicas del release. 891 tests verdes.
 
+> **Fix (2026-07-26, `fix/monitor-reasignar-al-encender`, en `main` sin release):** con el monitor
+> seleccionado **apagado durante el arranque de Windows**, la grabación de escritorio se quedaba en el
+> monitor de respaldo **el resto de la sesión**, aunque el principal se encendiera después y Ajustes
+> siguiera mostrándolo seleccionado; la única cura era abrir Ajustes y guardar. Causa raíz: el display
+> objetivo se resolvía **una sola vez, al construir el pipeline** (`rebuildPipeline` →
+> `displayByIndex(screenMonitorIndex) ?? primaryDisplay`), y libobs se quedaba con ese `monitor_id`;
+> nadie escuchaba los eventos de `screen` de Electron, así que un cambio de topología no reconstruía
+> nada. Arreglo: el manager recuerda el display con el que construyó y expone `displaysChanged()`, que
+> re-resuelve el índice guardado y reconstruye **solo si cambió** (un rebuild vacía el búfer de
+> repetición y esos eventos llegan por cualquier cosa); con grabación en curso se aplaza vía
+> `pendingRebuild`. `index.ts` suscribe `display-added`/`display-removed`/`display-metrics-changed`
+> con debounce de 2 s (encender una pantalla dispara ráfagas y geometrías transitorias) y
+> `primaryDisplay` pasa a getter para que el fallback no sea una foto del arranque. Cubre también el
+> caso inverso: apagar el monitor elegido reasigna al disponible en vez de grabar negro. La identidad
+> del monitor sigue siendo el **índice** de `getAllDisplays()` (migrar a un id estable de dispositivo
+> queda fuera, tarea aparte). 4 tests de regresión; 895 tests verdes.
+>
+> **Ampliación en la misma rama (aprobada por el owner tras verificar el fix):** la misma causa raíz
+> afectaba al **overlay de avisos** (REC y «Clip guardado»), que calculaba su esquina con el `workArea`
+> del primario **al crear la ventana**; como las ventanas se reutilizan (solo se ocultan), los avisos
+> seguían saliendo en el monitor de respaldo mientras la grabación ya se había mudado al correcto. El
+> overlay de **rendimiento** no lo sufría porque recalcula en cada `sync()`. Arreglo simétrico: helper
+> puro `overlayWindowPosition` en `shared/overlay.ts` (gemelo de `perfWindowPosition`), recolocado en
+> **cada aparición** (`syncZona`) y `OverlayController.reposition()` desde el handler de monitores para
+> el REC que ya está visible. Los dos overlays siguen al **primario de Windows**, no al monitor
+> configurado para grabar: eso queda como está. 897 tests verdes.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

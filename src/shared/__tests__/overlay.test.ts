@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS, type CaptureSettings } from '../capture';
-import { buildGameNotice, describeReplayDuration, overlayStateFor } from '../overlay';
+import {
+  buildGameNotice,
+  describeReplayDuration,
+  overlayStateFor,
+  overlayWindowPosition,
+} from '../overlay';
 
 function ajustes(overrides: Partial<CaptureSettings> = {}): CaptureSettings {
   return { ...DEFAULT_CAPTURE_SETTINGS, ...overrides };
@@ -16,6 +21,33 @@ describe('describeReplayDuration', () => {
 
   it('un valor raro (no redondo) cae a segundos', () => {
     expect(describeReplayDuration(100)).toBe('los últimos 100 segundos');
+  });
+});
+
+describe('overlayWindowPosition', () => {
+  const TAMANO = { left: { width: 340, height: 220 }, right: { width: 160, height: 60 } };
+
+  it('pega cada zona a su esquina superior del work area, con margen', () => {
+    const workArea = { x: 0, y: 0, width: 1920, height: 1040 };
+    expect(overlayWindowPosition('left', workArea, TAMANO.left, 16)).toEqual({ x: 16, y: 16 });
+    expect(overlayWindowPosition('right', workArea, TAMANO.right, 16)).toEqual({ x: 1744, y: 16 });
+  });
+
+  /**
+   * Regresión del monitor encendido tarde: la posición se calculaba UNA vez, al crear la ventana, y
+   * los avisos se quedaban en el monitor que era primario entonces. Con el origen del work area
+   * dentro de la cuenta, recalcularla en cada aparición los lleva al monitor de ahora.
+   */
+  it('respeta el origen del monitor (no asume que el work area empieza en 0,0)', () => {
+    const secundario = { x: -1920, y: 120, width: 1920, height: 1040 };
+    expect(overlayWindowPosition('left', secundario, TAMANO.left, 16)).toEqual({
+      x: -1904,
+      y: 136,
+    });
+    expect(overlayWindowPosition('right', secundario, TAMANO.right, 16)).toEqual({
+      x: -176,
+      y: 136,
+    });
   });
 });
 

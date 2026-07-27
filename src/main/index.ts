@@ -56,6 +56,10 @@ let perfSampler: PerfSampler | null = null;
 let tray: AppTray | null = null;
 let detector: GameDetector | null = null;
 let autoSwitchTimer: NodeJS.Timeout | null = null;
+/** Debounce de los cambios de monitores (ver watchDisplayChanges). */
+let displaysTimer: NodeJS.Timeout | null = null;
+/** Suelta los listeners de `screen`: un evento tardío no debe tocar un manager ya apagado. */
+let unwatchDisplays: (() => void) | null = null;
 // Cerrar la ventana la oculta a la bandeja; solo 'Salir' (o quit del SO) cierra de verdad.
 let quitting = false;
 
@@ -185,7 +189,6 @@ function setupCapture(): CaptureManager {
   // screen solo puede usarse tras 'ready'.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { screen } = require('electron') as typeof import('electron');
-  const primary = screen.getPrimaryDisplay();
   // Tamaño en píxeles físicos + origen nativo: libobs identifica el monitor por device id
   // y sus coordenadas son físicas (nativeOrigin), no DIP.
   const displayInfo = (d: Electron.Display): DisplayInfo => ({
@@ -198,7 +201,11 @@ function setupCapture(): CaptureManager {
     obsDataPath: join(app.getPath('userData'), 'obs-data'),
     defaultOutputDir: join(app.getPath('videos'), 'GameClip'),
     appVersion: app.getVersion(),
-    primaryDisplay: displayInfo(primary),
+    // Getter, no snapshot: es el fallback cuando el monitor elegido no está (apagado/desconectado)
+    // y se consulta en cada rebuild, incluidos los que dispara un cambio de monitores.
+    get primaryDisplay() {
+      return displayInfo(screen.getPrimaryDisplay());
+    },
     // El display a grabar (índice del ajuste); libobs recibe su tamaño real como lienzo base.
     displayByIndex: (index) => {
       const d = screen.getAllDisplays()[index];
@@ -238,7 +245,44 @@ function setupCapture(): CaptureManager {
   manager.on('clip-saved', () => overlay?.showToast('Clip guardado ✓'));
 
   registerHotkeys(manager);
+  watchDisplayChanges(screen, manager);
   return manager;
+}
+
+/**
+ * Espera antes de avisar al manager de un cambio de monitores. Encender o apagar una pantalla
+ * dispara varios eventos seguidos y Windows reporta geometrías intermedias mientras la topología se
+ * asienta; sin la espera se reconstruiría el pipeline dos veces (y cada rebuild vacía el búfer).
+ */
+const DISPLAY_CHANGE_DEBOUNCE_MS = 2000;
+
+/**
+ * Cambios de monitores → `manager.displaysChanged()`. Hace falta porque el pipeline resuelve el
+ * display objetivo al construirse: con el monitor seleccionado apagado al arrancar, la captura se
+ * quedaba clavada en el fallback aunque la pantalla se encendiera después. El manager decide si el
+ * display objetivo cambió de verdad; aquí solo se le avisa.
+ */
+function watchDisplayChanges(screen: Electron.Screen, manager: CaptureManager): void {
+  const alCambiar = (): void => {
+    if (displaysTimer) clearTimeout(displaysTimer);
+    displaysTimer = setTimeout(() => {
+      displaysTimer = null;
+      // Los avisos se recolocan solos al aparecer; esto es para el que ya está en pantalla.
+      overlay?.reposition();
+      void manager
+        .displaysChanged()
+        .catch((err) => console.error('[capture] reasignar el monitor falló:', err));
+    }, DISPLAY_CHANGE_DEBOUNCE_MS);
+    displaysTimer.unref?.();
+  };
+  screen.on('display-added', alCambiar);
+  screen.on('display-removed', alCambiar);
+  screen.on('display-metrics-changed', alCambiar);
+  unwatchDisplays = () => {
+    screen.removeListener('display-added', alCambiar);
+    screen.removeListener('display-removed', alCambiar);
+    screen.removeListener('display-metrics-changed', alCambiar);
+  };
 }
 
 // Biblioteca: si la DB no abre (p. ej. faltó el prebuild ABI-Electron), la app sigue sin
@@ -621,6 +665,10 @@ app.on('will-quit', () => {
     pushToTalk,
     clearTimers: () => {
       if (autoSwitchTimer) clearInterval(autoSwitchTimer);
+      if (displaysTimer) clearTimeout(displaysTimer);
+      unwatchDisplays?.();
+      displaysTimer = null;
+      unwatchDisplays = null;
     },
     detector,
     capture,

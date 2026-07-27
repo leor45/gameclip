@@ -17,6 +17,29 @@ export function overlayStateFor(zone: OverlayZone, state: OverlayState): Overlay
     : { recording: state.recording, toast: null, notice: null };
 }
 
+/**
+ * Esquina superior del work area que le toca a cada zona: los avisos arriba a la izquierda, el REC
+ * arriba a la derecha.
+ *
+ * Es puro y vive aquí (no en `overlay.ts` del main) por lo mismo que `perfWindowPosition`: se calcula
+ * en **cada** aparición del overlay, no solo al crear la ventana, y esa es justo la parte que hay que
+ * poder testear sin Electron.
+ */
+export function overlayWindowPosition(
+  zone: OverlayZone,
+  workArea: { x: number; y: number; width: number; height: number },
+  win: { width: number; height: number },
+  margin: number,
+): { x: number; y: number } {
+  return {
+    x:
+      zone === 'left'
+        ? workArea.x + margin
+        : workArea.x + workArea.width - win.width - margin,
+    y: workArea.y + margin,
+  };
+}
+
 export interface OverlayHotkey {
   /** Tecla tal como está configurada (F8, Ctrl+F9…). */
   key: string;
