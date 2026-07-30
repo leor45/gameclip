@@ -8,6 +8,7 @@ import type { HotkeyKey } from '@shared/hotkeys';
 import { HOTKEY_ACTIONS, hotkeyCollisions, hotkeySettingsChanged, isHotkeyActive } from '@shared/hotkeys';
 import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
+import { screenshotFailureMessage } from '@shared/screenshot';
 import { startApi, type ApiHandle } from '../../server/api';
 import { ffmpegPath } from './paths';
 import { loginItemSettings } from './auto-launch';
@@ -19,6 +20,7 @@ import type { DisplayInfo } from './capture/obs';
 import { GameDetector } from './capture/game-detector';
 import { AutoSwitcher } from './capture/auto-switcher';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
+import { debeRelanzarPorHdr } from './capture/screenshot-hdr';
 import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
@@ -74,6 +76,14 @@ const settingsStore = new SettingsStore(join(app.getPath('userData'), 'capture-s
 if (!settingsStore.load().hardwareAcceleration) {
   app.disableHardwareAcceleration();
   console.log('[app] aceleración por hardware desactivada por ajustes');
+}
+// Capturas de pantalla en monitores HDR: el capturador DirectX de Chromium descarta los monitores de
+// 10 bits (desaparecen de getSources()), el de GDI no y además entrega la composición ya en SDR.
+// Solo se puede elegir ANTES de 'ready': la FeatureList se congela al arrancar el proceso.
+if (settingsStore.load().screenshotHdrCompatibility) {
+  // Único `disable-features` del repo: si se agrega otro, hay que concatenar los valores.
+  app.commandLine.appendSwitch('disable-features', 'DirectXCapturer');
+  console.log('[app] capturador GDI activado para capturas de pantalla (compatibilidad HDR)');
 }
 const pushToTalk = new PushToTalk();
 
@@ -409,8 +419,12 @@ function registerHotkeys(manager: CaptureManager): void {
       else void manager.startRecording();
     },
     screenshotHotkey: () => {
-      void takeAndRegisterScreenshot(manager, library).then((path) => {
-        if (path) overlay?.showToast('Captura guardada ✓');
+      void takeAndRegisterScreenshot(manager, library).then((resultado) => {
+        // Un fallo ya no se descarta en silencio: el motivo dice qué hacer (p. ej. activar la
+        // compatibilidad HDR si el monitor no se puede capturar).
+        overlay?.showToast(
+          resultado.ok ? 'Captura guardada ✓' : screenshotFailureMessage(resultado.reason),
+        );
       });
     },
     gameSwitchHotkey: () => void manager.switchGame(),
@@ -517,6 +531,39 @@ function applyElevatedChange(prev: boolean, next: CaptureSettings): void {
       elevadoRevirtiendo = true;
       void capture?.setSettings({ autoLaunchElevated: prev });
     });
+}
+
+/**
+ * Relanza la app cuando cambia `screenshotHdrCompatibility`: es un switch de Chromium y solo se puede
+ * aplicar al arrancar el proceso (ver `debeRelanzarPorHdr`). Mismo mecanismo que el relanzado elevado
+ * —`currentExecutablePath()` para no relanzar la copia efímera del portable en `%TEMP%`—, pero sin UAC.
+ */
+async function applyScreenshotHdrChange(prev: boolean, next: CaptureSettings): Promise<void> {
+  const state = capture?.getStatus().state ?? 'idle';
+  if (!debeRelanzarPorHdr(prev, next.screenshotHdrCompatibility, state)) {
+    if (prev !== next.screenshotHdrCompatibility) {
+      console.log('[screenshots] hay una grabación en curso: la compatibilidad HDR se aplica al reiniciar');
+      overlay?.showToast('La compatibilidad HDR se aplicará al reiniciar GameClip');
+    }
+    return;
+  }
+
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['Reiniciar ahora', 'Al próximo arranque'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Compatibilidad HDR en capturas',
+    message: 'Hay que reiniciar GameClip para aplicar este ajuste.',
+    detail:
+      'Es una opción del capturador de pantalla y solo puede cambiarse al arrancar. Al reiniciar se pierde el búfer de repetición de los últimos segundos.',
+  });
+  if (response !== 0) return;
+
+  app.releaseSingleInstanceLock();
+  app.relaunch({ execPath: currentExecutablePath(), args: currentAppArgs() });
+  quitting = true;
+  app.quit();
 }
 
 app.whenReady().then(async () => {
@@ -635,6 +682,7 @@ app.whenReady().then(async () => {
     perfSampler?.configure(settings.perfOverlayEnabled ? settings.perfOverlay.metrics : null);
     applyAutoLaunch(settings);
     applyElevatedChange(ajustesAnteriores.autoLaunchElevated, settings);
+    void applyScreenshotHdrChange(ajustesAnteriores.screenshotHdrCompatibility, settings);
     ajustesAnteriores = settings;
     pushToTalk.configure(settings.pttEnabled && settings.micEnabled, settings.pttHotkey);
   });

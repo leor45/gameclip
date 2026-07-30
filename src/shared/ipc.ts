@@ -14,6 +14,7 @@ import type { GameIndex } from './games';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
 import type { OverlayNotice } from './overlay';
 import type { PerfOverlayConfig, PerfSnapshot } from './perf';
+import type { ScreenshotResult } from './screenshot';
 import type { ClipAudioTrack, SaveAudioEditResult, TrackWaveform } from './tracks';
 
 export const IpcChannel = {
@@ -121,8 +122,8 @@ export interface IpcContract {
   [IpcChannel.CaptureGetDisplays]: { request: void; response: DisplayInfo[] };
   /** Rota el juego activo entre los juegos en ejecución. */
   [IpcChannel.CaptureSwitchGame]: { request: void; response: CaptureStatus };
-  /** Guarda un PNG del monitor de grabación; devuelve la ruta o null si falló. */
-  [IpcChannel.CaptureTakeScreenshot]: { request: void; response: string | null };
+  /** Guarda un PNG del monitor de capturas; con el motivo si no se pudo. */
+  [IpcChannel.CaptureTakeScreenshot]: { request: void; response: ScreenshotResult };
   [IpcChannel.CaptureStartRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureStopRecording]: { request: void; response: CaptureStatus };
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
@@ -193,7 +194,7 @@ export interface CaptureApi {
   /** Displays disponibles con preview, para la grabación de escritorio. */
   getDisplays(): Promise<DisplayInfo[]>;
   switchGame(): Promise<CaptureStatus>;
-  takeScreenshot(): Promise<string | null>;
+  takeScreenshot(): Promise<ScreenshotResult>;
   startRecording(): Promise<CaptureStatus>;
   stopRecording(): Promise<CaptureStatus>;
   saveReplay(): Promise<CaptureStatus>;

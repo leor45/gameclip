@@ -146,6 +146,23 @@ export interface CaptureSettings {
   autoGameSwitching: boolean;
   screenshotsEnabled: boolean;
   screenshotHotkey: string;
+  /**
+   * Monitor de las capturas de pantalla, **independiente del de grabación**:
+   * `SCREENSHOT_MONITOR_PRIMARY` (-1) = seguir al monitor principal de Windows. Separado de
+   * `screenMonitorIndex` porque el modal «Grabar escritorio…» persiste ese índice, y las capturas
+   * pueden estar activas con la grabación apagada. Ver spec/work/feature-screenshots-monitor-y-hdr.
+   */
+  screenshotMonitorIndex: number;
+  /**
+   * Capturas de pantalla en monitores HDR. Con HDR activo, DXGI entrega el monitor en 10 bits y
+   * Chromium lo **saca de la lista de fuentes**: sin esto no hay captura posible de ese monitor —no
+   * es que salga saturada, es que no existe—. Usa el capturador GDI
+   * (`--disable-features=DirectXCapturer`), que entrega la composición SDR ya tonemapeada por
+   * Windows. **Encendida por defecto**; la casilla de Avanzado es el escape, no el interruptor de
+   * la feature. Es un switch de Chromium: solo se aplica al arrancar el proceso, así que cambiarlo
+   * relanza la app (a diferencia de `hdrCompatibility`, que es de libobs y va en caliente).
+   */
+  screenshotHdrCompatibility: boolean;
   /** Juegos añadidos a mano (la detección los trata como conocidos), con nombre opcional. */
   customGames: CustomGame[];
   /** Monitor a grabar (índice de display; 0 = primario). */
@@ -216,6 +233,8 @@ export const AUDIO_APPS_MAX = 8;
 export const AUDIO_APPS_TRACK_MAX = 3;
 export const CUSTOM_GAMES_MAX = 50;
 export const SCREEN_MONITOR_INDEX_MAX = 7;
+/** `screenshotMonitorIndex`: seguir al monitor principal de Windows en vez de fijar un índice. */
+export const SCREENSHOT_MONITOR_PRIMARY = -1;
 export const CAPTURE_FPS_VALUES: readonly CaptureFps[] = [24, 30, 60, 120, 144];
 
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
@@ -248,6 +267,10 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   autoGameSwitching: true,
   screenshotsEnabled: true,
   screenshotHotkey: 'F6',
+  screenshotMonitorIndex: SCREENSHOT_MONITOR_PRIMARY,
+  // Encendida por defecto: con HDR activo el monitor NO sale mal, sale ausente de getSources(), así
+  // que sin esto la captura de un monitor HDR es imposible y la app vendría rota de fábrica.
+  screenshotHdrCompatibility: true,
   customGames: [],
   screenMonitorIndex: 0,
   desktopRecordingEnabled: true,
@@ -452,6 +475,14 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     raw.screenMonitorIndex <= SCREEN_MONITOR_INDEX_MAX
       ? raw.screenMonitorIndex
       : d.screenMonitorIndex;
+  // Acepta el sentinela -1 (seguir al principal) además de los índices reales.
+  const screenshotMonitorIndex =
+    typeof raw.screenshotMonitorIndex === 'number' &&
+    Number.isInteger(raw.screenshotMonitorIndex) &&
+    raw.screenshotMonitorIndex >= SCREENSHOT_MONITOR_PRIMARY &&
+    raw.screenshotMonitorIndex <= SCREEN_MONITOR_INDEX_MAX
+      ? raw.screenshotMonitorIndex
+      : d.screenshotMonitorIndex;
 
   return {
     resolution: oneOf(raw.resolution, ['native', '1080p', '720p'], d.resolution),
@@ -488,6 +519,8 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     autoGameSwitching: bool(raw.autoGameSwitching, d.autoGameSwitching),
     screenshotsEnabled: bool(raw.screenshotsEnabled, d.screenshotsEnabled),
     screenshotHotkey,
+    screenshotMonitorIndex,
+    screenshotHdrCompatibility: bool(raw.screenshotHdrCompatibility, d.screenshotHdrCompatibility),
     customGames: normalizeCustomGames(raw.customGames),
     screenMonitorIndex,
     desktopRecordingEnabled: bool(raw.desktopRecordingEnabled, d.desktopRecordingEnabled),

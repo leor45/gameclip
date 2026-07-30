@@ -1200,6 +1200,45 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > el REC que ya está visible. Los dos overlays siguen al **primario de Windows**, no al monitor
 > configurado para grabar: eso queda como está. 897 tests verdes.
 
+### ⏳ Pendiente de release — las capturas de pantalla eligen su monitor y funcionan en HDR
+
+- La captura de pantalla tiene **su propio monitor**, con «Seguir al monitor principal» por defecto:
+  cambiar cuál es el principal en Windows no obliga a reconfigurar nada, y grabar el escritorio de otro
+  monitor ya no arrastra las capturas.
+- Las capturas funcionan en un monitor con **HDR activo** (convertidas a SDR), que antes era imposible.
+- Si el monitor pedido no se puede capturar, la app **avisa con el motivo** en vez de no hacer nada.
+- El modal de elegir monitor muestra preview también de los monitores HDR.
+
+> **Feature (2026-07-29, `feature/screenshots-monitor-y-hdr`):** el owner reportó que la captura le
+> guardaba **el segundo monitor** en vez del principal, sin que reiniciar ni togglear la opción cambiara
+> nada. Causa raíz medida en su equipo: con **HDR activo**, DXGI entrega el monitor en 10 bits y el
+> capturador de Chromium lo **descarta de la lista de fuentes**
+> (`dxgi_output_duplicator.cc(116) … format is 10`; `getSources()` devolvía **1 sola fuente** con dos
+> monitores conectados). No era un problema de índice —`screenMonitorIndex` valía 0 y `getAllDisplays()[0]`
+> sí era el principal—: el fallback `?? sources[monitorIndex] ?? sources[0]` de `screenshots.ts` capturaba
+> «la que hubiera» en silencio. Arreglo: helper puro `pickScreenshotSource` con match **estricto** por
+> `display_id` y **sin** caída a otro monitor; si el monitor no está entre las fuentes, falla con motivo
+> (`monitor-no-capturable`) y el toast del overlay lo explica, porque antes la hotkey no hacía nada.
+> `takeScreenshot` pasa de `string | null` a un `ScreenshotResult` discriminado (`shared/screenshot.ts`).
+> Ajuste nuevo `screenshotMonitorIndex` (sentinela `-1` = principal), independiente de `screenMonitorIndex`
+> —que el modal «Grabar escritorio…» reescribe— y habilitado sin depender de la grabación.
+> Para el HDR: `--disable-features=DirectXCapturer` fuerza el capturador **GDI**, que sí enumera los
+> monitores HDR y entrega la composición **SDR ya tonemapeada por Windows** (sin tonemapping propio).
+> Los flags WGC (`AllowWgcScreenCapturer`, `AllowWgcDesktopCapturer`) se probaron y **no sirven** en
+> Electron 29. Es un switch de Chromium y la `FeatureList` se congela al arrancar —comprobado que
+> aplicarlo tras `ready` no tiene efecto—, así que cambiar el ajuste **relanza la app** reusando
+> `currentExecutablePath()`/`currentAppArgs()` (el portable relanza su exe real, no la copia de `%TEMP%`),
+> nunca con una grabación en curso. Por la ruta GDI las fuentes vienen **sin `display_id`**, así que se
+> empareja por posición **validando la relación de aspecto** y se falla con `fuentes-ambiguas` antes que
+> adivinar. `screenshotHdrCompatibility` quedó **encendido por defecto**: se planteó como opt-in, y el
+> owner lo revisó al ver la medición —esperaba que afectara la *calidad* («que no salga saturada») cuando
+> en realidad decide si el monitor **existe** para `desktopCapturer`—, así que apagado por defecto la app
+> vendría rota de fábrica en cualquier equipo con HDR; la casilla de Avanzado es el escape.
+> Verificado en el equipo del owner (principal HDR 2560x1440 + secundario vertical 1080x1920) con el
+> `takeScreenshot` real dentro de Electron y con la app corriendo vía CDP: apagado → falla sin capturar
+> otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
+> verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

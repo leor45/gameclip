@@ -332,4 +332,21 @@ describe('Ajustes — Avanzado', () => {
       expect.objectContaining({ aspectRatio: 'stretch169' }),
     );
   });
+
+  it('la compatibilidad HDR de las capturas se puede apagar, sin tocar la de vídeo', async () => {
+    const user = await irAAjustes();
+    await user.click(screen.getByRole('link', { name: 'Avanzado' }));
+    await screen.findByLabelText('Mostrar cursor del mouse');
+
+    const casilla = screen.getByLabelText(
+      'Compatibilidad HDR en capturas de pantalla (convertir a SDR)',
+    );
+    expect(casilla).toBeChecked(); // viene activada de fábrica
+    await user.click(casilla);
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshotHdrCompatibility: false, hdrCompatibility: false }),
+    );
+  });
 });

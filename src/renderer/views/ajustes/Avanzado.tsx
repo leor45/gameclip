@@ -177,6 +177,18 @@ export default function AjustesAvanzado() {
         <label className="settings-check">
           <input
             type="checkbox"
+            checked={settings.screenshotHdrCompatibility}
+            onChange={(e) => set('screenshotHdrCompatibility', e.target.checked)}
+          />
+          Compatibilidad HDR en capturas de pantalla (convertir a SDR)
+        </label>
+        <p className="settings-hint">
+          Déjala activada: es lo que permite capturar un monitor con HDR activo. Sin esto Windows no
+          entrega ese monitor y la captura falla. GameClip se reinicia al cambiarlo.
+        </p>
+        <label className="settings-check">
+          <input
+            type="checkbox"
             checked={settings.forceWindowCapture}
             onChange={(e) => set('forceWindowCapture', e.target.checked)}
           />

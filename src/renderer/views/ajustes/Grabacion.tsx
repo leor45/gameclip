@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   CUSTOM_GAMES_MAX,
+  SCREENSHOT_MONITOR_PRIMARY,
   type AudioAppInfo,
   type DesktopAudioTracks,
   type DisplayInfo,
@@ -204,6 +205,28 @@ export default function AjustesGrabacion() {
             Activar capturas de pantalla
           </label>
           <HotkeyInfo label="Atajo de captura" accel={settings.screenshotHotkey} />
+          <label>
+            Monitor de las capturas
+            {/* A propósito NO depende de la grabación de escritorio: las capturas pueden estar
+                activas con la grabación apagada, y son ajustes distintos. */}
+            <select
+              value={settings.screenshotMonitorIndex}
+              disabled={!settings.screenshotsEnabled}
+              onChange={(e) => set('screenshotMonitorIndex', Number(e.target.value))}
+            >
+              <option value={SCREENSHOT_MONITOR_PRIMARY}>Seguir al monitor principal</option>
+              {displays.map((d) => (
+                <option key={d.index} value={d.index}>
+                  {d.label}
+                  {d.primary ? ' (principal)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="settings-hint">
+            La captura es del monitor completo. Es un ajuste aparte del monitor de grabación de
+            escritorio.
+          </p>
         </fieldset>
 
         <fieldset>

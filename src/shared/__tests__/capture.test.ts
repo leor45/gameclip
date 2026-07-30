@@ -4,6 +4,8 @@ import {
   DEFAULT_CAPTURE_SETTINGS,
   REPLAY_SECONDS_MAX,
   REPLAY_SECONDS_MIN,
+  SCREEN_MONITOR_INDEX_MAX,
+  SCREENSHOT_MONITOR_PRIMARY,
   captureProfile,
   needsContentProtection,
   normalizeCaptureSettings,
@@ -263,6 +265,41 @@ describe('orderedActiveAudioApps', () => {
     expect(normalizeCaptureSettings({ hardwareAcceleration: 'no' }).hardwareAcceleration).toBe(
       true,
     );
+  });
+
+  it('normaliza el monitor y el HDR de las capturas de pantalla', () => {
+    const defaults = normalizeCaptureSettings({});
+    // Por defecto la captura sigue al monitor principal, no a un índice fijo.
+    expect(defaults.screenshotMonitorIndex).toBe(SCREENSHOT_MONITOR_PRIMARY);
+    // Encendida por defecto: un monitor HDR no aparece en getSources() sin el capturador GDI, así
+    // que apagada por defecto dejaría la captura rota de fábrica en cualquier equipo con HDR.
+    expect(defaults.screenshotHdrCompatibility).toBe(true);
+
+    expect(normalizeCaptureSettings({ screenshotMonitorIndex: 1 }).screenshotMonitorIndex).toBe(1);
+    expect(
+      normalizeCaptureSettings({ screenshotMonitorIndex: SCREENSHOT_MONITOR_PRIMARY })
+        .screenshotMonitorIndex,
+    ).toBe(SCREENSHOT_MONITOR_PRIMARY);
+    // -1 es el único negativo válido; el resto de la basura cae al default.
+    for (const malo of [-2, 3.5, '0', null, SCREEN_MONITOR_INDEX_MAX + 1]) {
+      expect(normalizeCaptureSettings({ screenshotMonitorIndex: malo }).screenshotMonitorIndex).toBe(
+        SCREENSHOT_MONITOR_PRIMARY,
+      );
+    }
+    expect(
+      normalizeCaptureSettings({ screenshotHdrCompatibility: 'si' }).screenshotHdrCompatibility,
+    ).toBe(true);
+    // Apagarla explícitamente sí se respeta: es el escape.
+    expect(
+      normalizeCaptureSettings({ screenshotHdrCompatibility: false }).screenshotHdrCompatibility,
+    ).toBe(false);
+  });
+
+  it('el monitor de capturas es independiente del de grabación de escritorio', () => {
+    // El modal «Grabar escritorio…» persiste screenMonitorIndex; las capturas no deben moverse.
+    const s = normalizeCaptureSettings({ screenMonitorIndex: 1 });
+    expect(s.screenMonitorIndex).toBe(1);
+    expect(s.screenshotMonitorIndex).toBe(SCREENSHOT_MONITOR_PRIMARY);
   });
 
   it('acota replaySeconds al rango permitido y lo redondea', () => {

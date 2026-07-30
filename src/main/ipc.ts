@@ -21,6 +21,7 @@ import { listAudioApps } from './capture/audio-apps';
 import { isPawnIoInstalled } from './perf-metrics/pawnio';
 import { saveClipFrame } from './capture/frame-capture';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
+import { pickScreenshotSource } from './capture/screenshot-target';
 import { checkForUpdates } from './updates';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
@@ -81,9 +82,25 @@ export function registerIpcHandlers(
       types: ['screen'],
       thumbnailSize: { width: 320, height: 180 },
     });
+    const fisicos = displays.map((d) => ({
+      id: d.id,
+      width: Math.round(d.size.width * d.scaleFactor),
+      height: Math.round(d.size.height * d.scaleFactor),
+    }));
+    const thumbs = sources.map((s) => {
+      const { width, height } = s.thumbnail.getSize();
+      return { display_id: s.display_id, width, height };
+    });
     return displays.map((d, index) => {
-      // display_id de desktopCapturer ↔ id de screen; si no matchea, cae al orden.
-      const source = sources.find((s) => Number(s.display_id) === d.id) ?? sources[index];
+      // Mismo emparejamiento que las capturas: con la compatibilidad HDR activa las fuentes vienen
+      // sin display_id, y así el monitor HDR también tiene preview en vez de quedar en blanco.
+      const elegida = pickScreenshotSource({
+        displays: fisicos,
+        primaryId,
+        monitorIndex: index,
+        sources: thumbs,
+      });
+      const source = elegida.ok ? sources[elegida.sourceIndex] : undefined;
       return {
         index,
         label: d.label || `Display ${index + 1}`,

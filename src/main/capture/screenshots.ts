@@ -1,40 +1,61 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import type { ScreenshotResult } from '../../shared/screenshot';
 import { targetPathFor } from './relocate';
+import { pickScreenshotSource, resolveTargetDisplay } from './screenshot-target';
 
 /**
- * Captura el monitor configurado a un PNG en la carpeta del juego:
+ * Captura el **monitor completo** configurado a un PNG en la carpeta del juego:
  * `<outputDir>/<Juego|Desktop>/Capturas/<Juego> Screenshot <marca>.png`. Usa desktopCapturer a la
  * resolución nativa del display (scaleFactor incluido) y guarda `nativeImage.toPNG()`.
- * Best-effort: cualquier fallo (o thumbnail vacío por fullscreen exclusivo) devuelve null.
+ *
+ * Si el monitor pedido no se puede capturar, **falla con el motivo**: nunca guarda la imagen de otro
+ * monitor. Ver `pickScreenshotSource` y spec/work/feature-screenshots-monitor-y-hdr.
  */
 export async function takeScreenshot(
   monitorIndex: number,
   outputDir: string,
   gameName: string | null = null,
-): Promise<string | null> {
+): Promise<ScreenshotResult> {
   try {
     // require diferido: en tests unitarios no se puede cargar electron.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { desktopCapturer, screen } = require('electron') as typeof import('electron');
     const displays = screen.getAllDisplays();
-    const display = displays[monitorIndex] ?? screen.getPrimaryDisplay();
-    const width = Math.round(display.size.width * display.scaleFactor);
-    const height = Math.round(display.size.height * display.scaleFactor);
+    const fisico = (d: Electron.Display) => ({
+      id: d.id,
+      width: Math.round(d.size.width * d.scaleFactor),
+      height: Math.round(d.size.height * d.scaleFactor),
+    });
+
+    const fisicos = displays.map(fisico);
+    const primaryId = screen.getPrimaryDisplay().id;
+
+    // Primero el monitor objetivo: su tamaño nativo es el thumbnailSize que hay que pedir para que
+    // la captura salga a resolución completa.
+    const objetivo = resolveTargetDisplay({ displays: fisicos, primaryId, monitorIndex });
+    if (!objetivo.ok) return objetivo;
 
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width, height },
+      thumbnailSize: { width: objetivo.display.width, height: objetivo.display.height },
     });
-    // display_id de desktopCapturer ↔ id de screen; si no matchea, cae al orden.
-    const source =
-      sources.find((s) => Number(s.display_id) === display.id) ??
-      sources[monitorIndex] ??
-      sources[0];
-    if (!source) return null;
 
-    const png = source.thumbnail.toPNG();
-    if (!png || png.length === 0) return null; // fullscreen exclusivo puede dar una imagen vacía
+    const elegida = pickScreenshotSource({
+      displays: fisicos,
+      primaryId,
+      monitorIndex,
+      sources: sources.map((s) => {
+        const { width, height } = s.thumbnail.getSize();
+        return { display_id: s.display_id, width, height };
+      }),
+    });
+    if (!elegida.ok) return elegida;
+
+    const png = sources[elegida.sourceIndex]!.thumbnail.toPNG();
+    // Fullscreen exclusivo puede dar una imagen vacía: el juego se queda la swapchain del monitor
+    // y la composición del escritorio no tiene nada que entregar.
+    if (!png || png.length === 0) return { ok: false, reason: 'captura-vacia' };
 
     const filePath = targetPathFor({
       outputDir,
@@ -45,8 +66,9 @@ export async function takeScreenshot(
     });
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, png);
-    return filePath;
-  } catch {
-    return null;
+    return { ok: true, path: filePath };
+  } catch (err) {
+    console.error('[screenshots] fallo al capturar:', err);
+    return { ok: false, reason: 'error' };
   }
 }
