@@ -1200,7 +1200,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > el REC que ya está visible. Los dos overlays siguen al **primario de Windows**, no al monitor
 > configurado para grabar: eso queda como está. 897 tests verdes.
 
-### ⏳ Pendiente de release — las capturas de pantalla eligen su monitor y funcionan en HDR
+### ✅ v0.9.4 (2026-07-29, portable) — las capturas eligen su monitor y funcionan en HDR
 
 - La captura de pantalla tiene **su propio monitor**, con «Seguir al monitor principal» por defecto:
   cambiar cuál es el principal en Windows no obliga a reconfigurar nada, y grabar el escritorio de otro
