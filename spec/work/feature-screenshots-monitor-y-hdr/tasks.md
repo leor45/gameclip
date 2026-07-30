@@ -87,12 +87,15 @@ Equipo del owner: principal **MO27Q28G 2560x1440 con HDR activo** + secundario *
       «Seguir al monitor principal» + los dos monitores por su nombre real, y las dos casillas de HDR
       conviven en Avanzado → Captura.
 
-Pendiente de comprobar a mano por el owner (no automatizable sin dejar un diálogo modal abierto en su
-pantalla; la lógica está cubierta por los tests de `debeRelanzarPorHdr`):
+Comprobado a mano por el owner sobre la build firmada de la v0.9.4 (no era automatizable sin dejar un
+diálogo modal abierto en su pantalla):
 
-- [ ] Al togglear la casilla HDR aparece el diálogo y «Reiniciar ahora» relanza la app.
-- [ ] Con una grabación en curso, togglear la casilla no relanza y avisa que se aplica al reiniciar.
-- [ ] El toast del overlay con el motivo del fallo se ve en pantalla.
+- [x] Al activar o desactivar la casilla y guardar, sale el diálogo con «Reiniciar ahora» / «Al próximo
+      arranque».
+- [x] Con la opción desactivada, capturar muestra el toast con el motivo, nombrando la casilla de
+      Avanzado a verificar si el monitor tiene HDR.
+- [x] Con una grabación en curso, activar o desactivar la casilla **no** abre el diálogo: sale un toast
+      avisando que se aplicará en el siguiente arranque, sin cortar la grabación.
 
 ## Cierre
 
