@@ -1,3 +1,4 @@
+import type { ScreenshotResult } from '../../shared/screenshot';
 import type { LibraryManager } from '../library/manager';
 import type { CaptureManager } from './manager';
 import { takeScreenshot } from './screenshots';
@@ -13,18 +14,20 @@ import { takeScreenshot } from './screenshots';
 export async function takeAndRegisterScreenshot(
   capture: CaptureManager,
   library: LibraryManager | null,
-): Promise<string | null> {
-  const filePath = await takeScreenshot(
-    capture.getSettings().screenMonitorIndex,
+): Promise<ScreenshotResult> {
+  // El monitor de las capturas es su propio ajuste: NO el de grabación de escritorio, que el modal
+  // «Grabar escritorio…» reescribe.
+  const resultado = await takeScreenshot(
+    capture.getSettings().screenshotMonitorIndex,
     capture.outputDir(),
     capture.getStatus().detectedGame, // la carpeta lleva el NOMBRE del juego, no su ejecutable
   );
-  if (!filePath) return null;
+  if (!resultado.ok) return resultado;
 
   try {
-    await library?.registerSavedClip(filePath, 'scan', capture.getStatus().detectedGame);
+    await library?.registerSavedClip(resultado.path, 'scan', capture.getStatus().detectedGame);
   } catch (err) {
     console.error('[screenshots] no se pudo catalogar la captura:', err);
   }
-  return filePath;
+  return resultado;
 }

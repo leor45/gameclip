@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
@@ -185,14 +185,49 @@ describe('Ajustes — Grabación', () => {
   it('el selector de monitor de la sección guarda screenMonitorIndex sin pasar por el modal', async () => {
     const user = await irAGrabacion();
 
-    await screen.findByText('Monitor 2');
-    await user.selectOptions(screen.getByLabelText('Monitor'), '1');
+    // El selector de capturas lista los mismos monitores, así que el texto se busca DENTRO de este.
+    const selector = screen.getByLabelText('Monitor');
+    await within(selector).findByText('Monitor 2');
+    await user.selectOptions(selector, '1');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
     expect(mock().capture.setSettings).toHaveBeenCalledWith(
       expect.objectContaining({ screenMonitorIndex: 1 }),
     );
+  });
+
+  it('el selector de monitor de las capturas guarda screenshotMonitorIndex', async () => {
+    const user = await irAGrabacion();
+
+    const selector = screen.getByLabelText('Monitor de las capturas');
+    await within(selector).findByText('Monitor 2');
+    await user.selectOptions(selector, '1');
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshotMonitorIndex: 1 }),
+    );
+    // El monitor de grabación no se toca: son ajustes independientes.
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ screenMonitorIndex: DEFAULT_CAPTURE_SETTINGS.screenMonitorIndex }),
+    );
+  });
+
+  it('el selector de capturas NO depende de la grabación de escritorio', async () => {
+    // El caso del owner: capturas activas con la grabación apagada. El selector de grabación se
+    // deshabilita, el de capturas no.
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      desktopRecordingEnabled: false,
+      recordingMode: 'off',
+      screenshotsEnabled: true,
+    });
+    await irAGrabacion();
+
+    await waitFor(() => expect(screen.getByLabelText('Monitor')).toBeDisabled());
+    expect(screen.getByLabelText('Monitor de las capturas')).toBeEnabled();
   });
 
   it('guarda el toggle de cambio automático a captura de juego', async () => {

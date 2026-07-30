@@ -64,7 +64,7 @@ export function crearGameclipMock() {
       switchGame: vi
         .fn()
         .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: null, detectedGame: null }),
-      takeScreenshot: vi.fn().mockResolvedValue('C:\\v\\captura.png'),
+      takeScreenshot: vi.fn().mockResolvedValue({ ok: true, path: 'C:\\v\\captura.png' }),
       startRecording: vi
         .fn()
         .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null, detectedGame: null }),
