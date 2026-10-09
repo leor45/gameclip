@@ -304,8 +304,11 @@ export class CaptureManager extends EventEmitter {
     this.emit('settings', next);
     this.applyHapticListener(); // arranca/para/reinicia el listener si cambió la opción o el patrón
     this.applyControllerListener(); // arranca/para el helper del botón de mandos según la opción
-    if (this.obs.isInitialized && this.status.state !== 'recording') {
-      await this.queueRebuild();
+    if (this.obs.isInitialized) {
+      // Grabando no se toca el pipeline (cortaría el clip), pero el cambio no puede perderse: se
+      // deja pendiente y settleAfterRecording lo aplica al parar.
+      if (this.status.state === 'recording') this.pendingRebuild = true;
+      else await this.queueRebuild();
     }
     return next;
   }

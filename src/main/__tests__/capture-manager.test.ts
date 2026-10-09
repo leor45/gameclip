@@ -40,13 +40,17 @@ class FakeObs implements CaptureBackend {
   }
   /** Último display con el que se construyó el pipeline (el que libobs traduce a monitor_id). */
   ultimoScreen: { width: number; height: number; x: number; y: number } | null = null;
+  /** Ajustes con los que se construyó el último pipeline. */
+  ultimosAjustes: CaptureSettings | null = null;
+
   buildPipeline(
-    _settings: CaptureSettings,
+    settings: CaptureSettings,
     screen: { width: number; height: number; x: number; y: number },
     _outputDir: string,
     gameExecutable: string | null,
   ): void {
     this.llamadas.push('buildPipeline');
+    this.ultimosAjustes = settings;
     this.buildCount++;
     this.ultimoScreen = screen;
     this.ultimoGameExe = gameExecutable;
@@ -451,6 +455,22 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       await manager.stopRecording();
       expect(obs.buildCount).toBe(builds + 1); // ahora sí, ya en perfil de juego
       expect(obs.ultimoGameExe).toBe('cs2.exe');
+    });
+
+    it('regresión: los ajustes guardados durante una grabación se aplican al pararla', async () => {
+      // setSettings saltaba el rebuild grabando y no lo dejaba pendiente: calidad, encoder, fps…
+      // seguían con los valores viejos hasta otro rebuild por otra causa.
+      const manager = crear({ bufferMode: 'always', quality: 'high' });
+      await manager.initialize();
+      await manager.startRecording();
+      const builds = obs.buildCount;
+
+      await manager.setSettings({ quality: 'lossless' });
+      expect(obs.buildCount).toBe(builds); // grabando: no se toca el pipeline
+
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(builds + 1);
+      expect(obs.ultimosAjustes?.quality).toBe('lossless');
     });
 
     it('regresión: un juego detectado a la vez que se pulsa grabar no mata la grabación', async () => {
