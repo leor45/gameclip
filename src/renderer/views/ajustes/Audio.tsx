@@ -10,6 +10,7 @@ import {
   type AudioAppInfo,
   type AudioDeviceInfo,
 } from '@shared/capture';
+import { hotkeyReservedByPtt } from '@shared/hotkeys';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -127,6 +128,13 @@ export default function AjustesAudio() {
   // Cada app activa ocupa una pista propia (T4+); solo hay 3 pistas de app.
   const appsConAudio = orderedActiveAudioApps(audioApps).length;
   const topeAudioAlcanzado = appsConAudio >= AUDIO_APPS_TRACK_MAX;
+  // La tecla del PTT no puede ser también un atajo: cada vez que hablaras se dispararía la acción.
+  // Un choque ya guardado (versiones anteriores) bloquea el guardado mientras el PTT esté activo.
+  const pttOcupadaPor = hotkeyReservedByPtt(settings);
+  const bloqueo =
+    settings.pttEnabled && pttOcupadaPor
+      ? `La tecla del push to talk (${settings.pttHotkey}) es también el atajo de «${pttOcupadaPor.label}». Elige otra tecla o cambia el atajo en Atajos.`
+      : null;
 
   /** Inserta o reemplaza la entrada de un ejecutable (las fijas se materializan al tocarlas). */
   function upsertApp(entrada: AudioAppCapture) {
@@ -152,7 +160,7 @@ export default function AjustesAudio() {
   }
 
   return (
-    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()}>
+    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()} bloqueo={bloqueo}>
       <fieldset>
         <legend>Micrófono</legend>
         <label>
@@ -197,11 +205,14 @@ export default function AjustesAudio() {
             disabled={!settings.pttEnabled || !pttDisponible}
             onChange={(e) => set('pttHotkey', e.target.value)}
           >
-            {PTT_HOTKEY_OPTIONS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
+            {PTT_HOTKEY_OPTIONS.map((k) => {
+              const ocupada = hotkeyReservedByPtt(settings, k);
+              return (
+                <option key={k} value={k} disabled={ocupada !== null}>
+                  {ocupada ? `${k} — atajo de «${ocupada.label}»` : k}
+                </option>
+              );
+            })}
           </select>
         </label>
         {!pttDisponible && (

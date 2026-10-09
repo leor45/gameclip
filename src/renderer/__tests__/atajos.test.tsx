@@ -180,6 +180,23 @@ describe('Ajustes — Atajos', () => {
     expect(screen.getByText('Atajos de teclado y ratón')).toBeInTheDocument();
   });
 
+  it('regresión: restablecer no pone un atajo en la tecla del push to talk', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      pttHotkey: 'F8',
+      replayHotkey: 'Alt+C',
+    });
+    const user = await irAAtajos();
+
+    await user.click(screen.getByRole('button', { name: 'Restablecer atajos por defecto' }));
+
+    // F8 (el default de «Guardar clip») es el PTT: ese no se restablece y se explica por qué.
+    expect(lista().getByText('Alt+C')).toBeInTheDocument();
+    expect(lista().queryByText('F8')).not.toBeInTheDocument();
+    expect(screen.getByText(/«Guardar clip» \(F8\)/)).toBeInTheDocument();
+    expect(lista().getByText('F7')).toBeInTheDocument(); // el resto, sí
+  });
+
   it('restablecer devuelve los atajos a sus valores por defecto', async () => {
     const user = await irAAtajos();
 
