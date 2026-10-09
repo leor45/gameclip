@@ -18,8 +18,6 @@ const BCRYPT_ROUNDS = 10;
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
-export const JWT_SECRET = process.env.GAMECLIP_JWT_SECRET ?? 'gameclip-dev-secret';
-
 // Error de dominio con status HTTP; las rutas lo traducen a la respuesta.
 export class AuthError extends Error {
   constructor(
@@ -42,7 +40,11 @@ export class AuthService {
   private readonly users: UsersRepository;
   private readonly refreshTokens: RefreshTokensRepository;
 
-  constructor(db: AppDatabase) {
+  /** `jwtSecret`: el de la instalación (ver `loadOrCreateSecret`); nunca uno fijo en producción. */
+  constructor(
+    db: AppDatabase,
+    private readonly jwtSecret: string,
+  ) {
     this.users = new UsersRepository(db);
     this.refreshTokens = new RefreshTokensRepository(db);
   }
@@ -101,7 +103,7 @@ export class AuthService {
 
   verifyAccess(accessToken: string): number {
     try {
-      const payload = jwt.verify(accessToken, JWT_SECRET) as { sub?: string };
+      const payload = jwt.verify(accessToken, this.jwtSecret) as { sub?: string };
       const userId = Number(payload.sub);
       if (!Number.isInteger(userId)) throw new Error('sub inválido');
       return userId;
@@ -117,7 +119,7 @@ export class AuthService {
   }
 
   private createSession(row: UserRow): AuthSession {
-    const accessToken = jwt.sign({}, JWT_SECRET, {
+    const accessToken = jwt.sign({}, this.jwtSecret, {
       subject: String(row.id),
       expiresIn: ACCESS_TOKEN_TTL,
     });

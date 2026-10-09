@@ -26,3 +26,12 @@ describe('CSP de la app', () => {
     expect(directiva('img-src')).toContain('gameclip-media:');
   });
 });
+
+describe('CSP — API local', () => {
+  const html = readFileSync(join(__dirname, '..', 'index.html'), 'utf8');
+
+  it('connect-src apunta a la API en 127.0.0.1 (la API ya no escucha en todas las interfaces)', () => {
+    expect(html).toContain('connect-src');
+    expect(html).toMatch(/connect-src[^;"]*http:\/\/127\.0\.0\.1:3030/);
+  });
+});
