@@ -1552,8 +1552,22 @@ Lo que cazaron antes de integrar, todo corregido:
 > Solo diseño: la funcionalidad de hoy se conserva; las excepciones aprobadas por el owner están en
 > `spec/work/feature-rediseno-portada-oscura/spec.md`. Hecho por áreas en paralelo con revisores de bugs
 > introducidos en cada una (varias rondas en iconos y Biblioteca) y verificado en la app real por CDP.
-> Limitación conocida: el icono se busca por el nombre guardado en el clip; un juego renombrado por su
-> launcher (p. ej. «FINAL FANTASY VII REMAKE» → «… INTERGRADE») o desinstalado lleva el logo de reserva.
+> Limitación conocida: el icono se busca por el nombre guardado en el clip; un juego que ya estaba
+> desinstalado antes del pulido lleva el logo de reserva.
+
+## Pulido del rediseño (2026-10-09) — ✅ entregado en `feature/rediseno-pulido` (pendiente de merge)
+
+Tras un día de uso del build de prueba. Maqueta: https://claude.ai/artifact/VWnoLwJAijuNBzGmQQhR9d
+
+- [x] Iconos (fix): el nombre del clip se compara en letras y números («Avatar  Frontiers…») y acepta un
+      sufijo de edición de una lista cerrada con candidato único («FF7 REMAKE» → «… INTERGRADE»; nunca
+      secuelas). El icono verificado se recuerda por nombre en disco: un juego desinstalado lo conserva.
+- [x] Ajustes en pantalla ancha (variante B): desde 1180 px de formulario, filas «grupo | controles» en una
+      columna centrada y el botón de guardar alineado con ella; por debajo, igual que antes.
+- [x] Biblioteca: transición al abrir (180 ms, desde la miniatura) y cerrar (120 ms), sin animación con
+      «reducir movimiento»; flecha atrás junto a «Biblioteca».
+- [x] Reproductor propio: posición con arrastre y hora al pasar el ratón, ±10 s, volumen, velocidad, imagen
+      en imagen y pantalla completa; teclado ← → (±5 s), J L (±10 s), Espacio/K, M, F.
 
 ## Resueltos fuera del código
 

@@ -17,11 +17,10 @@ Tres piezas independientes, en la misma rama y en este orden:
    - Memoria por nombre en disco: `nombres.json` en la carpeta de caché (`claveCompacta` → archivo PNG
      ya cacheado). Se escribe al resolver un icono **verificado** por nombre (escritura atómica, como
      los PNG) y se lee cuando la resolución da null. Tope de entradas para que no crezca sin fin.
-2. **Ajustes en ancho (solo CSS + una clase).** `settings.css` con una container query sobre el
-   área del formulario: a partir de ~1400 px, la columna de grupos pasa a `grid` de dos columnas,
-   centrada con máximo ~1000 px; los grupos marcados como anchos (`.settings-group.wide`, o por
-   contenido: listas y mezcla) ocupan las dos. El pie fijo alinea su botón con ese mismo ancho.
-   Debajo, nada cambia.
+2. **Ajustes en ancho (solo CSS, variante B).** `settings.css` con una container query sobre el
+   formulario: a partir de ~1180 px, cada `fieldset` pasa a `grid` de dos columnas (la `legend`
+   flotada a la izquierda, el resto a la derecha) en una columna centrada de ~1040 px; el pie alinea
+   su botón con ella. Debajo, nada cambia.
 3. **Biblioteca: transición, flecha atrás y reproductor.**
    - `Biblioteca.tsx`: botón flecha antes del `h1` cuando hay clip abierto (`cerrarPanel(id, true)`);
      clases de entrada/salida para la animación. El cierre espera la animación de salida (120 ms) y
