@@ -12,7 +12,7 @@ import { screenshotFailureMessage } from '@shared/screenshot';
 import { startApi, type ApiHandle } from '../../server/api';
 import { ffmpegPath } from './paths';
 import { loginItemSettings } from './auto-launch';
-import { teardown } from './shutdown';
+import { finalizarGrabacion, teardown } from './shutdown';
 import { entornoReal, limpiarTemporales, registroEnDisco } from './temp-cleanup';
 import { CaptureManager } from './capture/manager';
 import type { ClipSavedInfo } from './capture/manager';
@@ -692,8 +692,24 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => {
+/** Tope para cerrar la grabación al salir: libobs espera la señal `wrote`, pero el cierre no se cuelga. */
+const STOP_AL_SALIR_MS = 10_000;
+let cerrandoGrabacion = false;
+let grabacionCerrada = false;
+
+app.on('before-quit', (event) => {
   quitting = true;
+  // Una grabación en curso se cierra de verdad ANTES de que will-quit destruya el pipeline: si no,
+  // el MP4 quedaba con el vídeo en negro (solo audio), sin reubicar ni catalogar. Se cancela este
+  // quit, se para la grabación y se vuelve a pedir el quit.
+  if (grabacionCerrada || capture?.getStatus().state !== 'recording') return;
+  event.preventDefault();
+  if (cerrandoGrabacion) return;
+  cerrandoGrabacion = true;
+  void finalizarGrabacion(capture, STOP_AL_SALIR_MS).finally(() => {
+    grabacionCerrada = true;
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => {

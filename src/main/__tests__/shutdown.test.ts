@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { teardown, type PartesDelCierre } from '../shutdown';
+import { finalizarGrabacion, teardown, type PartesDelCierre } from '../shutdown';
 
 /**
  * Bandeja falsa con la semántica real de Electron: tocar un `Tray` ya destruido **lanza**
@@ -121,5 +121,38 @@ describe('teardown', () => {
   it('tolera que no haya nada que cerrar (arranque a medias)', () => {
     const p = partes({ capture: null, tray: null, overlay: null, api: null, detector: null });
     expect(() => teardown(p)).not.toThrow();
+  });
+});
+
+describe('finalizarGrabacion (regresión: salir grabando dejaba el vídeo en negro)', () => {
+  function captura(estado: 'recording' | 'buffering', stop: () => Promise<unknown>) {
+    return { getStatus: () => ({ state: estado }), stopRecording: vi.fn(stop) };
+  }
+
+  it('con una grabación en curso la para y espera a que termine', async () => {
+    let terminada = false;
+    const c = captura('recording', async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      terminada = true;
+    });
+    await finalizarGrabacion(c, 1000);
+    expect(c.stopRecording).toHaveBeenCalledOnce();
+    expect(terminada).toBe(true);
+  });
+
+  it('no cuelga el cierre: resuelve al vencer el tope aunque parar no termine nunca', async () => {
+    const c = captura('recording', () => new Promise(() => undefined));
+    await expect(finalizarGrabacion(c, 20)).resolves.toBeUndefined();
+  });
+
+  it('un fallo al parar no impide salir', async () => {
+    const c = captura('recording', () => Promise.reject(new Error('libobs no responde')));
+    await expect(finalizarGrabacion(c, 1000)).resolves.toBeUndefined();
+  });
+
+  it('sin grabación en curso no toca nada', async () => {
+    const c = captura('buffering', () => Promise.resolve());
+    await finalizarGrabacion(c, 1000);
+    expect(c.stopRecording).not.toHaveBeenCalled();
   });
 });

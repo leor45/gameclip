@@ -1239,6 +1239,20 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
+## Auditoría bug-hunter (2026-10-08)
+
+> Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
+> 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
+> en una rama de integración temporal antes de mergear cada uno a `main`.
+
+### 🐞 Salir mientras graba dejaba el vídeo en negro — 🧪 en rama (`fix/grabacion-al-salir`)
+
+Confirmado por el owner: «Salir» con una grabación en curso (lo normal en modo auto) dejaba el MP4
+con el vídeo en negro y solo el audio, sin reubicar ni catalogar, porque `will-quit` destruía la salida
+activa sin pararla. Ahora `before-quit` cancela el cierre, para la grabación (`stopRecording`, con
+tope de 10 s) y vuelve a salir. De paso, la grabación manual se etiqueta con el juego con el que
+empezó (antes, con el activo al pararla). Limitación: el apagado de Windows no se puede demorar.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
