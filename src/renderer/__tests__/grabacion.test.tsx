@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import App from '../App';
 import { sesionFalsa } from './helpers';
@@ -343,6 +343,25 @@ describe('Ajustes — Grabación · No son juegos', () => {
       { name: 'SteamVR', source: 'auto', enabled: false },
     ]);
     expect(screen.queryByRole('button', { name: 'Quitar SteamVR' })).toBeNull();
+  });
+
+  it('si el IPC rechaza, recarga la lista de los ajustes en vez de dejar la optimista (regresión Bug 5)', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      excludedGames: [{ name: 'SteamVR', source: 'auto', enabled: true }],
+    });
+    mock().games.setExcluded.mockRejectedValue(new Error('no se pudo guardar'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const user = await irAGrabacion();
+      await user.click(await screen.findByLabelText('Excluir SteamVR'));
+
+      // La lista vuelve a lo que de verdad hay guardado (el alternar no se guardó), sin rechazo suelto.
+      await waitFor(() => expect(screen.getByLabelText('Excluir SteamVR')).toBeChecked());
+      expect(mock().games.setExcluded).toHaveBeenCalledOnce();
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('«Sincronizar» re-lee los launchers y muestra la lista resultante', async () => {

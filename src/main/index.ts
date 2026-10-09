@@ -40,6 +40,7 @@ import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
 import { GameIndexService, type InstalledGame } from './games';
+import { setExcludedAndRefresh } from './games/exclusions';
 import { suggestGameName } from './games/suggest';
 import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
@@ -687,11 +688,14 @@ app.whenReady().then(async () => {
           return [{ name: j.name, source: j.source }];
         });
       },
-      setExcluded: async (lista) => {
-        const next = guardarExclusiones(lista);
-        await refreshGameIndex();
-        return next.excludedGames;
-      },
+      // Devuelve la lista de DESPUÉS del refresco: este puede sincronizarla (apps conocidas) y la UI no
+      // debe pisar esa con la calculada antes.
+      setExcluded: (lista) =>
+        setExcludedAndRefresh(lista, {
+          guardar: guardarExclusiones,
+          refrescar: () => refreshGameIndex(),
+          leer: () => settingsStore.load(),
+        }),
     },
     (config) => perfOverlay?.preview(config),
   );
