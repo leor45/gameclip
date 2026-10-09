@@ -48,6 +48,46 @@ describe('useCaptureSettings (regresión: cada sección pisaba ajustes cambiados
     expect(result.current.settings?.overlayEnabled).toBe(false); // lo demás se actualiza
   });
 
+  it('regresión: lo editado mientras se guarda no se pierde ni deja de estar pendiente', async () => {
+    // Guardar una clave de pipeline espera al rebuild del main (segundos). Antes, al volver, el estado
+    // local se reemplazaba entero por lo aplicado: lo editado en la espera se revertía, y si era una
+    // clave ya enviada dejaba de estar marcada y el siguiente guardado no la mandaba.
+    const { result } = await montar();
+    let terminar: () => void = () => undefined;
+    mock().capture.setSettings.mockImplementation(
+      (parcial: Partial<CaptureSettings>) =>
+        new Promise((resolve) => {
+          terminar = () => resolve({ ...DEFAULT_CAPTURE_SETTINGS, ...parcial });
+        }),
+    );
+
+    act(() => result.current.set('quality', 'lossless'));
+    let guardado: Promise<void> = Promise.resolve();
+    act(() => {
+      guardado = result.current.save();
+    });
+    act(() => result.current.set('overlayEnabled', false)); // otra clave, durante la espera
+    act(() => result.current.set('quality', 'higher')); // la clave enviada, re-editada
+    await act(async () => {
+      terminar();
+      await guardado;
+    });
+
+    expect(result.current.settings?.overlayEnabled).toBe(false);
+    expect(result.current.settings?.quality).toBe('higher');
+    expect(result.current.saved).toBe(false); // quedan cambios sin guardar
+
+    mock().capture.setSettings.mockImplementation((parcial: Partial<CaptureSettings>) =>
+      Promise.resolve({ ...DEFAULT_CAPTURE_SETTINGS, ...parcial }),
+    );
+    await act(() => result.current.save());
+    expect(mock().capture.setSettings).toHaveBeenLastCalledWith({
+      quality: 'higher',
+      overlayEnabled: false,
+    });
+    expect(result.current.saved).toBe(true);
+  });
+
   it('guardar sin cambios no llama al main', async () => {
     const { result } = await montar();
     await act(() => result.current.save());

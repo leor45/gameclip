@@ -14,8 +14,11 @@ export function useCaptureSettings() {
   const [settings, setSettings] = useState<CaptureSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  /** Claves editadas en la sección y aún no guardadas. */
-  const editadas = useRef(new Set<keyof CaptureSettings>());
+  /**
+   * Claves editadas en la sección y aún no guardadas, con un contador de ediciones: al volver de un
+   * guardado solo se dan por guardadas las que no se tocaron mientras tanto.
+   */
+  const editadas = useRef(new Map<keyof CaptureSettings, number>());
 
   useEffect(() => {
     let vivo = true;
@@ -27,7 +30,7 @@ export function useCaptureSettings() {
       setSettings((prev) => {
         if (!prev) return remotos;
         const next = { ...remotos };
-        for (const clave of editadas.current) {
+        for (const clave of editadas.current.keys()) {
           (next as Record<string, unknown>)[clave] = prev[clave];
         }
         return next;
@@ -40,26 +43,39 @@ export function useCaptureSettings() {
   }, []);
 
   const set = useCallback(<K extends keyof CaptureSettings>(key: K, value: CaptureSettings[K]) => {
-    editadas.current.add(key);
+    editadas.current.set(key, (editadas.current.get(key) ?? 0) + 1);
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
     setSaved(false);
   }, []);
 
   const save = useCallback(async () => {
     if (!settings) return;
-    const claves = [...editadas.current];
-    if (claves.length === 0) {
+    // Foto de lo que se manda: clave → nº de ediciones en ese momento.
+    const enviadas = new Map(editadas.current);
+    if (enviadas.size === 0) {
       setSaved(true);
       return;
     }
     const parcial: Partial<CaptureSettings> = {};
-    for (const clave of claves) (parcial as Record<string, unknown>)[clave] = settings[clave];
+    for (const clave of enviadas.keys()) (parcial as Record<string, unknown>)[clave] = settings[clave];
     setSaving(true);
     try {
       const applied = await window.gameclip.capture.setSettings(parcial);
-      for (const clave of claves) editadas.current.delete(clave);
-      setSettings(applied);
-      setSaved(true);
+      // Guardar una clave de pipeline espera al rebuild (segundos) y los campos siguen editables: lo
+      // que se tocó durante la espera sigue pendiente y conserva su valor local, igual que con
+      // settings:changed. Antes se reemplazaba todo por `applied` y esas ediciones se perdían.
+      for (const [clave, version] of enviadas) {
+        if (editadas.current.get(clave) === version) editadas.current.delete(clave);
+      }
+      setSettings((prev) => {
+        if (!prev) return applied;
+        const next = { ...applied };
+        for (const clave of editadas.current.keys()) {
+          (next as Record<string, unknown>)[clave] = prev[clave];
+        }
+        return next;
+      });
+      setSaved(editadas.current.size === 0);
     } finally {
       setSaving(false);
     }
