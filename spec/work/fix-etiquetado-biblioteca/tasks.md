@@ -16,10 +16,10 @@
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: cambiar la carpeta de clips y ver que el filtro de juegos no muestra `..` ni letras de unidad; grabar escritorio con el navegador delante → «Sin juego».
+- [x] Comprobación manual: cambiar la carpeta de clips y ver que el filtro de juegos no muestra `..` ni letras de unidad; grabar escritorio con el navegador delante → «Sin juego».
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado

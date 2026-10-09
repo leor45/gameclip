@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🐞 Juegos mal etiquetados en la biblioteca — 🧪 en rama (`fix/etiquetado-biblioteca`)
+### 🐞 Juegos mal etiquetados en la biblioteca — ✅ entregado (`fix/etiquetado-biblioteca`, 2026-10-08)
 
 Cambiar la carpeta de clips re-etiquetaba los clips antiguos como `..` o `E:` (primer segmento de una
 ruta relativa que salía de la carpeta), y los clips de escritorio se catalogaban con el título de la
