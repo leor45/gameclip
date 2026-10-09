@@ -137,6 +137,15 @@ export default function EditorAvanzado() {
   playheadRef.current = playhead;
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selectedSegment;
+  // Volúmenes y pistas quitadas vivos: `ensureAudioLoaded` los lee DESPUÉS de esperar la carga del
+  // audio, cuando los del render del clic en ▶ pueden estar viejos (el usuario los toca mientras carga).
+  const volumesRef = useRef(volumes);
+  volumesRef.current = volumes;
+  const removedRef = useRef(removed);
+  removedRef.current = removed;
+  // Intento de ▶ en curso: ■ lo invalida (incrementa) para que, al terminar la carga del audio, el ▶
+  // que quedó esperando no arranque la reproducción.
+  const playAttemptRef = useRef(0);
   // Objetivo del salto de hueco en curso: evita re-emitir el seek cada frame mientras se asienta.
   const skipTargetRef = useRef<number | null>(null);
   // Estado "recién abierto" del clip (sin tocar nada): base para saber si hay cambios que guardar como
@@ -471,10 +480,14 @@ export default function EditorAvanzado() {
         setAudioLoading(false);
       }
     }
-    // Aplica los volúmenes actuales antes de que suene (removed → 0).
+    // Aplica los volúmenes actuales antes de que suene (removed → 0). Se leen de los refs, no del
+    // render del clic: si se tocaron mientras cargaba, `setGain` ya los puso en el motor y los del
+    // closure viejo los pisarían (el slider marcaría 30 % y sonaría al 100 %).
+    const vivos = volumesRef.current;
+    const quitadas = removedRef.current;
     for (const t of tracks) {
       const key = trackKey(t);
-      engine.setGain(key, effectiveGain(trackGain(volumes, key), removed.has(key)));
+      engine.setGain(key, effectiveGain(trackGain(vivos, key), quitadas.has(key)));
     }
     return engine.hasBuffers();
   }
@@ -484,30 +497,35 @@ export default function EditorAvanzado() {
     if (!v) return;
     if (v.paused) {
       engineRef.current?.resume(); // dentro del gesto de usuario (política de autoplay)
+      // Este ▶ queda anotado: ■ (o un ▶ posterior) lo invalida mientras espera la carga.
+      const intento = ++playAttemptRef.current;
       const live = await ensureAudioLoaded();
-      // La carga del audio puede tardar segundos con «Salir» habilitado: si el editor se
-      // desmontó (React suelta la ref) o cambió el <video>, no se toca el viejo — sonaría de
-      // fondo sin forma de pararlo.
-      if (videoRef.current !== v) return;
-      // Pasado el último tramo conservado (p. ej. tras llegar al final recortado) no queda nada
-      // que reproducir: el bucle pararía en el primer tick. Se vuelve al inicio del primer
-      // tramo, como hace el navegador con un vídeo terminado. El audio en vivo lo arranca el
-      // bucle cuando el vídeo aterrice (como en el salto de huecos: arrancarlo ya lo
-      // adelantaría a la imagen y sonaría «doble»).
+      // La carga del audio puede tardar segundos con «Salir» y ■ habilitados: si el editor se
+      // desmontó (React suelta la ref), cambió el <video> o el usuario detuvo/relanzó mientras
+      // tanto, no se toca nada — sonaría de fondo sin forma de pararlo.
+      if (videoRef.current !== v || playAttemptRef.current !== intento) return;
+      // Fuera de todo tramo conservado (en un hueco, antes de un principio recortado o pasado el
+      // último tramo, p. ej. tras llegar al final recortado) no hay nada que reproducir desde
+      // aquí: se salta ANTES de arrancar al siguiente tramo, o al inicio del primero si no queda
+      // ninguno (como hace el navegador con un vídeo terminado). Si no, el vídeo —y su mezcla
+      // original— sonaría ~1 fotograma desde el hueco hasta que el bucle lo saltara. El audio en
+      // vivo lo arranca el bucle cuando el vídeo aterrice (como en el salto de huecos: arrancarlo
+      // ya lo adelantaría a la imagen y sonaría «doble»). El destino es el inicio de un tramo, que
+      // `segmentAt` cuenta como dentro: el bucle no vuelve a saltar.
       const segs = segmentsRef.current;
       const t = v.currentTime;
-      const reinicio = segs.length > 0 && segmentAt(segs, t) < 0 && nextKeptTime(segs, t) === null;
-      if (reinicio) {
-        const inicio = segs[0].start;
-        skipTargetRef.current = inicio;
-        v.currentTime = inicio;
-        setPlayhead(inicio);
+      const salto = segs.length > 0 && segmentAt(segs, t) < 0;
+      if (salto) {
+        const destino = nextKeptTime(segs, t) ?? segs[0].start;
+        skipTargetRef.current = destino;
+        v.currentTime = destino;
+        setPlayhead(destino);
       }
       // Con audio en vivo, el <video> va mudo (lo pone el motor). Si no, suena la mezcla original.
       v.muted = live;
       // `play()` puede devolver undefined en algunos entornos (jsdom): se envuelve para no romper.
       void Promise.resolve(v.play()).catch(() => undefined);
-      if (live && !reinicio) engineRef.current?.play(v.currentTime);
+      if (live && !salto) engineRef.current?.play(v.currentTime);
       setPlaying(true);
     } else {
       v.pause();
@@ -517,6 +535,8 @@ export default function EditorAvanzado() {
   }
 
   function stop() {
+    // Invalida un ▶ que aún espera la carga del audio: al terminar, no debe arrancar.
+    playAttemptRef.current++;
     const v = videoRef.current;
     if (v) {
       v.pause();

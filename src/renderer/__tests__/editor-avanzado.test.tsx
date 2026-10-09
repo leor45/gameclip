@@ -155,12 +155,30 @@ class FakeAudioContext {
   currentTime = 0;
   readonly destination = {};
   readonly inicios: number[] = [];
+  /** Un nodo de ganancia por pista (en el orden de creación); `ganancia()` da la que sonaría. */
+  readonly ganancias: Array<{ gain: { value: number; ultima: number | null } }> = [];
   readonly decodeAudioData = vi.fn(() => Promise.resolve({ duration: 60 }));
   constructor() {
     FakeAudioContext.ultima = this;
   }
   createGain() {
-    return { gain: { value: 1, setTargetAtTime: () => undefined }, connect: () => undefined };
+    const nodo = {
+      gain: {
+        value: 1,
+        ultima: null as number | null,
+        setTargetAtTime: (objetivo: number) => {
+          nodo.gain.ultima = objetivo;
+        },
+      },
+      connect: () => undefined,
+    };
+    this.ganancias.push(nodo);
+    return nodo;
+  }
+  /** Ganancia final de la pista `i` (el nodo 0 es el maestro): último objetivo de la rampa o valor inicial. */
+  ganancia(i: number): number {
+    const g = this.ganancias[i + 1].gain;
+    return g.ultima ?? g.value;
   }
   createBufferSource() {
     const inicios = this.inicios;
@@ -240,7 +258,10 @@ describe('EditorAvanzado — reproducción: salir cargando el audio y final reco
     const estado = { paused: true, ended: false, currentTime: 0, seeking: false, muted: false };
     const seeks: number[] = [];
     const muteds: boolean[] = [];
+    // Posición del vídeo en cada llamada a play(): desde ahí sonaría (la mezcla original del <video>).
+    const desdePlay: number[] = [];
     const play = vi.fn(() => {
+      desdePlay.push(estado.currentTime);
       // Como el navegador: play() sobre un vídeo terminado vuelve a empezar desde 0.
       if (estado.ended) {
         estado.ended = false;
@@ -276,7 +297,7 @@ describe('EditorAvanzado — reproducción: salir cargando el audio y final reco
       play: { configurable: true, value: play },
       pause: { configurable: true, value: pause },
     });
-    return { video, estado, seeks, muteds, play, pause };
+    return { video, estado, seeks, muteds, desdePlay, play, pause };
   }
 
   const reproducir = () => screen.getByRole('button', { name: 'Reproducir' });
@@ -482,7 +503,7 @@ describe('EditorAvanzado — reproducción: salir cargando el audio y final reco
     expect(reproducir()).toBeInTheDocument();
   });
 
-  it('en un hueco con tramos después, ▶ no vuelve al primero: el bucle salta el hueco como siempre', async () => {
+  it('en un hueco con tramos después, ▶ no vuelve al primero: salta al siguiente tramo, sin bucle de saltos', async () => {
     const raf = controlarRaf();
     await prepararConCortes([
       { start: 0, end: 10 },
@@ -493,10 +514,34 @@ describe('EditorAvanzado — reproducción: salir cargando el audio y final reco
 
     fireEvent.click(reproducir());
     await screen.findByRole('button', { name: 'Pausar' });
+    // El salto lo hace ▶ en el acto (Bug 4), no el primer tick; el bucle ya no lo repite.
+    expect(v.seeks).toEqual([30]);
+    raf.fotograma();
+    raf.fotograma();
+    expect(v.seeks).toEqual([30]);
+    expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
+  });
+
+  it('durante la reproducción, el bucle sigue saltando el hueco borrado (ripple)', async () => {
+    const raf = controlarRaf();
+    await prepararConCortes([
+      { start: 0, end: 10 },
+      { start: 30, end: 60 },
+    ]);
+    const v = simularVideo();
+    v.estado.currentTime = 5;
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.seeks).toEqual([]); // dentro de un tramo: ▶ no reposiciona
+    raf.fotograma();
     expect(v.seeks).toEqual([]);
+
+    v.estado.currentTime = 10.02; // el vídeo entra en el hueco
     raf.fotograma();
-    expect(v.seeks).toEqual([30]); // salto del hueco (ripple) al siguiente tramo
+    expect(v.seeks).toEqual([30]);
     raf.fotograma();
+    expect(v.seeks).toEqual([30]); // emitido una sola vez
     expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
   });
 
@@ -523,6 +568,271 @@ describe('EditorAvanzado — reproducción: salir cargando el audio y final reco
     expect(v.estado.currentTime).toBe(0);
     expect(posicion()).toHaveAttribute('aria-valuenow', '0');
     expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
+  });
+
+  // ---- Carga del audio: volumen (Bug 2) y ■ (Bug 3); ▶ desde un hueco (Bug 4) ----
+
+  /**
+   * La extracción del audio de las pistas queda pendiente hasta llamar a lo que devuelve (que
+   * además deja correr las microtareas de la decodificación): simula un clip largo.
+   */
+  function audioPendiente() {
+    let soltar: (bytes: ArrayBuffer) => void = () => undefined;
+    mock().editor.getTrackAudio.mockReturnValue(
+      new Promise<ArrayBuffer>((resolve) => {
+        soltar = resolve;
+      }),
+    );
+    return async () => {
+      await act(async () => {
+        soltar(new ArrayBuffer(16));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    };
+  }
+
+  /** Abre el clip con Web Audio simulado y el audio por pista pendiente; ▶ aún sin pulsar. */
+  async function abrirConAudioPendiente() {
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    const raf = controlarRaf();
+    const terminarCarga = audioPendiente();
+    await prepararClip();
+    await screen.findByLabelText('Volumen de game'); // pistas listas: el primer ▶ carga su audio
+    return { raf, terminarCarga, v: simularVideo() };
+  }
+
+  it('regresión Bug 2: un volumen cambiado durante «Cargando audio…» es el que suena al terminar', async () => {
+    const { terminarCarga } = await abrirConAudioPendiente();
+
+    fireEvent.click(reproducir());
+    await screen.findByText('Cargando audio…');
+    fireEvent.change(screen.getByLabelText('Volumen de game'), { target: { value: '30' } });
+    expect(screen.getByLabelText('Volumen de game')).toHaveValue('30');
+
+    await terminarCarga();
+    await screen.findByRole('button', { name: 'Pausar' });
+    const ctx = FakeAudioContext.ultima!;
+    // Antes: al acabar la carga se reaplicaba el 100 % del render del clic (el slider marcaba 30 %).
+    expect(ctx.ganancia(0)).toBeCloseTo(0.3); // game
+    expect(ctx.ganancia(1)).toBe(1); // mic, intacta
+    expect(screen.getByLabelText('Volumen de game')).toHaveValue('30');
+  });
+
+  it('regresión Bug 2: una pista quitada durante «Cargando audio…» no suena al terminar', async () => {
+    const { terminarCarga } = await abrirConAudioPendiente();
+
+    fireEvent.click(reproducir());
+    await screen.findByText('Cargando audio…');
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar mic' }));
+
+    await terminarCarga();
+    await screen.findByRole('button', { name: 'Pausar' });
+    const ctx = FakeAudioContext.ultima!;
+    expect(ctx.ganancia(1)).toBe(0); // mic quitada: antes sonaba al 100 %
+    expect(ctx.ganancia(0)).toBe(1);
+  });
+
+  it('un volumen cambiado y una pista quitada ANTES del ▶ también se aplican al arrancar', async () => {
+    const { terminarCarga } = await abrirConAudioPendiente();
+    fireEvent.change(screen.getByLabelText('Volumen de game'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar mic' }));
+
+    fireEvent.click(reproducir());
+    await screen.findByText('Cargando audio…');
+    await terminarCarga();
+    await screen.findByRole('button', { name: 'Pausar' });
+    const ctx = FakeAudioContext.ultima!;
+    expect(ctx.ganancia(0)).toBeCloseTo(0.3);
+    expect(ctx.ganancia(1)).toBe(0);
+
+    // Con el motor ya cargado, restaurar la pista y subir el volumen suena en el acto.
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar mic' }));
+    fireEvent.change(screen.getByLabelText('Volumen de game'), { target: { value: '150' } });
+    expect(ctx.ganancia(1)).toBe(1);
+    expect(ctx.ganancia(0)).toBeCloseTo(1.5);
+  });
+
+  it('regresión Bug 3: ■ durante «Cargando audio…» cancela el ▶ pendiente', async () => {
+    const { terminarCarga, v } = await abrirConAudioPendiente();
+
+    fireEvent.click(reproducir());
+    await screen.findByText('Cargando audio…');
+    fireEvent.click(screen.getByRole('button', { name: 'Detener' }));
+
+    await terminarCarga();
+    const ctx = FakeAudioContext.ultima!;
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(2); // la carga terminó de verdad
+    // Antes: la carga terminaba y la reproducción arrancaba igual (vídeo mudo + audio desde 0).
+    expect(v.play).not.toHaveBeenCalled();
+    expect(v.muteds).toEqual([]);
+    expect(ctx.inicios).toEqual([]);
+    expect(screen.queryByText('Cargando audio…')).not.toBeInTheDocument();
+    expect(reproducir()).toBeEnabled(); // el editor no queda atascado
+
+    // El siguiente ▶ funciona con normalidad sobre el audio ya cargado.
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.play).toHaveBeenCalledTimes(1);
+    expect(v.estado.muted).toBe(true);
+    expect(ctx.inicios).toEqual([0, 0]);
+    expect(mock().editor.getTrackAudio).toHaveBeenCalledTimes(2); // sin recargar
+  });
+
+  it('regresión Bug 3: ▶ ■ ▶ con la carga en curso en la primera: solo cuenta el último ▶', async () => {
+    const { terminarCarga, v } = await abrirConAudioPendiente();
+
+    fireEvent.click(reproducir()); // intento 1: queda esperando la carga
+    await screen.findByText('Cargando audio…');
+    fireEvent.click(screen.getByRole('button', { name: 'Detener' })); // lo invalida
+    await terminarCarga();
+    expect(v.play).not.toHaveBeenCalled();
+
+    fireEvent.click(reproducir()); // intento 2, ya con el audio cargado
+    await screen.findByRole('button', { name: 'Pausar' });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0)); // por si algún intento viejo siguiera vivo
+    });
+    expect(v.play).toHaveBeenCalledTimes(1); // sin doble arranque
+    expect(FakeAudioContext.ultima!.inicios).toEqual([0, 0]);
+  });
+
+  it('durante la carga, mover el cursor (timeline) no invalida el ▶: arranca desde donde está al terminar', async () => {
+    const { terminarCarga, v } = await abrirConAudioPendiente();
+    v.estado.currentTime = 20;
+
+    fireEvent.click(reproducir());
+    await screen.findByText('Cargando audio…');
+    v.estado.currentTime = 7; // la timeline mueve el <video> mientras carga
+    await terminarCarga();
+
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.desdePlay).toEqual([7]);
+    expect(FakeAudioContext.ultima!.inicios).toEqual([7, 7]);
+  });
+
+  it('regresión Bug 4 (audio en vivo): ▶ desde un hueco salta antes de reproducir y el audio arranca al aterrizar', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    mock().editor.getTrackAudio.mockResolvedValue(new ArrayBuffer(16));
+    const raf = controlarRaf();
+    await prepararConCortes([
+      { start: 0, end: 10 },
+      { start: 30, end: 60 },
+    ]);
+    await screen.findByLabelText('Volumen de game');
+    const v = simularVideo({ buscaAlFijar: true });
+    v.estado.currentTime = 20; // cursor parado en el hueco borrado
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    const ctx = FakeAudioContext.ultima!;
+    // Antes: play() arrancaba en 20 s y el audio en vivo también (inicios [20, 20]); el primer tick
+    // saltaba a 30 s: ~1 fotograma de lo recortado.
+    expect(v.seeks).toEqual([30]);
+    expect(v.desdePlay).toEqual([30]);
+    expect(v.estado.muted).toBe(true);
+    expect(ctx.inicios).toEqual([]);
+    // El cursor marca tiempo de salida: el origen 30 s va tras los 10 s del primer tramo.
+    expect(posicion()).toHaveAttribute('aria-valuenow', '10');
+
+    raf.fotograma(); // el vídeo aún busca: el audio sigue sin arrancar
+    expect(ctx.inicios).toEqual([]);
+    v.estado.seeking = false; // aterriza
+    raf.fotograma();
+    expect(ctx.inicios).toEqual([30, 30]);
+    // Sin bucle de saltos: el destino (inicio del tramo) cuenta como dentro.
+    raf.fotograma();
+    raf.fotograma();
+    expect(v.seeks).toEqual([30]);
+    expect(ctx.inicios).toEqual([30, 30]);
+    expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
+  });
+
+  it('regresión Bug 4 (sin audio en vivo): la mezcla original del <video> no suena desde el hueco', async () => {
+    const raf = controlarRaf();
+    await prepararConCortes([
+      { start: 0, end: 10 },
+      { start: 30, end: 60 },
+    ]);
+    const v = simularVideo();
+    v.estado.currentTime = 20;
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.seeks).toEqual([30]);
+    expect(v.desdePlay).toEqual([30]); // antes [20]: sonaba el hueco hasta el primer tick
+    expect(v.estado.muted).toBe(false); // sin Web Audio suena la mezcla del <video>
+    raf.fotograma();
+    raf.fotograma();
+    expect(v.seeks).toEqual([30]);
+  });
+
+  it('regresión Bug 4: ▶ desde 0 con el principio recortado salta al primer tramo antes de reproducir', async () => {
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    mock().editor.getTrackAudio.mockResolvedValue(new ArrayBuffer(16));
+    const raf = controlarRaf();
+    await prepararConCortes([{ start: 5, end: 40 }]);
+    await screen.findByLabelText('Volumen de game');
+    const v = simularVideo({ buscaAlFijar: true });
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.seeks).toEqual([5]);
+    expect(v.desdePlay).toEqual([5]);
+    expect(FakeAudioContext.ultima!.inicios).toEqual([]);
+    v.estado.seeking = false;
+    raf.fotograma();
+    expect(FakeAudioContext.ultima!.inicios).toEqual([5, 5]);
+    raf.fotograma();
+    expect(v.seeks).toEqual([5]);
+  });
+
+  it('▶ con el cursor justo en el fin de un tramo (t = end) salta al siguiente tramo', async () => {
+    controlarRaf();
+    await prepararConCortes([
+      { start: 0, end: 10 },
+      { start: 30, end: 60 },
+    ]);
+    const v = simularVideo();
+    v.estado.currentTime = 10; // segmentAt es [start, end): el fin cuenta como hueco
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.seeks).toEqual([30]);
+    expect(v.desdePlay).toEqual([30]);
+  });
+
+  it('▶ justo en el inicio de un tramo (t = start) no reposiciona', async () => {
+    controlarRaf();
+    await prepararConCortes([
+      { start: 0, end: 10 },
+      { start: 30, end: 60 },
+    ]);
+    const v = simularVideo();
+    v.estado.currentTime = 30;
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.seeks).toEqual([]);
+    expect(v.desdePlay).toEqual([30]);
+  });
+
+  it('■ tras ▶ desde un hueco y ▶ otra vez: vuelve a saltar el hueco, no reproduce lo recortado', async () => {
+    const raf = controlarRaf();
+    await prepararConCortes([{ start: 5, end: 40 }]);
+    const v = simularVideo({ buscaAlFijar: true });
+
+    fireEvent.click(reproducir()); // desde 0 (recortado): salta a 5 s
+    await screen.findByRole('button', { name: 'Pausar' });
+    fireEvent.click(screen.getByRole('button', { name: 'Detener' })); // ■ antes de aterrizar
+    v.estado.seeking = false;
+    expect(v.seeks).toEqual([5, 0]);
+
+    fireEvent.click(reproducir());
+    await screen.findByRole('button', { name: 'Pausar' });
+    expect(v.seeks).toEqual([5, 0, 5]);
+    expect(v.desdePlay).toEqual([5, 5]);
+    raf.fotograma();
+    expect(v.seeks).toEqual([5, 0, 5]);
   });
 });
 
