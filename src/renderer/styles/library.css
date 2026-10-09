@@ -1,2 +1,792 @@
 /* ── Biblioteca · rediseño «Portada oscura» ──
    Tokens y primitivas en ../styles.css. Esta hoja solo lleva las reglas de su área. */
+
+/* ── Estructura: cabecera fija arriba y cuerpo con scroll propio ── */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.library-head h1 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.library-filters {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.library-search {
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--page);
+  color: var(--dim);
+  cursor: text;
+}
+
+.library-search:hover {
+  border-color: var(--dim);
+}
+
+.library-search:focus-within {
+  border-color: var(--sello);
+  box-shadow: 0 0 0 3px var(--sello-soft);
+}
+
+.library-search svg {
+  flex: none;
+}
+
+.library-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: var(--paper);
+  font: 400 14px/1.3 var(--font-ui);
+}
+
+.library-search input:focus-visible {
+  outline: none;
+}
+
+.library-search input::placeholder {
+  color: var(--dim);
+}
+
+/* «★ Favoritos»: interruptor de filtro; encendido, en amarillo. */
+.chip {
+  padding: 7px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--dim);
+  font: 600 13px/1.3 var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--dim);
+  color: var(--paper);
+}
+
+.chip.on {
+  border-color: var(--sello);
+  background: var(--sello-soft);
+  color: var(--sello);
+}
+
+.library-count {
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.library-error {
+  margin-top: 14px;
+  color: var(--rec);
+  font-size: 13px;
+}
+
+.library > .placeholder {
+  margin-top: 18px;
+}
+
+/* ── Filtro de juego (desplegable propio) ── */
+
+.game-filter {
+  position: relative;
+  flex: none;
+}
+
+.game-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 240px;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--page);
+  color: var(--paper);
+  font: 600 13px/1.3 var(--font-ui);
+  cursor: pointer;
+}
+
+.game-filter-btn:hover {
+  border-color: var(--dim);
+}
+
+.game-filter-btn.on {
+  border-color: var(--sello);
+}
+
+.game-filter-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-filter-chev {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--dim);
+}
+
+.game-filter-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 290px;
+  padding: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--raise);
+  box-shadow: 0 18px 36px -14px rgba(0, 0, 0, 0.85);
+}
+
+.game-filter-search {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.game-filter-menu ul {
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+/* Todas las filas miden lo mismo: icono de 16 px en su columna, nombre y contador a la derecha. */
+.game-filter-opt {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--paper);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.game-filter-opt.active {
+  background: var(--page);
+}
+
+.game-filter-opt.on {
+  box-shadow: inset 2px 0 0 var(--sello);
+  font-weight: 700;
+}
+
+.game-filter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-filter-count {
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
+.game-filter-sep {
+  margin: 6px 2px 0;
+  padding: 9px 8px 5px;
+  border-top: 1px solid var(--rule);
+}
+
+.game-filter-empty {
+  padding: 8px 10px;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+/* ── Cuerpo: cuadrícula o panel + filas; las cabeceras de grupo se quedan fijas al hacer scroll ── */
+
+.library-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+/* Con un clip abierto la cuadrícula sigue montada pero oculta (conserva tarjetas y scroll). */
+.library-body[hidden] {
+  display: none;
+}
+
+.library-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 0 8px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--ink);
+  font: 400 18px/1 var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.library-group-head span {
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--dim);
+}
+
+/* ── Cuadrícula de tarjetas ── */
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 22px 18px;
+  padding: 16px 6px 24px 0;
+}
+
+.clip-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.clip-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--page);
+  color: var(--dim);
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+/* La tarjeta apuntada (ratón o teclado) se marca con un filete amarillo: no mueve la cuadrícula. */
+.clip-card:hover .clip-thumb,
+.clip-card:focus-within .clip-thumb {
+  box-shadow: 0 0 0 2px var(--sello);
+}
+
+/* Absoluta para salir del flujo: si la imagen participa del sizing, un thumbnail 9:16
+   estira la card y anula el aspect-ratio del contenedor. Contain: preview completo.
+   El video de la preview ocupa el mismo marco, con las mismas reglas. */
+.clip-thumb img,
+.clip-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: inherit;
+}
+
+.clip-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 30px;
+  color: var(--dim);
+}
+
+.clip-thumb:hover .clip-thumb-placeholder {
+  color: var(--sello);
+}
+
+/* El sello: la duración en un círculo amarillo inclinado que asoma por la esquina. Con texto largo
+   («Captura», h:mm:ss) se alarga en píldora. */
+.clip-duration {
+  position: absolute;
+  z-index: 1;
+  top: -9px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  min-width: 42px;
+  height: 42px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--sello);
+  color: var(--on-sello);
+  font: 700 12.5px/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  transform: rotate(-9deg);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.clip-preview-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 3px;
+  background: rgba(13, 14, 18, 0.8);
+  color: var(--paper);
+  font: 500 11px/1 var(--font-mono);
+  pointer-events: none;
+}
+
+.clip-preview-tag::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--sello);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+.clip-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding-top: 9px;
+}
+
+.clip-info h3 {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-star {
+  color: var(--sello);
+}
+
+.clip-game {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.clip-game-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-meta {
+  font: 500 11.5px/1.3 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+
+.clip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.clip-tag {
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--dim);
+  font: 500 11px/1.2 var(--font-mono);
+}
+
+.clip-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 9px;
+}
+
+.clip-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Acciones de la tarjeta: aparecen al apuntar o con el foco del teclado (siguen en el orden de
+   tabulación: con opacity, no visibility). Ocupan su sitio siempre para que la cuadrícula no salte. */
+.clip-actions {
+  display: flex;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.clip-actions:not(.panel) {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.clip-card:hover .clip-actions,
+.clip-card:focus-within .clip-actions {
+  opacity: 1;
+}
+
+/* Sin ratón que apunte (táctil), las acciones se ven siempre. */
+@media (hover: none) {
+  .clip-actions:not(.panel) {
+    opacity: 1;
+  }
+}
+
+.clip-actions:not(.panel) button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--dim);
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.clip-actions:not(.panel) button:hover:not(:disabled) {
+  border-color: var(--dim);
+  color: var(--paper);
+}
+
+.clip-actions .clip-fav.on {
+  color: var(--sello);
+}
+
+.clip-actions .clip-trash:hover:not(:disabled) {
+  border-color: var(--rec);
+  color: var(--rec);
+}
+
+.clip-actions:not(.panel) button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Panel reproductor (clip abierto) + índice en filas ── */
+
+.library-body.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.lib-player {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 22px 16px 0;
+  border-right: 1px solid var(--rule);
+}
+
+.lib-player-media {
+  position: relative;
+  flex: none;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  background: #000;
+  overflow: hidden;
+}
+
+/* Una captura puede tener cualquier proporción: se muestra entera, no recortada. */
+.lib-player-video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.lib-player-close {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius);
+  background: rgba(13, 14, 18, 0.75);
+  color: var(--paper);
+  font: 600 22px/1 var(--font-ui);
+  cursor: pointer;
+}
+
+.lib-player-close:hover {
+  background: var(--raise);
+}
+
+.lib-player-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lib-player-meta {
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.lib-player-title {
+  margin: 2px 0 0;
+  font-size: 38px;
+  line-height: 0.98;
+  overflow-wrap: anywhere;
+}
+
+.lib-player-info .clip-game {
+  font-size: 14px;
+}
+
+.clip-actions.panel {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.clip-actions.panel .clip-fav {
+  min-width: 36px;
+}
+
+.clip-actions.panel .clip-trash:hover:not(:disabled) {
+  background: var(--rec-soft);
+}
+
+.lib-rows {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 6px 16px 20px;
+}
+
+.lib-rows-list {
+  list-style: none;
+}
+
+.lib-row {
+  display: grid;
+  grid-template-columns: 30px 76px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 6px;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lib-row:hover {
+  background: var(--page);
+}
+
+.lib-row.on {
+  padding-left: 10px;
+  background: var(--page);
+  box-shadow: inset 3px 0 0 var(--sello);
+}
+
+.lib-row-num {
+  font: 400 18px/1 var(--font-display);
+  color: var(--dim);
+  text-align: right;
+}
+
+.lib-row.on .lib-row-num {
+  color: var(--sello);
+}
+
+.lib-row-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--dim);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.lib-row-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.lib-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lib-row-text b {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-row-text .clip-game {
+  font-size: 12.5px;
+}
+
+.lib-row-dur {
+  font: 500 12.5px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--paper);
+}
+
+/* Ventana estrecha: el panel arriba y las filas debajo, con un solo scroll. */
+@media (max-width: 960px) {
+  .library-body.split {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .lib-player {
+    overflow: visible;
+    padding-right: 0;
+    border-right: none;
+  }
+
+  .lib-rows {
+    overflow: visible;
+    padding-left: 0;
+  }
+}
+
+/* ── Modales de eliminar: qué se va a borrar ── */
+
+.lib-del-what {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--page);
+}
+
+.lib-del-thumb {
+  position: relative;
+  display: block;
+  width: 104px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  overflow: hidden;
+}
+
+.lib-del-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.lib-del-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lib-del-text b {
+  color: var(--paper);
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-del-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.lib-del-meta > span:last-child {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clip-thumb,
+  .clip-actions:not(.panel) {
+    transition: none;
+  }
+}
