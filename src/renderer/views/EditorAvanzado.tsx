@@ -144,6 +144,9 @@ export default function EditorAvanzado() {
   const baselineRef = useRef<EditSnapshot | null>(null);
   // Última edición ya persistida (o la base): evita re-escribir/bumpear al abrir sin cambios.
   const lastPersistedRef = useRef<EditSnapshot | null>(null);
+  // ¿Se restauró una edición sin terminar al abrir? Entonces la duración real que llega después con el
+  // vídeo no debe pisar sus cortes.
+  const draftRestauradoRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Borde inicial/final al empezar a recortar: el arrastre reporta un delta sobre esta base (robusto
   // frente al re-escalado de la timeline compactada).
@@ -221,7 +224,9 @@ export default function EditorAvanzado() {
         setClip(c);
         setNoEncontrado(c === null);
         if (c) {
-          const d = c.durationSeconds ?? 0;
+          // Sin duración en el catálogo (el thumbnailer aún no pasó) vale la del <video> si ya cargó.
+          const dv = videoRef.current?.duration;
+          const d = c.durationSeconds ?? (dv && Number.isFinite(dv) ? dv : 0);
           setDuration(d);
           // Estado base del clip recién abierto (sin cambios); referencia para el auto-guardado.
           const baseVolumes = mutedToVolumes(c.mutedTracks);
@@ -233,6 +238,7 @@ export default function EditorAvanzado() {
           };
           // Si hay una edición sin terminar guardada, se restaura; si no, el estado base.
           const draft = loadDraft(c.id);
+          draftRestauradoRef.current = draft !== null;
           if (draft) {
             dispatch({ type: 'reset', segments: draft.segments });
             setVolumes(draft.volumes);
@@ -402,7 +408,16 @@ export default function EditorAvanzado() {
     const d = v?.duration;
     if (d && Number.isFinite(d) && duration === 0) {
       setDuration(d);
-      dispatch({ type: 'reset', segments: initialSegments(d) });
+      const real = initialSegments(d);
+      const base = baselineRef.current;
+      if (base) {
+        // El clip no traía duración: la base era [0, 0]. Se pasa a la real para que «sin tocar nada»
+        // no cuente como edición (ni se guarde un borrador fantasma ni Restablecer deje 0 s).
+        baselineRef.current = { ...base, segments: real };
+        if (draftRestauradoRef.current) return; // los cortes del borrador mandan
+        lastPersistedRef.current = { ...(lastPersistedRef.current ?? base), segments: real };
+      }
+      dispatch({ type: 'reset', segments: real });
     }
   }
 

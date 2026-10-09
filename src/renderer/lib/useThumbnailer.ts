@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Clip } from '@shared/library';
 import { clipMediaUrl } from './media';
 
@@ -8,21 +8,43 @@ const TIMEOUT_MS = 10000;
 /**
  * Genera duración y thumbnail para el primer clip que no los tenga (video/imagen → canvas →
  * dataURL → IPC). Procesa uno por ciclo: setMedia dispara 'changed', la lista se recarga
- * y el efecto vuelve a correr hasta que no quedan pendientes. Si la generación falla,
- * no reintenta hasta la próxima recarga (sin bucles).
+ * y el efecto vuelve a correr hasta que no quedan pendientes. Si la generación de un clip falla, se
+ * salta durante la sesión y se pasa al siguiente: antes se reintentaba siempre el mismo (el primero de
+ * la lista) y un solo clip ilegible dejaba sin miniatura a todos los que iban detrás.
  *
  * Las capturas también llevan miniatura propia: pintar el PNG entero en cada tarjeta de la grilla
  * es justo el coste que la app evita (corre mientras el usuario juega).
  */
-export function useThumbnailer(clips: Clip[] | null): void {
+/** Extrae duración y miniatura de un clip; null si no se pudo. Inyectable en tests. */
+export type ExtraerMedia = (
+  clip: Clip,
+) => Promise<{ durationSeconds: number; thumbnailDataUrl?: string } | null>;
+
+const extraerPorTipo: ExtraerMedia = (clip) =>
+  clip.kind === 'image' ? extraerImagen(clip) : extraerMedia(clip);
+
+export function useThumbnailer(clips: Clip[] | null, extraer: ExtraerMedia = extraerPorTipo): void {
+  /** Ids cuya extracción falló en esta sesión: no se reintentan (un archivo ilegible no se arregla solo). */
+  const fallidos = useRef(new Set<number>());
+  /** Fuerza otra pasada tras un fallo, para que el siguiente pendiente no espere a una recarga ajena. */
+  const [intento, setIntento] = useState(0);
+
   useEffect(() => {
-    const pendiente = clips?.find((c) => c.durationSeconds === null || !c.thumbnailPath);
+    const pendiente = clips?.find(
+      (c) => (c.durationSeconds === null || !c.thumbnailPath) && !fallidos.current.has(c.id),
+    );
     if (!pendiente) return;
     let cancelado = false;
 
-    const extraer = pendiente.kind === 'image' ? extraerImagen : extraerMedia;
     void extraer(pendiente).then((media) => {
-      if (cancelado || !media) return;
+      if (cancelado) return;
+      if (!media) {
+        fallidos.current.add(pendiente.id);
+        setIntento((n) => n + 1);
+        return;
+      }
+      // Duración sí, miniatura no: el clip seguiría pendiente y se reextraería en cada recarga.
+      if (!media.thumbnailDataUrl) fallidos.current.add(pendiente.id);
       window.gameclip.library.setMedia(pendiente.id, media).catch(() => {
         // el clip pudo borrarse mientras se generaba
       });
@@ -31,7 +53,7 @@ export function useThumbnailer(clips: Clip[] | null): void {
     return () => {
       cancelado = true;
     };
-  }, [clips]);
+  }, [clips, extraer, intento]);
 }
 
 /**

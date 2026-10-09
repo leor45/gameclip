@@ -30,11 +30,15 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
   const [ocupado, setOcupado] = useState(false);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Si el clip cambia desde fuera (push del main), el borrador se realinea.
+  // Si el clip cambia desde fuera (push del main), el borrador se realinea. Por VALOR y nunca mientras
+  // se edita: la biblioteca recarga la lista en cada cambio del catálogo (miniaturas, replays) y cada
+  // recarga trae un array de tags nuevo; depender de él pisaba lo que el usuario estaba escribiendo.
+  const tagsTexto = clip.tags.join(', ');
   useEffect(() => {
+    if (editando) return;
     setTitulo(clip.title);
-    setTags(clip.tags.join(', '));
-  }, [clip.title, clip.tags]);
+    setTags(tagsTexto);
+  }, [clip.title, tagsTexto, editando]);
 
   // Al desmontar (filtro, borrado, navegación) no puede quedar un arranque pendiente.
   useEffect(() => cancelarPreview, []);
