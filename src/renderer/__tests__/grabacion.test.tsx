@@ -108,14 +108,16 @@ describe('Ajustes — Grabación', () => {
     );
   });
 
-  it('el listado muestra «Nombre (ejecutable.exe)» cuando el juego tiene nombre', async () => {
+  it('el listado muestra el nombre con su ejecutable debajo cuando el juego tiene nombre', async () => {
     mock().capture.getSettings.mockResolvedValue({
       ...DEFAULT_CAPTURE_SETTINGS,
       customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }, { executable: 'Otro.exe' }],
     });
     await irAGrabacion();
 
-    expect(await screen.findByText('Spiderman (MilesMorales.exe)')).toBeInTheDocument();
+    const nombre = await screen.findByText('Spiderman');
+    // El ejecutable va en la misma fila, debajo del nombre.
+    expect(nombre.closest('li')).toHaveTextContent('MilesMorales.exe');
     // Sin nombre, se sigue viendo solo el ejecutable, como hasta ahora.
     expect(screen.getByText('Otro.exe')).toBeInTheDocument();
   });
@@ -128,7 +130,8 @@ describe('Ajustes — Grabación', () => {
     });
     await irAGrabacion();
 
-    expect(await screen.findByText('ARC Raiders (PioneerGame.exe)')).toBeInTheDocument();
+    const nombre = await screen.findByText('ARC Raiders');
+    expect(nombre.closest('li')).toHaveTextContent('PioneerGame.exe');
   });
 
   it('renombrar un juego ya añadido guarda el nombre nuevo', async () => {
@@ -316,7 +319,7 @@ describe('Ajustes — Grabación · No son juegos', () => {
     const user = await irAGrabacion();
 
     expect(await screen.findByLabelText('Excluir Wallpaper Engine')).toBeChecked();
-    expect(screen.getByText('auto', { selector: '.capture-tag' })).toBeInTheDocument();
+    expect(screen.getByText('auto', { selector: '.settings-origen' })).toBeInTheDocument();
 
     // El desplegable solo ofrece lo que no está ya en la lista.
     const select = screen.getByLabelText('Instalado');

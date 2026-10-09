@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ExcludedGame, InstalledGameInfo } from '@shared/games';
+import GameIcon from '../../components/GameIcon';
+import { BotonQuitar } from './BotonQuitar';
 
 /**
  * Lista «no son juegos»: lo que los launchers instalan pero no es un juego (Wallpaper Engine, Lossless
@@ -89,16 +91,16 @@ export function NoSonJuegos() {
 
   return (
     <fieldset>
-      <legend>No son juegos</legend>
+      <legend className="gc-label">No son juegos</legend>
       <p className="settings-hint">
         Apps que los launchers instalan pero no son juegos: no se detectan ni se graban como juego.
         «Sincronizar» añade solas las conocidas (<em>auto</em>); lo que pongas a mano (
         <em>manual</em>) se respeta siempre.
       </p>
-      <div className="audio-app-add">
+      <div className="settings-addrow is-two">
         <label>
           Instalado
-          <select value={elegido} onChange={(e) => setElegido(e.target.value)}>
+          <select className="gc-field" value={elegido} onChange={(e) => setElegido(e.target.value)}>
             <option value="">Elegir…</option>
             {candidatos.map((j) => (
               <option key={j.name} value={j.name}>
@@ -111,55 +113,62 @@ export function NoSonJuegos() {
           O escribe el nombre
           <input
             type="text"
+            className="gc-field"
             placeholder="Wallpaper Engine"
             value={libre}
             onChange={(e) => setLibre(e.target.value)}
           />
         </label>
-        <button type="button" onClick={anadir} disabled={!nombreNuevo}>
+        <button type="button" className="gc-btn" onClick={anadir} disabled={!nombreNuevo}>
           Añadir
         </button>
       </div>
       {actual.length > 0 && (
-        <ul className="audio-app-list">
+        <ul className="settings-list">
           {actual.map((e) => (
-            <li key={e.name} className="audio-app-row">
-              <label className="settings-check">
+            <li
+              key={e.name}
+              className={e.enabled ? 'settings-excl-row' : 'settings-excl-row is-off'}
+            >
+              <label className="settings-excl-main">
                 <input
                   type="checkbox"
+                  className="gc-check"
                   checked={e.enabled}
                   aria-label={`Excluir ${e.name}`}
                   onChange={() => alternar(e.name)}
                 />
-                <span className="audio-app-name">{e.name}</span>
+                <GameIcon game={e.name} />
+                <span className="settings-excl-name">{e.name}</span>
               </label>
-              <span className="capture-tag">{e.source}</span>
-              {e.source === 'manual' && (
-                <button
-                  type="button"
-                  className="audio-app-trash"
-                  aria-label={`Quitar ${e.name}`}
-                  title={`Quitar ${e.name}`}
-                  onClick={() => quitar(e.name)}
-                >
-                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                    <path
-                      fill="currentColor"
-                      d="M6 1h4l.5 1H14v2H2V2h3.5L6 1zm-2.5 4h9L12 15H4L3.5 5zm3 2v6h1V7h-1zm2.5 0v6h1V7h-1z"
-                    />
-                  </svg>
-                </button>
+              <span
+                className={e.source === 'manual' ? 'settings-origen is-manual' : 'settings-origen'}
+              >
+                {e.source}
+              </span>
+              {e.source === 'manual' ? (
+                <BotonQuitar nombre={e.name} onClick={() => quitar(e.name)} />
+              ) : (
+                <span className="settings-remove-slot" aria-hidden="true" />
               )}
             </li>
           ))}
         </ul>
       )}
-      <p className="settings-hint">
-        Desmarcar una <em>auto</em> la vuelve a tratar como juego; la sincronización no la reactiva.
-      </p>
-      <button type="button" onClick={() => void sincronizar()} disabled={sincronizando}>
-        {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
-      </button>
+      <div className="settings-listfoot">
+        <p className="settings-hint">
+          Desmarcar una <em>auto</em> la vuelve a tratar como juego; la sincronización no la
+          reactiva.
+        </p>
+        <button
+          type="button"
+          className="gc-btn ghost sm"
+          onClick={() => void sincronizar()}
+          disabled={sincronizando}
+        >
+          {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
+        </button>
+      </div>
     </fieldset>
   );
 }

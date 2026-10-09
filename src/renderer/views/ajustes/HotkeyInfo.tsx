@@ -15,8 +15,10 @@ export function HotkeyInfo({ label, accel }: HotkeyInfoProps) {
   return (
     <div className="hotkey-info-inline">
       <span className="hotkey-info-label">{label}</span>
-      <span className="hotkey-key">{accel}</span>
-      <Link to="/ajustes/atajos">Editar en Atajos</Link>
+      <span className="gc-kbd">{accel}</span>
+      <Link to="/ajustes/atajos" className="settings-link">
+        Editar en Atajos
+      </Link>
     </div>
   );
 }

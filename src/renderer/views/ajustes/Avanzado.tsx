@@ -8,7 +8,7 @@ import {
   hotkeyCollisions,
   isPttReserved,
 } from '@shared/hotkeys';
-import type { PerfMetricKey, PerfOverlayConfig } from '@shared/perf';
+import type { PerfMetricKey, PerfOverlayConfig, PerfPreset } from '@shared/perf';
 import {
   PAWNIO_DOWNLOAD_URL,
   PERF_METRIC_KEYS,
@@ -18,7 +18,7 @@ import {
   positionForPreset,
   presetFor,
 } from '@shared/perf';
-import { RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
+import { ESCUCHANDO, RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -33,6 +33,22 @@ const METRIC_LABELS: Record<PerfMetricKey, string> = {
   cpuTemp: 'Temperatura de CPU',
   ram: 'RAM usada',
 };
+
+/**
+ * Mini-pantalla 3×3 junto al nombre de la posición: la casilla del preset actual se enciende y el
+ * centro (null) se ve vacío porque no es una posición elegible. Solo es un dibujo.
+ */
+const CELDAS_POSICION: (PerfPreset | null)[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'middle-left',
+  null,
+  'middle-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+];
 
 export default function AjustesAvanzado() {
   const { settings, set, save, saving, saved } = useCaptureSettings();
@@ -180,17 +196,24 @@ export default function AjustesAvanzado() {
   }
 
   return (
-    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()} bloqueo={bloqueo}>
+    <SeccionForm
+      titulo="Avanzado"
+      saving={saving}
+      saved={saved}
+      onGuardar={() => void save()}
+      bloqueo={bloqueo}
+    >
       <p className="settings-warning">
         Cuidado, dragones: estos ajustes son para casos avanzados y pueden afectar el rendimiento o
         la compatibilidad de la captura.
       </p>
 
       <fieldset>
-        <legend>Captura</legend>
+        <legend className="gc-label">Captura</legend>
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.advancedWindowCapture}
             onChange={(e) => set('advancedWindowCapture', e.target.checked)}
           />
@@ -199,6 +222,7 @@ export default function AjustesAvanzado() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.experimentalCapture}
             onChange={(e) => set('experimentalCapture', e.target.checked)}
           />
@@ -207,6 +231,7 @@ export default function AjustesAvanzado() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.hdrCompatibility}
             onChange={(e) => set('hdrCompatibility', e.target.checked)}
           />
@@ -215,6 +240,7 @@ export default function AjustesAvanzado() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.screenshotHdrCompatibility}
             onChange={(e) => set('screenshotHdrCompatibility', e.target.checked)}
           />
@@ -227,6 +253,7 @@ export default function AjustesAvanzado() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.forceWindowCapture}
             onChange={(e) => set('forceWindowCapture', e.target.checked)}
           />
@@ -235,6 +262,7 @@ export default function AjustesAvanzado() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.showMouseCursor}
             onChange={(e) => set('showMouseCursor', e.target.checked)}
           />
@@ -243,10 +271,11 @@ export default function AjustesAvanzado() {
       </fieldset>
 
       <fieldset>
-        <legend>Overlay de rendimiento</legend>
+        <legend className="gc-label">Overlay de rendimiento</legend>
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.perfOverlayEnabled}
             onChange={(e) => {
               set('perfOverlayEnabled', e.target.checked);
@@ -260,12 +289,23 @@ export default function AjustesAvanzado() {
           los avisos de GameClip (REC, clip guardado) siempre quedan por encima.
         </p>
 
-        <div className="hotkey-control">
-          <span className={`hotkey-key${capturando ? ' hotkey-key-escuchando' : ''}`}>
-            {capturando ? 'Pulsa una combinación…' : settings.perfOverlayHotkey}
-          </span>
+        <div className={capturando ? 'hotkey-row is-inline is-listening' : 'hotkey-row is-inline'}>
+          <div className="hotkey-info">
+            <span className="hotkey-label">Atajo del overlay</span>
+            {capturando ? (
+              <span className="hotkey-listening" role="status">
+                {ESCUCHANDO}
+              </span>
+            ) : (
+              <span className="hotkey-desc">
+                Muestra u oculta el overlay sin cambiar qué se ve.
+              </span>
+            )}
+          </div>
+          <span className="gc-kbd hotkey-kbd">{settings.perfOverlayHotkey}</span>
           <button
             type="button"
+            className="gc-btn ghost sm"
             onClick={() => {
               setRechazo(null);
               setCapturando(!capturando);
@@ -273,27 +313,29 @@ export default function AjustesAvanzado() {
           >
             {capturando ? 'Cancelar' : 'Editar atajo…'}
           </button>
-          <span className="settings-hint">Muestra u oculta el overlay sin cambiar qué se ve.</span>
         </div>
-        {rechazo && <p className="settings-warning">{rechazo}</p>}
+        {rechazo && <p className="settings-warning is-error">{rechazo}</p>}
 
         <p className="settings-subtitle">Qué mostrar</p>
-        {PERF_METRIC_KEYS.map((key) => (
-          <label className="settings-check" key={key}>
-            <input
-              type="checkbox"
-              checked={perf.metrics[key]}
-              onChange={(e) => setPerf({ metrics: { ...perf.metrics, [key]: e.target.checked } })}
-            />
-            {METRIC_LABELS[key]}
-          </label>
-        ))}
+        <div className="settings-chips">
+          {PERF_METRIC_KEYS.map((key) => (
+            <label className="settings-chip" key={key}>
+              <input
+                type="checkbox"
+                className="settings-chip-input"
+                checked={perf.metrics[key]}
+                onChange={(e) => setPerf({ metrics: { ...perf.metrics, [key]: e.target.checked } })}
+              />
+              {METRIC_LABELS[key]}
+            </label>
+          ))}
+        </div>
         {/* El aviso va AQUÍ, y no solo junto al checkbox elevado del final: la duda nace al marcar
             la métrica, y nada obliga a haber bajado hasta la explicación completa. */}
         <p className="settings-hint">
           FPS y Temp CPU necesitan permisos de administrador y sin ellos se muestran como «—»; las
-          demás métricas funcionan siempre. Se resuelve con «Iniciar con Windows como administrador»,
-          más abajo.
+          demás métricas funcionan siempre. Se resuelve con «Iniciar con Windows como
+          administrador», más abajo.
         </p>
         {/* Requisito DISTINTO del de administrador, y de una sola métrica: la temperatura del
             procesador se lee de los MSR (anillo 0) y eso lo aporta PawnIO, que se instala aparte.
@@ -302,9 +344,14 @@ export default function AjustesAvanzado() {
         {perf.metrics.cpuTemp && pawnIoInstalado === false && (
           <p className="settings-hint" data-testid="aviso-pawnio">
             Temp CPU además necesita <strong>PawnIO</strong>, un controlador gratuito que permite
-            leer la temperatura del procesador y que se instala aparte. Sin él esa métrica se ve como
-            «—» y las otras ocho siguen funcionando.{' '}
-            <a href={PAWNIO_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+            leer la temperatura del procesador y que se instala aparte. Sin él esa métrica se ve
+            como «—» y las otras ocho siguen funcionando.{' '}
+            <a
+              href={PAWNIO_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="settings-link"
+            >
               Descargar PawnIO
             </a>
             . Si juegas a algo con anti-cheat de kernel, ten en cuenta que PawnIO es un controlador
@@ -314,88 +361,127 @@ export default function AjustesAvanzado() {
 
         <p className="settings-subtitle">Posición</p>
         <div className="perf-preset">
-          <button type="button" aria-label="Posición anterior" onClick={() => moverPreset(-1)}>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            aria-label="Posición anterior"
+            onClick={() => moverPreset(-1)}
+          >
             ‹
+          </button>
+          <span className="perf-pos" aria-hidden="true">
+            {CELDAS_POSICION.map((celda, i) => (
+              <i
+                key={i}
+                className={celda === null ? 'is-no' : celda === preset ? 'is-on' : undefined}
+              />
+            ))}
+          </span>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            aria-label="Posición siguiente"
+            onClick={() => moverPreset(1)}
+          >
+            ›
           </button>
           <span className="perf-preset-nombre" data-testid="perf-preset">
             {PERF_PRESET_LABELS[preset]}
           </span>
-          <button type="button" aria-label="Posición siguiente" onClick={() => moverPreset(1)}>
-            ›
-          </button>
         </div>
-        <label>
-          Posición horizontal ({perf.posX})
-          <input
-            className="perf-slider"
-            type="range"
-            min={0}
-            max={100}
-            value={perf.posX}
-            onChange={(e) => setPerf(clampPerfPosition(Number(e.target.value), perf.posY))}
-          />
-        </label>
-        <label>
-          Posición vertical ({perf.posY})
-          <input
-            className="perf-slider"
-            type="range"
-            min={0}
-            max={100}
-            value={perf.posY}
-            onChange={(e) => setPerf(clampPerfPosition(perf.posX, Number(e.target.value)))}
-          />
-        </label>
+        <div className="settings-fields">
+          <label>
+            Posición horizontal
+            <span className="settings-range">
+              <input
+                className="gc-range"
+                type="range"
+                min={0}
+                max={100}
+                value={perf.posX}
+                onChange={(e) => setPerf(clampPerfPosition(Number(e.target.value), perf.posY))}
+              />
+              <span className="settings-range-val">{perf.posX}</span>
+            </span>
+          </label>
+          <label>
+            Posición vertical
+            <span className="settings-range">
+              <input
+                className="gc-range"
+                type="range"
+                min={0}
+                max={100}
+                value={perf.posY}
+                onChange={(e) => setPerf(clampPerfPosition(perf.posX, Number(e.target.value)))}
+              />
+              <span className="settings-range-val">{perf.posY}</span>
+            </span>
+          </label>
+        </div>
         <p className="settings-hint">
-          Con el overlay activo, los cambios se ven en pantalla al instante. El centro de la pantalla
-          no es una posición elegible: se deja libre para el juego.
+          Con el overlay activo, los cambios se ven en pantalla al instante. El centro de la
+          pantalla no es una posición elegible: se deja libre para el juego.
         </p>
 
-        <label>
-          Disposición
-          <select
-            value={perf.layout}
-            onChange={(e) => setPerf({ layout: e.target.value as PerfOverlayConfig['layout'] })}
-          >
-            <option value="vertical">Desglosada (lista)</option>
-            <option value="horizontal">Lineal (una línea)</option>
-          </select>
-        </label>
-        <label>
-          Tamaño de fuente
-          <select
-            value={perf.fontSize}
-            onChange={(e) => setPerf({ fontSize: e.target.value as PerfOverlayConfig['fontSize'] })}
-          >
-            <option value="small">Pequeño</option>
-            <option value="standard">Estándar</option>
-            <option value="large">Grande</option>
-          </select>
-        </label>
-        <label>
-          Opacidad del fondo ({perf.bgOpacity})
-          <input
-            className="perf-slider"
-            type="range"
-            min={0}
-            max={100}
-            value={perf.bgOpacity}
-            onChange={(e) => setPerf({ bgOpacity: Number(e.target.value) })}
-          />
-        </label>
-        <div className="perf-color-row">
-          <label htmlFor="perf-color">Color del texto</label>
-          <input
-            id="perf-color"
-            type="color"
-            value={perf.textColor}
-            onChange={(e) => setPerf({ textColor: e.target.value.toUpperCase() })}
-          />
+        <div className="settings-fields">
+          <label>
+            Disposición
+            <select
+              className="gc-field"
+              value={perf.layout}
+              onChange={(e) => setPerf({ layout: e.target.value as PerfOverlayConfig['layout'] })}
+            >
+              <option value="vertical">Desglosada (lista)</option>
+              <option value="horizontal">Lineal (una línea)</option>
+            </select>
+          </label>
+          <label>
+            Tamaño de fuente
+            <select
+              className="gc-field"
+              value={perf.fontSize}
+              onChange={(e) =>
+                setPerf({ fontSize: e.target.value as PerfOverlayConfig['fontSize'] })
+              }
+            >
+              <option value="small">Pequeño</option>
+              <option value="standard">Estándar</option>
+              <option value="large">Grande</option>
+            </select>
+          </label>
+          <label>
+            Opacidad del fondo
+            <span className="settings-range">
+              <input
+                className="gc-range"
+                type="range"
+                min={0}
+                max={100}
+                value={perf.bgOpacity}
+                onChange={(e) => setPerf({ bgOpacity: Number(e.target.value) })}
+              />
+              <span className="settings-range-val">{perf.bgOpacity}</span>
+            </span>
+          </label>
+          <div className="perf-color-row">
+            <label htmlFor="perf-color">Color del texto</label>
+            <span className="perf-color-ctl">
+              <input
+                id="perf-color"
+                type="color"
+                value={perf.textColor}
+                onChange={(e) => setPerf({ textColor: e.target.value.toUpperCase() })}
+              />
+              <span className="settings-range-val">{perf.textColor}</span>
+            </span>
+          </div>
         </div>
 
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.autoLaunchElevated}
             onChange={(e) => set('autoLaunchElevated', e.target.checked)}
           />
@@ -411,34 +497,38 @@ export default function AjustesAvanzado() {
       </fieldset>
 
       <fieldset>
-        <legend>Buffer y formato de salida</legend>
-        <label>
-          Buffer de repetición
-          <select
-            value={settings.recordingBuffer}
-            onChange={(e) =>
-              set('recordingBuffer', e.target.value as CaptureSettings['recordingBuffer'])
-            }
-          >
-            <option value="memory">Memoria (recomendado)</option>
-            <option value="disk">Disco</option>
-          </select>
-        </label>
+        <legend className="gc-label">Buffer y formato de salida</legend>
+        <div className="settings-fields">
+          <label>
+            Buffer de repetición
+            <select
+              className="gc-field"
+              value={settings.recordingBuffer}
+              onChange={(e) =>
+                set('recordingBuffer', e.target.value as CaptureSettings['recordingBuffer'])
+              }
+            >
+              <option value="memory">Memoria (recomendado)</option>
+              <option value="disk">Disco</option>
+            </select>
+          </label>
+          <label>
+            Relación de aspecto
+            <select
+              className="gc-field"
+              value={settings.aspectRatio}
+              onChange={(e) => set('aspectRatio', e.target.value as CaptureSettings['aspectRatio'])}
+            >
+              <option value="game">Aspecto del juego</option>
+              <option value="stretch169">Estirar a 16:9</option>
+              <option value="bars169">16:9 con barras negras</option>
+              <option value="crop169">Recortar a 16:9</option>
+            </select>
+          </label>
+        </div>
         <p className="settings-hint">
           Hoy el buffer siempre reside en RAM; la opción a disco queda preparada a futuro.
         </p>
-        <label>
-          Relación de aspecto
-          <select
-            value={settings.aspectRatio}
-            onChange={(e) => set('aspectRatio', e.target.value as CaptureSettings['aspectRatio'])}
-          >
-            <option value="game">Aspecto del juego</option>
-            <option value="stretch169">Estirar a 16:9</option>
-            <option value="bars169">16:9 con barras negras</option>
-            <option value="crop169">Recortar a 16:9</option>
-          </select>
-        </label>
       </fieldset>
     </SeccionForm>
   );
