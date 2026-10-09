@@ -150,6 +150,29 @@ describe('Ajustes — Grabación', () => {
     );
   });
 
+  it('regresión: Enter en el nombre confirma el renombre sin guardar el formulario con el viejo', async () => {
+    // El input no controlado aplicaba el nombre en onBlur; Enter enviaba el formulario antes del blur
+    // y se guardaba sin el nombre («Ajustes guardados ✓» incluido), y el cambio se perdía al salir.
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      customGames: [{ executable: 'MilesMorales.exe' }],
+    });
+    const user = await irAGrabacion();
+
+    const campo = await screen.findByLabelText('Nombre de MilesMorales.exe');
+    await user.type(campo, 'Spiderman{Enter}');
+
+    expect(mock().capture.setSettings).not.toHaveBeenCalled();
+    expect(screen.queryByText('Ajustes guardados ✓')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }],
+      }),
+    );
+  });
+
   it('«Volver a escanear» relee los launchers', async () => {
     mock().games.rescan.mockResolvedValue({ pioneergame: 'ARC Raiders' });
     const user = await irAGrabacion();

@@ -294,6 +294,13 @@ export default function AjustesGrabacion() {
                     aria-label={`Nombre de ${juego.executable}`}
                     defaultValue={juego.name ?? ''}
                     onBlur={(e) => renombrarJuego(juego.executable, e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter confirma el nombre, no envía el formulario: el envío llegaba antes
+                      // que el blur y se guardaba sin el nombre nuevo.
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      renombrarJuego(juego.executable, e.currentTarget.value);
+                    }}
                   />
                   <button
                     type="button"
