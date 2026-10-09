@@ -46,4 +46,4 @@ suficiente y no cambia de contrato.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado el 2026-10-08 (auto-aprobado por indicación del owner, con los 9 planes de la auditoría listos)
