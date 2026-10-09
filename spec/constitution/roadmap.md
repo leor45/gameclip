@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🐞 Exportar encima del propio clip lo borraba — 🧪 en rama (`fix/borrado-clip-al-exportar`)
+### 🐞 Exportar encima del propio clip lo borraba — ✅ entregado (`fix/borrado-clip-al-exportar`, 2026-10-08)
 
 Elegir el mismo `.mp4` como destino del recorte hacía que ffmpeg abortara y que el borrado del parcial
 eliminara el clip original (sin papelera). `ExportManager` rechaza ahora ese destino antes de lanzar
