@@ -365,3 +365,50 @@ describe('EditorAvanzado — zoom', () => {
     expect(alejar).toBeEnabled(); // tras acercar, ya se puede alejar
   });
 });
+
+describe('EditorAvanzado — clip aún sin duración en el catálogo (regresión: ediciones fantasma)', () => {
+  const DRAFT_KEY = 'gameclip.editor.draft.7';
+
+  /** jsdom no carga medios: se fija la duración del <video> y se dispara loadedMetadata. */
+  function cargarVideo(duracion: number) {
+    const video = document.querySelector('video.eav-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, value: duracion });
+    fireEvent.loadedMetadata(video);
+  }
+
+  async function abrirSinDuracion() {
+    mock().library.get.mockResolvedValue(crearClip({ id: 7, title: 'Recién guardado', durationSeconds: null }));
+    renderEA();
+    await screen.findByText(/Recién guardado/);
+  }
+
+  it('abrirlo y no tocar nada no guarda una edición sin terminar ni habilita Restablecer', async () => {
+    localStorage.removeItem(DRAFT_KEY);
+    await abrirSinDuracion();
+    cargarVideo(60);
+    await new Promise((r) => setTimeout(r, 400)); // más que el debounce del auto-guardado
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Restablecer' })).toBeDisabled();
+  });
+
+  it('una edición guardada con cortes se restaura con sus cortes al cargar el vídeo', async () => {
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        clipId: 7,
+        updatedAt: 1,
+        segments: [
+          { start: 0, end: 10 },
+          { start: 20, end: 40 },
+        ],
+        volumes: {},
+        removed: [],
+        reframe: { aspect: 'original', mode: 'cover', zoom: 1, offset: { x: 0, y: 0 } },
+      }),
+    );
+    await abrirSinDuracion();
+    cargarVideo(60);
+    expect(await screen.findByText(/2 segmentos/)).toBeInTheDocument();
+    localStorage.removeItem(DRAFT_KEY);
+  });
+});

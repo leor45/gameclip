@@ -1304,6 +1304,14 @@ normaliza (comillas, entidades XML, mayúsculas) antes de comparar.
 sin límite. Ahora la API escucha solo en `127.0.0.1` (el renderer y la CSP apuntan ahí) y cada
 instalación firma con un secreto aleatorio propio guardado en `userData/api-secret`.
 
+### 🐞 Fallos menores de la biblioteca y del editor avanzado — ✅ entregado (`fix/editor-biblioteca-menores`, 2026-10-08)
+
+Tres fallos pequeños: renombrar un clip perdía lo escrito en cuanto la biblioteca se recargaba (el
+borrador dependía de la identidad del array de etiquetas); un clip ilegible bloqueaba las miniaturas
+de todos los que iban detrás (se reintentaba siempre el primero); y abrir en el editor avanzado un clip
+aún sin duración catalogada creaba una «edición sin terminar» fantasma, dejaba «Restablecer» en 0 s y
+pisaba los cortes de un borrador restaurado.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

@@ -410,3 +410,28 @@ describe('Biblioteca — reproducción', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
+
+describe('Biblioteca — regresiones menores', () => {
+  it('renombrar no pierde lo escrito cuando la biblioteca se recarga por otro motivo', async () => {
+    let avisarCambio: () => void = () => undefined;
+    mock().library.onChanged.mockImplementation((listener: () => void) => {
+      avisarCambio = listener;
+      return () => undefined;
+    });
+    // Cada recarga devuelve objetos nuevos (como el IPC real): tags es otro array con el mismo contenido.
+    mock().library.list.mockImplementation(() =>
+      Promise.resolve([crearClip({ id: 5, title: 'Original', tags: ['a'] })]),
+    );
+    const user = userEvent.setup();
+    render(<Biblioteca />);
+    await user.click(await screen.findByRole('button', { name: 'Renombrar y etiquetar' }));
+    const input = screen.getByLabelText('Título');
+    await user.clear(input);
+    await user.type(input, 'Nuevo título');
+
+    await act(async () => avisarCambio()); // p. ej. el thumbnailer de otro clip, o un replay guardado
+    await waitFor(() => expect(mock().library.list.mock.calls.length).toBeGreaterThan(1));
+
+    expect(screen.getByLabelText('Título')).toHaveValue('Nuevo título');
+  });
+});
