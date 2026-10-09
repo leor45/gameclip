@@ -201,7 +201,7 @@ describe('GameIndexService', () => {
     const juego = { name: 'The Witcher 3', installDir: join(raiz, 'W3'), source: 'gog' as const };
     const cachePath = join(raiz, 'cache.json');
     // Huella tal cual la escribían las versiones anteriores (sin la versión de las reglas).
-    const huellaVieja = [`${juego.name} ${juego.installDir}`].sort().join('');
+    const huellaVieja = [`${juego.name}\u0000${juego.installDir}`].sort().join('\u0001');
     writeFileSync(
       cachePath,
       JSON.stringify({
