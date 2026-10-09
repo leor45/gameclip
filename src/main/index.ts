@@ -741,9 +741,11 @@ app.whenReady().then(async () => {
     if (!(s.autoGameSwitching && s.gameSwitchEnabled)) return;
     const juegos = c.getRunningGames();
     if (juegos.length < 2) return; // sin nada a lo que cambiar, no molestamos a PowerShell
-    void getForegroundWindowTitle().then((title) => {
-      autoSwitcher.update(juegos, title, c.getStatus().detectedGame);
-    });
+    void getForegroundWindowTitle()
+      .then((title) => {
+        autoSwitcher.update(juegos, title, c.getStatus().detectedGame);
+      })
+      .catch((err) => console.error('[auto-switch] no se pudo evaluar el cambio de juego:', err));
   }, 5000);
 
   // El manager decide si el overlay de rendimiento debe ocultarse de las capturas (solo mientras se
