@@ -286,6 +286,8 @@ export default function AjustesAudio() {
               etiqueta="Audio del escritorio"
               icono={<GameIcon fixed="desktop" size="md" />}
               checked
+              // Siempre se graba y la casilla no guarda nada: se muestra marcada y no editable.
+              checkDisabled
               onCheck={() => undefined}
               volumen={settings.desktopAudioVolume}
               onVolumen={(v) => set('desktopAudioVolume', v)}

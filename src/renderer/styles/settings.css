@@ -79,6 +79,9 @@
 }
 
 .settings-scroll {
+  /* Bloque contenedor de lo posicionado dentro (.settings-sr, inputs de tarjetas y fichas): sin él,
+     un absoluto podía salirse del scroll y desbordar el documento entero. */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -113,7 +113,10 @@ describe('Ajustes — llegada a General desde la barra superior', () => {
 
 describe('Ajustes — iconos en listas y mezcla', () => {
   it('«Audio del juego» y «Micrófono» llevan iconos fijos; las apps, el de su ejecutable', async () => {
-    mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, audioMode: 'apps' });
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      audioMode: 'apps',
+    });
     const user = await irAAjustes();
     await user.click(screen.getByRole('link', { name: 'Audio' }));
     const juego = await screen.findByLabelText('Audio del juego');
@@ -142,10 +145,80 @@ describe('Ajustes — iconos en listas y mezcla', () => {
     expect(mock().icons.forGame).not.toHaveBeenCalled();
   });
 
+  it('«Audio del escritorio» se ve marcada y no editable; su volumen sí se puede mover', async () => {
+    const user = await irAAjustes();
+    await user.click(screen.getByRole('link', { name: 'Audio' }));
+    await user.click(await screen.findByLabelText('Todo el escritorio'));
+
+    const casilla = screen.getByLabelText('Audio del escritorio');
+    expect(casilla).toBeChecked();
+    expect(casilla).toBeDisabled();
+    expect(screen.getByLabelText(/Volumen de Audio del escritorio/)).toBeEnabled();
+  });
+
+  it('Desarrollo: el índice solo pide el icono de las filas que entran en vista', async () => {
+    // jsdom no tiene IntersectionObserver: uno falso que entrega las entradas a mano.
+    const observados: { cb: IntersectionObserverCallback; el: Element[] }[] = [];
+    class ObserverFalso {
+      el: Element[] = [];
+      constructor(public cb: IntersectionObserverCallback) {
+        observados.push(this);
+      }
+      observe(el: Element) {
+        this.el.push(el);
+      }
+      disconnect() {
+        this.el = [];
+      }
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    const original = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = ObserverFalso as unknown as typeof IntersectionObserver;
+    try {
+      mock().games.getIndex.mockResolvedValue({
+        lion: '2XKO',
+        pioneergame: 'ARC Raiders',
+        hades: 'Hades',
+      });
+      const user = await irAAjustes();
+      await user.click(screen.getByRole('link', { name: 'Desarrollo' }));
+      const resumen = await screen.findByText(/3 juegos · 3 ejecutables/);
+      // Abrir el desplegable (jsdom no dispara `toggle` solo al cambiar `open`).
+      const details = resumen.closest('details')!;
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+
+      await waitFor(() => expect(observados.length).toBe(3));
+      expect(mock().icons.forGame).not.toHaveBeenCalled();
+
+      // Solo la fila de ARC Raiders entra en vista.
+      const fila = observados.find((o) =>
+        o.el[0]?.closest('tr')?.textContent?.includes('ARC Raiders'),
+      )!;
+      act(() => {
+        fila.cb(
+          [{ isIntersecting: true, target: fila.el[0] } as unknown as IntersectionObserverEntry],
+          fila as unknown as IntersectionObserver,
+        );
+      });
+
+      await waitFor(() => expect(mock().icons.forGame).toHaveBeenCalledWith('ARC Raiders'));
+      expect(mock().icons.forGame).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.IntersectionObserver = original;
+    }
+  });
+
   it('cada juego añadido a mano pide el icono de su ejecutable', async () => {
     mock().capture.getSettings.mockResolvedValue({
       ...DEFAULT_CAPTURE_SETTINGS,
-      customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }, { executable: 'Otro.exe' }],
+      customGames: [
+        { executable: 'MilesMorales.exe', name: 'Spiderman' },
+        { executable: 'Otro.exe' },
+      ],
     });
     const user = await irAAjustes();
     await user.click(screen.getByRole('link', { name: 'Grabación' }));

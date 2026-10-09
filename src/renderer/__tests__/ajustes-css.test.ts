@@ -44,6 +44,9 @@ describe('Ajustes: pie fijo con scroll propio', () => {
     expect(regla).toMatch(/overflow-y:\s*auto/);
     expect(regla).toMatch(/min-height:\s*0/);
     expect(regla).toMatch(/flex:\s*1/);
+    // Contiene lo posicionado (.settings-sr, inputs de tarjetas): sin esto un absoluto 1×1 se salía
+    // del scroll y daba barra de scroll a la ventana entera.
+    expect(regla).toMatch(/position:\s*relative/);
   });
 
   it('el pie no encoge: «Guardar ajustes» queda siempre a la vista', () => {

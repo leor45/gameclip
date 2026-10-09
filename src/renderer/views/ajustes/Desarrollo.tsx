@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import type { GameIndex } from '@shared/games';
-import GameIcon from '../../components/GameIcon';
+import { IconoPerezoso } from './IconoPerezoso';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -83,7 +83,9 @@ export default function AjustesDesarrollo() {
                     <tr key={juego}>
                       {/* El icono solo se pide con la tabla abierta: el índice puede tener cientos
                           de juegos y la tabla arranca plegada. */}
-                      <td className="deteccion-icono">{abierto && <GameIcon game={juego} />}</td>
+                      <td className="deteccion-icono">
+                        {abierto && <IconoPerezoso game={juego} />}
+                      </td>
                       <td>{juego}</td>
                       <td className="deteccion-exes">
                         {exes.map((exe, i) => (
