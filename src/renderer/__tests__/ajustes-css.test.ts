@@ -67,12 +67,17 @@ describe('Ajustes: filas «grupo | controles» solo en pantalla ancha', () => {
     expect(rule('.settings-form fieldset')).toMatch(/display:\s*flex/);
   });
 
-  it('en ancho: grupo a la izquierda, controles a la derecha, columna centrada y pie alineado', () => {
+  it('en ancho: grupo a la izquierda, controles a la derecha, a todo el ancho y pie alineado', () => {
     const dentro = bloque![2];
-    expect(dentro).toMatch(/\.settings-form fieldset \{[^}]*grid-template-columns:\s*\d+px minmax\(0, 1fr\)/);
+    expect(dentro).toMatch(/\.settings-form fieldset \{[^}]*grid-template-columns:\s*clamp\([^)]*\) minmax\(0, 1fr\)/);
     expect(dentro).toMatch(/fieldset > legend \{[^}]*grid-column:\s*1/);
     expect(dentro).toMatch(/fieldset > :not\(legend\) \{[^}]*grid-column:\s*2/);
-    expect(dentro).toMatch(/\.settings-body \{[^}]*margin-inline:\s*auto/);
-    expect(dentro).toMatch(/\.settings-savebar \{[^}]*padding-inline:\s*max\(/);
+    // Sin tope de ancho ni centrado: el owner lo quiere a todo el ancho.
+    expect(dentro).toMatch(/\.settings-body \{[^}]*max-width:\s*none/);
+    expect(dentro).not.toMatch(/margin-inline:\s*auto/);
+    const cuerpo = dentro.match(/\.settings-body \{[^}]*padding-inline:\s*(\d+)px/)?.[1];
+    const pie = dentro.match(/\.settings-savebar \{[^}]*padding-inline:\s*(\d+)px/)?.[1];
+    expect(cuerpo).toBeDefined();
+    expect(pie).toBe(cuerpo);
   });
 });

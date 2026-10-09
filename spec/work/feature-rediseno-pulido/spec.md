@@ -42,8 +42,8 @@ con igualdad exacta (`claveNombre`: recorte + minúsculas). Medido en la bibliot
   - el icono resuelto por nombre se recuerda en disco (`userData/icons/nombres.json`): un juego que se
     desinstala después conserva su icono.
 - **Ajustes en ancho (variante B):** desde ~1180 px de ancho de formulario, cada grupo es una fila:
-  su etiqueta a la izquierda y sus controles a la derecha, en una columna centrada (máx. ~1040 px), y el
-  botón «Guardar ajustes» se alinea con su borde derecho. Por debajo, una columna como hoy.
+  su etiqueta a la izquierda y sus controles a la derecha, a todo el ancho del formulario (sin columna
+  centrada ni márgenes vacíos), y el botón «Guardar ajustes» se alinea con el borde de los controles. Por debajo, una columna como hoy.
 - **Abrir y cerrar un clip:** transición rápida (≈180 ms al abrir, ≈120 ms al cerrar; el reproductor
   crece desde la tarjeta, el índice entra desde la derecha). Sin animación con «reducir movimiento».
 - **Flecha atrás** junto a «Biblioteca», solo con un clip abierto; hace lo mismo que la X y que Esc.
@@ -68,7 +68,7 @@ con igualdad exacta (`claveNombre`: recorte + minúsculas). Medido en la bibliot
 - [ ] `Avatar  Frontiers of Pandora` y `FINAL FANTASY VII REMAKE` muestran el icono del juego
   instalado; `Hades` no toma el icono de `Hades II`.
 - [ ] Un juego cuyo icono se resolvió una vez lo conserva tras desinstalarlo (reinicio incluido).
-- [ ] Ajustes a 1920×1080: grupos en filas «etiqueta | controles» centradas, botón de guardar
+- [ ] Ajustes a 1920×1080: grupos en filas «etiqueta | controles» a todo el ancho, botón de guardar
   alineado con el formulario; a 1280 px, una columna como hoy; el pie sigue fijo.
 - [ ] Abrir un clip anima en ≤ 200 ms; cerrar en ≤ 150 ms; con «reducir movimiento», sin animación.
 - [ ] La flecha atrás aparece solo con un clip abierto y vuelve a la cuadrícula en la misma posición y

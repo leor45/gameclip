@@ -1054,23 +1054,22 @@
   }
 }
 
-/* ── Pantalla ancha: filas «grupo | controles» ─────────────────────────────── */
-/* Con espacio de sobra, cada grupo es una fila: su etiqueta a la izquierda y los controles a la
-   derecha, en una columna centrada. El pie alinea «Guardar ajustes» con el borde de esa columna.
-   Por debajo del umbral (portátiles, ventana estrecha) todo sigue en una columna, como siempre.
-   Container query: el ancho útil depende de la barra lateral y del menú de secciones, no de la
-   ventana. */
+/* ── Pantalla ancha: filas «grupo | controles» a todo el ancho ──────────────── */
+/* Con espacio de sobra, cada grupo es una fila que ocupa todo el ancho del formulario: su etiqueta a
+   la izquierda y los controles a la derecha. Sin columna centrada ni márgenes vacíos a los lados (el
+   owner lo quiere a todo el ancho). Por debajo del umbral (portátiles, ventana estrecha) todo sigue
+   en una columna, como siempre. Container query: el ancho útil depende de la barra lateral y del
+   menú de secciones, no de la ventana. */
 @container ajustes (min-width: 1180px) {
   .settings-body {
-    width: 100%;
-    max-width: 1040px;
-    margin-inline: auto;
+    max-width: none;
+    padding-inline: 40px;
   }
 
   .settings-form fieldset {
     display: grid;
-    grid-template-columns: 210px minmax(0, 1fr);
-    column-gap: 40px;
+    grid-template-columns: clamp(220px, 22%, 320px) minmax(0, 1fr);
+    column-gap: 48px;
     row-gap: 12px;
     align-items: start;
     padding: 20px 0 22px;
@@ -1089,7 +1088,8 @@
     grid-column: 2;
   }
 
+  /* El botón de guardar, alineado con el borde derecho de los controles. */
   .settings-savebar {
-    padding-inline: max(32px, calc((100% - 1040px) / 2 + 32px));
+    padding-inline: 40px;
   }
 }

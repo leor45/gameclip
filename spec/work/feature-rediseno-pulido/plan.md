@@ -19,8 +19,8 @@ Tres piezas independientes, en la misma rama y en este orden:
      los PNG) y se lee cuando la resolución da null. Tope de entradas para que no crezca sin fin.
 2. **Ajustes en ancho (solo CSS, variante B).** `settings.css` con una container query sobre el
    formulario: a partir de ~1180 px, cada `fieldset` pasa a `grid` de dos columnas (la `legend`
-   flotada a la izquierda, el resto a la derecha) en una columna centrada de ~1040 px; el pie alinea
-   su botón con ella. Debajo, nada cambia.
+   flotada a la izquierda, el resto a la derecha) a todo el ancho del formulario (el owner descartó
+   la columna centrada); el pie alinea su botón con los controles. Debajo, nada cambia.
 3. **Biblioteca: transición, flecha atrás y reproductor.**
    - `Biblioteca.tsx`: botón flecha antes del `h1` cuando hay clip abierto (`cerrarPanel(id, true)`);
      clases de entrada/salida para la animación. El cierre espera la animación de salida (120 ms) y

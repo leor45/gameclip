@@ -1562,8 +1562,8 @@ Tras un día de uso del build de prueba. Maqueta: https://claude.ai/artifact/VWn
 - [x] Iconos (fix): el nombre del clip se compara en letras y números («Avatar  Frontiers…») y acepta un
       sufijo de edición de una lista cerrada con candidato único («FF7 REMAKE» → «… INTERGRADE»; nunca
       secuelas). El icono verificado se recuerda por nombre en disco: un juego desinstalado lo conserva.
-- [x] Ajustes en pantalla ancha (variante B): desde 1180 px de formulario, filas «grupo | controles» en una
-      columna centrada y el botón de guardar alineado con ella; por debajo, igual que antes.
+- [x] Ajustes en pantalla ancha (variante B): desde 1180 px de formulario, filas «grupo | controles» a todo el
+      ancho del formulario (sin columna centrada) y el botón de guardar alineado con los controles; por debajo, igual que antes.
 - [x] Biblioteca: transición al abrir (180 ms, desde la miniatura) y cerrar (120 ms), sin animación con
       «reducir movimiento»; flecha atrás junto a «Biblioteca».
 - [x] Reproductor propio: posición con arrastre y hora al pasar el ratón, ±10 s, volumen, velocidad, imagen
