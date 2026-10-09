@@ -508,6 +508,96 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     });
   });
 
+  describe('caminos de error de la grabación (auditoría B: BUG-1, BUG-2, BUG-3)', () => {
+    it('regresión: si libobs falla al arrancar la grabación, el buffer vuelve y el estado es buffering', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      obs.startRecording = () => Promise.reject(new Error('libobs: timeout esperando señal'));
+
+      const status = await manager.startRecording();
+
+      // El buffer se paró antes de intentar grabar: tiene que volver, y el estado decir la verdad.
+      expect(status.state).toBe('buffering');
+      expect(status.error).toContain('timeout');
+      expect(obs.bufferActivo).toBe(true);
+      // Y el replay vuelve a funcionar.
+      obs.llamadas.length = 0;
+      await manager.saveReplay();
+      expect(obs.llamadas).toContain('saveReplay');
+    });
+
+    it('regresión: si libobs falla al parar la grabación, el buffer se rearranca y la siguiente grabación arranca limpia', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.startRecording();
+      obs.stopRecording = () => Promise.reject(new Error('writing_error'));
+
+      const status = await manager.stopRecording();
+
+      expect(status.state).toBe('buffering');
+      expect(status.error).toContain('writing_error');
+      expect(obs.bufferActivo).toBe(true);
+
+      // Sin el fix quedaba 'idle' con el buffer parado y el replay muerto.
+      obs.stopRecording = () => {
+        obs.grabando = false;
+        return Promise.resolve('C:\\v\\clip2.mp4');
+      };
+      await manager.startRecording();
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.bufferActivo).toBe(false);
+      const fin = await manager.stopRecording();
+      expect(fin.state).toBe('buffering');
+      expect(fin.lastClipPath).toContain('clip2');
+    });
+
+    it('regresión: un buildPipeline que lanza deja el estado en idle sin buffer, y el siguiente rebuild recupera', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      expect(obs.bufferActivo).toBe(true);
+      const buildOk = obs.buildPipeline.bind(obs);
+      obs.buildPipeline = () => {
+        obs.bufferActivo = false; // el teardown ya destruyó las salidas anteriores
+        throw new Error('encoder no disponible');
+      };
+
+      await manager.setSettings({ fps: 30 });
+
+      // Antes: 'buffering' con bufferRunning=true y ningún buffer real en libobs.
+      expect(manager.getStatus()).toMatchObject({ state: 'idle', error: 'encoder no disponible' });
+      expect(obs.bufferActivo).toBe(false);
+      // Un replay en ese estado no toca libobs (no hay buffer que guardar).
+      obs.llamadas.length = 0;
+      await manager.saveReplay();
+      expect(obs.llamadas).not.toContain('saveReplay');
+
+      // El siguiente rebuild (otro guardado, o un juego) reconstruye y arranca el buffer.
+      obs.buildPipeline = buildOk;
+      await manager.setSettings({ fps: 60 });
+      expect(manager.getStatus()).toMatchObject({ state: 'buffering', error: null });
+      expect(obs.bufferActivo).toBe(true);
+    });
+
+    it('regresión: tras un build fallido, un cambio de juego reconstruye en vez de tocar salidas inexistentes', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const buildOk = obs.buildPipeline.bind(obs);
+      obs.buildPipeline = () => {
+        obs.bufferActivo = false;
+        throw new Error('fallo puntual');
+      };
+      await manager.setSettings({ fps: 30 });
+      obs.buildPipeline = buildOk;
+      obs.llamadas.length = 0;
+
+      await manager.setGameDetected('Valorant');
+
+      expect(obs.llamadas).toContain('buildPipeline');
+      expect(manager.getStatus()).toMatchObject({ state: 'buffering', error: null });
+      expect(obs.bufferActivo).toBe(true);
+    });
+  });
+
   describe('buffer pausado durante la grabación manual', () => {
     it('grabar a mano para el buffer y al parar vuelve a arrancar de cero', async () => {
       const manager = crear({ bufferMode: 'always' });
