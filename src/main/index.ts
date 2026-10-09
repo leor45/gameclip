@@ -3,7 +3,13 @@ import { BrowserWindow, app, dialog, globalShortcut, protocol, shell } from 'ele
 import Database from 'better-sqlite3-electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { SERVER_PORT } from '@shared/config';
-import type { GameNameContext, RunningGameMatch } from '@shared/games';
+import type { ExcludedGame, GameNameContext, RunningGameMatch } from '@shared/games';
+import {
+  activeExcludedNames,
+  autoExclusions,
+  sameExcludedGames,
+  syncExcludedGames,
+} from '@shared/games';
 import type { HotkeyKey } from '@shared/hotkeys';
 import { HOTKEY_ACTIONS, hotkeyCollisions, hotkeySettingsChanged, isHotkeyActive } from '@shared/hotkeys';
 import { IpcEvent } from '@shared/ipc';
@@ -24,7 +30,7 @@ import { debeRelanzarPorHdr } from './capture/screenshot-hdr';
 import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
-import { GameIndexService } from './games';
+import { GameIndexService, type InstalledGame } from './games';
 import { suggestGameName } from './games/suggest';
 import { ClipsRepository } from './library/clips-repository';
 import { openLibraryDatabase } from './library/database';
@@ -94,7 +100,30 @@ const pushToTalk = new PushToTalk();
 const gamesIndex = new GameIndexService({
   cachePath: join(app.getPath('userData'), 'games-index.json'),
   log: (msg) => console.log(msg),
+  exclusions: (juegos) => sincronizarExclusiones(juegos),
 });
+
+/**
+ * Lista «no son juegos»: en cada lectura de los launchers se sincroniza con la lista curada (añade
+ * las apps conocidas que estén instaladas y no figuren ya —las manuales mandan— y quita las
+ * automáticas desinstaladas). Devuelve los nombres activos, que el índice deja fuera.
+ */
+function sincronizarExclusiones(juegos: InstalledGame[]): string[] {
+  const actual = settingsStore.load().excludedGames;
+  const sincronizada = syncExcludedGames(actual, autoExclusions(juegos));
+  if (!sameExcludedGames(actual, sincronizada)) guardarExclusiones(sincronizada);
+  return [...activeExcludedNames(sincronizada)];
+}
+
+/**
+ * Guarda la lista sin pasar por `CaptureManager.setSettings`: ese camino reconstruye el pipeline y
+ * vacía el búfer de repetición, y esta lista cambia en segundo plano (al arrancar, al instalar algo).
+ */
+function guardarExclusiones(lista: ExcludedGame[]): CaptureSettings {
+  const next = settingsStore.save({ excludedGames: lista });
+  mainWindow?.webContents.send(IpcEvent.SettingsChanged, next);
+  return next;
+}
 
 /** De dónde salen los nombres de los juegos: el índice y lo que el owner haya puesto a mano. */
 function gameNames(): GameNameContext {
@@ -613,6 +642,20 @@ app.whenReady().then(async () => {
       index: () => gamesIndex.current(),
       rescan: () => refreshGameIndex(),
       suggestName: (executable) => suggestGameName(executable, gameNames()),
+      installed: () => {
+        const vistos = new Set<string>();
+        return gamesIndex.installed().flatMap((j) => {
+          const clave = j.name.trim().toLowerCase();
+          if (vistos.has(clave)) return [];
+          vistos.add(clave);
+          return [{ name: j.name, source: j.source }];
+        });
+      },
+      setExcluded: async (lista) => {
+        const next = guardarExclusiones(lista);
+        await refreshGameIndex();
+        return next.excludedGames;
+      },
     },
     (config) => perfOverlay?.preview(config),
   );

@@ -1,7 +1,7 @@
 // Dominio de captura: ajustes, estado y validación pura (sin dependencias de Electron).
 
-import type { CustomGame } from './games';
-import { exeKey } from './games';
+import type { CustomGame, ExcludedGame } from './games';
+import { exeKey, normalizeExcludedGames } from './games';
 import type { PerfOverlayConfig } from './perf';
 import { DEFAULT_PERF_OVERLAY, normalizePerfOverlay } from './perf';
 
@@ -165,6 +165,8 @@ export interface CaptureSettings {
   screenshotHdrCompatibility: boolean;
   /** Juegos añadidos a mano (la detección los trata como conocidos), con nombre opcional. */
   customGames: CustomGame[];
+  /** Juegos del catálogo que no son juegos (sincronizados con la lista curada o puestos a mano). */
+  excludedGames: ExcludedGame[];
   /** Monitor a grabar (índice de display; 0 = primario). */
   screenMonitorIndex: number;
   /** Grabar el escritorio cuando no hay juego. Apagado: sin juego no se captura nada. */
@@ -272,6 +274,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   // que sin esto la captura de un monitor HDR es imposible y la app vendría rota de fábrica.
   screenshotHdrCompatibility: true,
   customGames: [],
+  excludedGames: [],
   screenMonitorIndex: 0,
   desktopRecordingEnabled: true,
   desktopAutoSwitchToGame: true,
@@ -522,6 +525,7 @@ export function normalizeCaptureSettings(input: unknown): CaptureSettings {
     screenshotMonitorIndex,
     screenshotHdrCompatibility: bool(raw.screenshotHdrCompatibility, d.screenshotHdrCompatibility),
     customGames: normalizeCustomGames(raw.customGames),
+    excludedGames: normalizeExcludedGames(raw.excludedGames),
     screenMonitorIndex,
     desktopRecordingEnabled: bool(raw.desktopRecordingEnabled, d.desktopRecordingEnabled),
     desktopAutoSwitchToGame: bool(raw.desktopAutoSwitchToGame, d.desktopAutoSwitchToGame),

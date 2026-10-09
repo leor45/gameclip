@@ -1252,6 +1252,15 @@ La fuente del registro admitía a REDlauncher por ser de CD Projekt RED, y su ca
 se excluyen por patrón (nombre y carpeta), los exes de runtime genéricos (`QtWebEngineProcess`, `7z`,
 `7za`, `createdump`, `crs-*`) no se indexan, y el dedupe entre fuentes usa la ruta canónica.
 
+### ✨ Lista «no son juegos» (sincronizada y manual) — ✅ entregado (`feature/exclusion-juegos`, 2026-10-08)
+
+Steam daba de alta como juego cualquier app (Wallpaper Engine, Lossless Scaling…): Wallpaper Engine,
+que corre de fondo, contaba como juego abierto permanente. Nueva sección en Ajustes → Grabación con un
+botón **Sincronizar** (lista curada por appid de Steam y nombre → entradas *auto*) y alta **manual**;
+la sincronización salta lo que ya está en la lista, respeta las automáticas desactivadas y quita las
+automáticas desinstaladas. Los excluidos activos no entran al índice. La lista se guarda por su propio
+IPC: no reconstruye la captura ni la pisa el «Guardar ajustes» de otra sección.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

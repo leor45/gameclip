@@ -51,6 +51,8 @@ const games: GamesApi = {
   rescan: () => ipcRenderer.invoke(IpcChannel.GamesRescan),
   suggestName: (executable: string) =>
     ipcRenderer.invoke(IpcChannel.GamesSuggestName, { executable }),
+  listInstalled: () => ipcRenderer.invoke(IpcChannel.GamesListInstalled),
+  setExcluded: (list) => ipcRenderer.invoke(IpcChannel.GamesSetExcluded, list),
 };
 
 const library: LibraryApi = {

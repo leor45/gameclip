@@ -194,6 +194,66 @@ describe('GameIndexService', () => {
   });
 });
 
+describe('GameIndexService · exclusiones («no son juegos»)', () => {
+  it('un juego excluido no aporta ejecutables y installed() lo sigue listando', async () => {
+    exe('WE', 'wallpaper64.exe');
+    exe('H', 'Hades.exe');
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [
+        fuente([
+          { name: 'Wallpaper Engine', installDir: join(raiz, 'WE'), source: 'steam', steamAppId: '431960' },
+          { name: 'Hades', installDir: join(raiz, 'H'), source: 'steam' },
+        ]),
+      ],
+      exclusions: () => ['wallpaper engine'],
+    });
+    expect(await service.refresh()).toEqual({ hades: 'Hades' });
+    expect(service.installed().map((j) => j.name)).toEqual(['Wallpaper Engine', 'Hades']);
+  });
+
+  it('un exe compartido con una app excluida no se vuelve ambiguo', async () => {
+    exe('APP', 'common.exe');
+    exe('JUEGO', 'common.exe');
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [
+        fuente([
+          { name: 'App', installDir: join(raiz, 'APP'), source: 'steam' },
+          { name: 'Juego', installDir: join(raiz, 'JUEGO'), source: 'steam' },
+        ]),
+      ],
+      exclusions: () => ['App'],
+    });
+    expect(await service.refresh()).toEqual({ common: 'Juego' });
+  });
+
+  it('cambiar la lista invalida el caché (re-indexa)', async () => {
+    exe('WE', 'wallpaper64.exe');
+    let excluidos: string[] = [];
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [fuente([{ name: 'Wallpaper Engine', installDir: join(raiz, 'WE'), source: 'steam' }])],
+      exclusions: () => excluidos,
+    });
+    expect(await service.refresh()).toEqual({ wallpaper64: 'Wallpaper Engine' });
+    excluidos = ['Wallpaper Engine'];
+    expect(await service.refresh()).toEqual({});
+  });
+
+  it('la lista recibe lo que devolvieron los launchers (para sincronizar la curada)', async () => {
+    const exclusions = vi.fn().mockReturnValue([]);
+    const juego = { name: 'SteamVR', installDir: join(raiz, 'VR'), source: 'steam' as const, steamAppId: '250820' };
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [fuente([juego])],
+      exclusions,
+    });
+    await service.refresh();
+    expect(exclusions).toHaveBeenCalledWith([juego]);
+  });
+});
+
 describe('huellaDe', () => {
   it('no depende del orden de las fuentes', () => {
     const a: InstalledGame = { name: 'A', installDir: 'D:\\A', source: 'steam' };

@@ -84,6 +84,7 @@ describe('Steam', () => {
         name: "Marvel's Spider-Man: Miles Morales",
         installDir: join(raiz, 'steamapps', 'common', 'MM'),
         source: 'steam',
+        steamAppId: '1817190', // identifica las apps que no son juegos (Wallpaper Engine…)
       },
     ]);
   });

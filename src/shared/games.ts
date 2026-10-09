@@ -197,3 +197,145 @@ export function findRunningGameMatch(
 export function findRunningGame(processNames: string[], ctx: GameNameContext = {}): string | null {
   return findRunningGameMatch(processNames, ctx)?.name ?? null;
 }
+
+/**
+ * Juego del catálogo que el owner (o la sincronización) dice que **no** es un juego: ninguno de sus
+ * ejecutables entra en el índice. La identidad es el nombre de catálogo, sin distinguir mayúsculas.
+ *
+ * - `auto`: lo añadió la sincronización con la lista curada (`NON_GAME_APPS`). Se quita sola si la app
+ *   se desinstala; desactivarla es la forma de decir «sí es un juego» sin que vuelva a aparecer.
+ * - `manual`: lo añadió el owner. La sincronización nunca lo toca.
+ */
+export interface ExcludedGame {
+  name: string;
+  source: 'auto' | 'manual';
+  enabled: boolean;
+}
+
+/** Tope de la lista de exclusiones (sobra: es una lista de apps, no de exes). */
+export const EXCLUDED_GAMES_MAX = 100;
+
+/** Aplicación conocida que los launchers dan de alta pero que no es un juego. */
+export interface NonGameApp {
+  /** Nombre de referencia (documentación); el que se guarda es el del catálogo instalado. */
+  name: string;
+  /** Appids de Steam (lo más fiable: no cambian con el idioma ni con el ™). */
+  steamAppIds: string[];
+  /** Nombres de catálogo que también la identifican (minúsculas, comparación exacta). */
+  names: string[];
+}
+
+/**
+ * Lista curada de aplicaciones que no son juegos. Steam las instala como cualquier app y sus procesos
+ * corren de fondo (Wallpaper Engine) o junto al juego (Lossless Scaling): sin excluirlas, la app cree
+ * que hay un juego abierto. Ampliable: lo que falte se añade a mano desde Ajustes.
+ */
+export const NON_GAME_APPS: readonly NonGameApp[] = [
+  { name: 'Wallpaper Engine', steamAppIds: ['431960'], names: ['wallpaper engine'] },
+  { name: 'Lossless Scaling', steamAppIds: ['993090'], names: ['lossless scaling'] },
+  {
+    name: 'Steamworks Common Redistributables',
+    steamAppIds: ['228980'],
+    names: ['steamworks common redistributables'],
+  },
+  { name: 'SteamVR', steamAppIds: ['250820'], names: ['steamvr'] },
+  { name: 'Soundpad', steamAppIds: ['629520'], names: ['soundpad'] },
+  { name: 'OBS Studio', steamAppIds: ['1905180'], names: ['obs studio'] },
+  { name: 'Blender', steamAppIds: ['365670'], names: ['blender'] },
+  { name: 'VTube Studio', steamAppIds: ['1325860'], names: ['vtube studio'] },
+  { name: 'Aseprite', steamAppIds: ['431730'], names: ['aseprite'] },
+  { name: '3DMark', steamAppIds: ['223850'], names: ['3dmark'] },
+];
+
+/** Juego instalado tal como lo ve la UI (nombre de catálogo + launcher del que salió). */
+export interface InstalledGameInfo {
+  name: string;
+  source: string;
+}
+
+/** Lo mínimo de un juego instalado que necesita la sincronización. */
+export interface InstalledGameRef {
+  name: string;
+  steamAppId?: string;
+}
+
+const claveNombre = (name: string): string => name.trim().toLowerCase();
+
+/** Nombres de catálogo instalados que la lista curada reconoce como «no es un juego». */
+export function autoExclusions(installed: InstalledGameRef[]): string[] {
+  const out: string[] = [];
+  const vistos = new Set<string>();
+  for (const juego of installed) {
+    const name = juego.name.trim();
+    const clave = claveNombre(name);
+    if (!clave || vistos.has(clave)) continue;
+    const esApp = NON_GAME_APPS.some(
+      (app) =>
+        (juego.steamAppId !== undefined && app.steamAppIds.includes(juego.steamAppId)) ||
+        app.names.includes(clave),
+    );
+    if (!esApp) continue;
+    vistos.add(clave);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Sincroniza la lista con lo que la lista curada detecta ahora (`auto`):
+ * - las manuales se conservan siempre, tal cual;
+ * - las automáticas que siguen detectándose se conservan con su estado (activa o desactivada);
+ * - cada candidato nuevo entra como `auto` activo **salvo** que ya haya una entrada con ese nombre
+ *   (manual o automática, activa o no): ahí se salta;
+ * - las automáticas que ya no se detectan (app desinstalada) se quitan.
+ */
+export function syncExcludedGames(actual: ExcludedGame[], auto: string[]): ExcludedGame[] {
+  const detectados = new Set(auto.map(claveNombre));
+  const out = actual.filter((e) => e.source === 'manual' || detectados.has(claveNombre(e.name)));
+  const presentes = new Set(out.map((e) => claveNombre(e.name)));
+  for (const name of auto) {
+    const clave = claveNombre(name);
+    if (presentes.has(clave)) continue;
+    presentes.add(clave);
+    out.push({ name: name.trim(), source: 'auto', enabled: true });
+  }
+  return out.slice(0, EXCLUDED_GAMES_MAX);
+}
+
+/** ¿Dos listas de exclusiones son iguales? (para no reescribir los ajustes sin motivo). */
+export function sameExcludedGames(a: ExcludedGame[], b: ExcludedGame[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (e, i) => e.name === b[i].name && e.source === b[i].source && e.enabled === b[i].enabled,
+    )
+  );
+}
+
+/** Nombres (en minúsculas) de las exclusiones activas. */
+export function activeExcludedNames(list: ExcludedGame[]): Set<string> {
+  return new Set(list.filter((e) => e.enabled).map((e) => claveNombre(e.name)));
+}
+
+/** Normaliza la lista de origen no confiable (disco/IPC): sin vacíos ni duplicados, con tope. */
+export function normalizeExcludedGames(value: unknown): ExcludedGame[] {
+  if (!Array.isArray(value)) return [];
+  const out: ExcludedGame[] = [];
+  const vistos = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue;
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.name !== 'string') continue;
+    const name = raw.name.trim();
+    const clave = claveNombre(name);
+    if (!clave || vistos.has(clave)) continue;
+    vistos.add(clave);
+    out.push({
+      name,
+      source: raw.source === 'auto' ? 'auto' : 'manual',
+      enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
+    });
+    if (out.length >= EXCLUDED_GAMES_MAX) break;
+  }
+  return out;
+}
