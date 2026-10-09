@@ -53,6 +53,27 @@ describe('migrateClipLayout', () => {
     expect(migrado.id).toBe(clip.id); // mismo id: la miniatura y las URLs de medios siguen valiendo
   });
 
+  it('no toca los archivos del usuario que el escaneo catalogó en la raíz (regresión)', () => {
+    // Con la carpeta de salida en «Vídeos», o un export guardado en su raíz, el escaneo los cataloga
+    // como `scan` y la migración —que corre en cada arranque— los movía a Desktop/ y los renombraba.
+    const propio = join(salida, 'Mi montaje.mp4');
+    writeFileSync(propio, 'video');
+    const ajeno = repo.insert({
+      filePath: propio,
+      title: 'Mi montaje',
+      game: null,
+      sizeBytes: 5,
+      createdAt: '2026-10-01T10:00:00.000Z',
+      source: 'scan',
+    });
+
+    const resultado = migrateClipLayout(repo, salida);
+
+    expect(resultado.movedClips).toBe(0);
+    expect(repo.get(ajeno.id)!.filePath).toBe(propio);
+    expect(existsSync(propio)).toBe(true);
+  });
+
   it('sin juego (o con uno desconocido) va a Desktop', () => {
     const sinJuego = clipViejo('2026-07-11 19-14-42.mp4', null, '2026-07-11T22:14:57.000Z');
 
