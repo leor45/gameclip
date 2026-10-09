@@ -118,10 +118,12 @@ describe('Indicador de almacenamiento del sidebar', () => {
   it('refleja al instante el límite nuevo cuando se guardan los ajustes', async () => {
     conAlmacenamiento(3, 0, 10);
     let notificarAjustes: (s: CaptureSettings) => void = () => undefined;
-    mock().capture.onSettingsChanged.mockImplementation((listener: (s: CaptureSettings) => void) => {
-      notificarAjustes = listener;
-      return () => undefined;
-    });
+    mock().capture.onSettingsChanged.mockImplementation(
+      (listener: (s: CaptureSettings) => void) => {
+        notificarAjustes = listener;
+        return () => undefined;
+      },
+    );
 
     renderIndicador();
     await screen.findByText('10 GB');

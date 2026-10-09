@@ -69,7 +69,9 @@ describe('Ajustes: filas «grupo | controles» solo en pantalla ancha', () => {
 
   it('en ancho: grupo a la izquierda, controles a la derecha, a todo el ancho y pie alineado', () => {
     const dentro = bloque![2];
-    expect(dentro).toMatch(/\.settings-form fieldset \{[^}]*grid-template-columns:\s*clamp\([^)]*\) minmax\(0, 1fr\)/);
+    expect(dentro).toMatch(
+      /\.settings-form fieldset \{[^}]*grid-template-columns:\s*clamp\([^)]*\) minmax\(0, 1fr\)/,
+    );
     expect(dentro).toMatch(/fieldset > legend \{[^}]*grid-column:\s*1/);
     expect(dentro).toMatch(/fieldset > :not\(legend\) \{[^}]*grid-column:\s*2/);
     // Sin tope de ancho ni centrado: el owner lo quiere a todo el ancho.

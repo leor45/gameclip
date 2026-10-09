@@ -16,13 +16,20 @@ describe('useThumbnailer (regresión: un clip ilegible bloqueaba las miniaturas 
     const roto = crearClip({ id: 1, durationSeconds: null, thumbnailPath: null });
     const bueno = crearClip({ id: 2, durationSeconds: null, thumbnailPath: null });
     const extraer = vi.fn((clip: { id: number }) =>
-      Promise.resolve(clip.id === 1 ? null : { durationSeconds: 12, thumbnailDataUrl: 'data:image/jpeg;base64,AA' }),
+      Promise.resolve(
+        clip.id === 1
+          ? null
+          : { durationSeconds: 12, thumbnailDataUrl: 'data:image/jpeg;base64,AA' },
+      ),
     );
 
     renderHook(() => useThumbnailer([roto, bueno], extraer));
 
     await waitFor(() =>
-      expect(mock().library.setMedia).toHaveBeenCalledWith(2, expect.objectContaining({ durationSeconds: 12 })),
+      expect(mock().library.setMedia).toHaveBeenCalledWith(
+        2,
+        expect.objectContaining({ durationSeconds: 12 }),
+      ),
     );
     expect(mock().library.setMedia).not.toHaveBeenCalledWith(1, expect.anything());
   });
@@ -48,7 +55,10 @@ describe('useThumbnailer (regresión: un clip ilegible bloqueaba las miniaturas 
     rerender({ clips: [{ ...sinDuracion }, { ...bueno }] });
 
     await waitFor(() =>
-      expect(mock().library.setMedia).toHaveBeenCalledWith(2, expect.objectContaining({ durationSeconds: 12 })),
+      expect(mock().library.setMedia).toHaveBeenCalledWith(
+        2,
+        expect.objectContaining({ durationSeconds: 12 }),
+      ),
     );
     expect(extraer.mock.calls.filter(([c]) => c.id === 1)).toHaveLength(1);
   });

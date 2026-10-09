@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ExcludedGame, InstalledGameInfo } from '@shared/games';
 import GameIcon from '../../components/GameIcon';
 import { BotonQuitar } from './BotonQuitar';
+import Select from '../../components/Select';
 
 /**
  * Lista «no son juegos»: lo que los launchers instalan pero no es un juego (Wallpaper Engine, Lossless
@@ -100,14 +101,16 @@ export function NoSonJuegos() {
       <div className="settings-addrow is-two">
         <label>
           Instalado
-          <select className="gc-field" value={elegido} onChange={(e) => setElegido(e.target.value)}>
-            <option value="">Elegir…</option>
-            {candidatos.map((j) => (
-              <option key={j.name} value={j.name}>
-                {j.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={elegido}
+            onChange={setElegido}
+            placeholder="Elegir un juego instalado…"
+            options={candidatos.map((j) => ({
+              value: j.name,
+              label: j.name,
+              icon: <GameIcon game={j.name} />,
+            }))}
+          />
         </label>
         <label>
           O escribe el nombre

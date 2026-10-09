@@ -46,7 +46,12 @@ describe('Ajustes — Atajos', () => {
   it('lista las acciones con la tecla que tienen configurada', async () => {
     await irAAtajos();
 
-    for (const accion of ['Guardar clip', 'Grabar / detener', 'Captura de pantalla', 'Cambiar de juego']) {
+    for (const accion of [
+      'Guardar clip',
+      'Grabar / detener',
+      'Captura de pantalla',
+      'Cambiar de juego',
+    ]) {
       expect(lista().getByText(accion)).toBeInTheDocument();
     }
     // Defaults: F8 clip · F7 grabar · F6 captura · F10 cambio de juego.
@@ -153,7 +158,10 @@ describe('Ajustes — Atajos', () => {
   });
 
   it('con el push to talk en un botón del ratón, ese botón queda reservado', async () => {
-    mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, pttHotkey: 'Mouse4' });
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      pttHotkey: 'Mouse4',
+    });
     const user = await irAAtajos();
 
     await user.click(botonEditar('replayHotkey'));

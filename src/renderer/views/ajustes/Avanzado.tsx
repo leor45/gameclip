@@ -21,6 +21,7 @@ import {
 import { ESCUCHANDO, RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
+import Select from '../../components/Select';
 
 const METRIC_LABELS: Record<PerfMetricKey, string> = {
   fps: 'FPS',
@@ -427,28 +428,26 @@ export default function AjustesAvanzado() {
         <div className="settings-fields">
           <label>
             Disposición
-            <select
-              className="gc-field"
+            <Select<PerfOverlayConfig['layout']>
               value={perf.layout}
-              onChange={(e) => setPerf({ layout: e.target.value as PerfOverlayConfig['layout'] })}
-            >
-              <option value="vertical">Desglosada (lista)</option>
-              <option value="horizontal">Lineal (una línea)</option>
-            </select>
+              onChange={(v) => setPerf({ layout: v })}
+              options={[
+                { value: 'vertical', label: 'Desglosada (lista)' },
+                { value: 'horizontal', label: 'Lineal (una línea)' },
+              ]}
+            />
           </label>
           <label>
             Tamaño de fuente
-            <select
-              className="gc-field"
+            <Select<PerfOverlayConfig['fontSize']>
               value={perf.fontSize}
-              onChange={(e) =>
-                setPerf({ fontSize: e.target.value as PerfOverlayConfig['fontSize'] })
-              }
-            >
-              <option value="small">Pequeño</option>
-              <option value="standard">Estándar</option>
-              <option value="large">Grande</option>
-            </select>
+              onChange={(v) => setPerf({ fontSize: v })}
+              options={[
+                { value: 'small', label: 'Pequeño' },
+                { value: 'standard', label: 'Estándar' },
+                { value: 'large', label: 'Grande' },
+              ]}
+            />
           </label>
           <label>
             Opacidad del fondo
@@ -501,29 +500,27 @@ export default function AjustesAvanzado() {
         <div className="settings-fields">
           <label>
             Buffer de repetición
-            <select
-              className="gc-field"
+            <Select<CaptureSettings['recordingBuffer']>
               value={settings.recordingBuffer}
-              onChange={(e) =>
-                set('recordingBuffer', e.target.value as CaptureSettings['recordingBuffer'])
-              }
-            >
-              <option value="memory">Memoria (recomendado)</option>
-              <option value="disk">Disco</option>
-            </select>
+              onChange={(v) => set('recordingBuffer', v)}
+              options={[
+                { value: 'memory', label: 'Memoria (recomendado)' },
+                { value: 'disk', label: 'Disco' },
+              ]}
+            />
           </label>
           <label>
             Relación de aspecto
-            <select
-              className="gc-field"
+            <Select<CaptureSettings['aspectRatio']>
               value={settings.aspectRatio}
-              onChange={(e) => set('aspectRatio', e.target.value as CaptureSettings['aspectRatio'])}
-            >
-              <option value="game">Aspecto del juego</option>
-              <option value="stretch169">Estirar a 16:9</option>
-              <option value="bars169">16:9 con barras negras</option>
-              <option value="crop169">Recortar a 16:9</option>
-            </select>
+              onChange={(v) => set('aspectRatio', v)}
+              options={[
+                { value: 'game', label: 'Aspecto del juego' },
+                { value: 'stretch169', label: 'Estirar a 16:9' },
+                { value: 'bars169', label: '16:9 con barras negras' },
+                { value: 'crop169', label: 'Recortar a 16:9' },
+              ]}
+            />
           </label>
         </div>
         <p className="settings-hint">

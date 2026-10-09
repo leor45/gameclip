@@ -11,6 +11,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] 5. Biblioteca: flecha atrás y transición de abrir/cerrar (sin animación con «reducir movimiento»).
 - [x] 6. Reproductor propio (`VideoPlayer`) con ±10 s, velocidad, PiP, pantalla completa y teclado.
 - [x] 7. Verificación en la app real (CDP / capturas) a 1920×1080 y 1280×800.
+- [x] 9. Desplegables propios (`<Select>`) en los 17 campos de Ajustes, con iconos y buscador.
 - [x] 8. Editor básico: hoja de exportación + recorte sobre fotogramas + reproductor propio (ampliación
   aprobada por el owner sobre la maqueta).
 

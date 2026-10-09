@@ -42,7 +42,9 @@ describe('useCaptureSettings (regresión: cada sección pisaba ajustes cambiados
   it('un settings:changed ajeno no pisa un campo editado y no guardado', async () => {
     const { result } = await montar();
     act(() => result.current.set('replaySeconds', 30));
-    act(() => emitirAjustes({ ...DEFAULT_CAPTURE_SETTINGS, replaySeconds: 120, overlayEnabled: false }));
+    act(() =>
+      emitirAjustes({ ...DEFAULT_CAPTURE_SETTINGS, replaySeconds: 120, overlayEnabled: false }),
+    );
 
     expect(result.current.settings?.replaySeconds).toBe(30); // lo editado se respeta
     expect(result.current.settings?.overlayEnabled).toBe(false); // lo demás se actualiza

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import App from '../App';
-import { sesionFalsa } from './helpers';
+import { sesionFalsa, elegirOpcion } from './helpers';
 import { crearGameclipMock } from './setup';
 
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
@@ -91,7 +91,9 @@ describe('Ajustes — Overlay de rendimiento', () => {
     await irAAvanzado();
 
     const leyenda = screen.getByText(/crea una tarea programada elevada/i);
-    expect(leyenda.textContent).toMatch(/temperatura de CPU necesita\s+además el controlador PawnIO/i);
+    expect(leyenda.textContent).toMatch(
+      /temperatura de CPU necesita\s+además el controlador PawnIO/i,
+    );
     expect(leyenda.textContent).toMatch(/los FPS no/i);
   });
 
@@ -231,8 +233,8 @@ describe('Ajustes — Overlay de rendimiento', () => {
   it('guarda el tamaño de fuente elegido', async () => {
     const user = await irAAvanzado();
 
-    expect(screen.getByLabelText('Tamaño de fuente')).toHaveValue('standard');
-    await user.selectOptions(screen.getByLabelText('Tamaño de fuente'), 'large');
+    expect(screen.getByLabelText('Tamaño de fuente')).toHaveAttribute('data-value', 'standard');
+    await elegirOpcion(user, screen.getByLabelText('Tamaño de fuente'), 'large');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(mock().capture.setSettings.mock.calls[0][0].perfOverlay.fontSize).toBe('large');

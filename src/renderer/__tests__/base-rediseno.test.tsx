@@ -68,7 +68,9 @@ describe('GameIcon', () => {
     );
     expect(window.gameclip.icons.forGame).not.toHaveBeenCalled();
     expect(window.gameclip.icons.forExe).not.toHaveBeenCalled();
-    const iconos = [...container.querySelectorAll('.gc-icon')].map((e) => e.getAttribute('data-icon'));
+    const iconos = [...container.querySelectorAll('.gc-icon')].map((e) =>
+      e.getAttribute('data-icon'),
+    );
     expect(iconos).toEqual(['pad', 'mic', 'desktop']);
   });
 
@@ -83,7 +85,13 @@ describe('ConfirmDialog', () => {
     const onCancel = vi.fn();
     const onConfirm = vi.fn();
     render(
-      <ConfirmDialog title="¿Eliminar el clip?" confirmLabel="Eliminar" danger onConfirm={onConfirm} onCancel={onCancel}>
+      <ConfirmDialog
+        title="¿Eliminar el clip?"
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      >
         <p>El archivo de vídeo también se borra del disco.</p>
       </ConfirmDialog>,
     );
@@ -108,7 +116,9 @@ describe('ConfirmDialog', () => {
 
   it('ocupado: no se puede descartar ni pulsar', async () => {
     const onCancel = vi.fn();
-    render(<ConfirmDialog title="T" confirmLabel="Sí" busy onConfirm={vi.fn()} onCancel={onCancel} />);
+    render(
+      <ConfirmDialog title="T" confirmLabel="Sí" busy onConfirm={vi.fn()} onCancel={onCancel} />,
+    );
     await userEvent.keyboard('{Escape}');
     expect(onCancel).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Sí' })).toBeDisabled();
@@ -125,7 +135,9 @@ describe('HdrRestartPrompt', () => {
     render(<HdrRestartPrompt />);
     expect(screen.queryByRole('alertdialog')).toBeNull();
     preguntar();
-    expect(screen.getByRole('alertdialog', { name: 'Compatibilidad HDR en capturas' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('alertdialog', { name: 'Compatibilidad HDR en capturas' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reiniciar ahora' })).toHaveFocus();
     await userEvent.click(screen.getByRole('button', { name: 'Reiniciar ahora' }));
     expect(window.gameclip.ui.answerHdrRestart).toHaveBeenCalledWith('q1', 'now');

@@ -56,7 +56,9 @@ describe('Biblioteca: rediseño «Portada oscura»', () => {
     const visibles = lib('.clip-card:focus-within .clip-actions');
     expect(visibles).toMatch(/opacity:\s*1/);
     expect(lib('.clip-card:hover .clip-actions')).toBe(visibles);
-    expect(hojas['styles/library.css']).not.toMatch(/\.clip-actions[^{]*\{[^}]*(visibility:\s*hidden|display:\s*none)/);
+    expect(hojas['styles/library.css']).not.toMatch(
+      /\.clip-actions[^{]*\{[^}]*(visibility:\s*hidden|display:\s*none)/,
+    );
   });
 
   it('la cabecera de cada grupo por fecha queda fija al hacer scroll', () => {

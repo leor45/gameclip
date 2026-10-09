@@ -15,6 +15,7 @@ import GameIcon from '../../components/GameIcon';
 import { BotonQuitar } from './BotonQuitar';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
+import Select from '../../components/Select';
 
 interface FilaAudioProps {
   etiqueta: string;
@@ -177,42 +178,46 @@ export default function AjustesAudio() {
         <div className="settings-fields">
           <label>
             Dispositivo
-            <select
-              className="gc-field"
+            <Select
               value={settings.micDeviceId}
-              onChange={(e) => set('micDeviceId', e.target.value)}
+              onChange={(v) => set('micDeviceId', v)}
               disabled={!settings.micEnabled}
-            >
-              <option value="">Por defecto del sistema</option>
-              {micDesconectado && (
-                <option value={settings.micDeviceId} disabled>
-                  Micrófono guardado (no conectado)
-                </option>
-              )}
-              {dispositivos.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'Por defecto del sistema', icon: <GameIcon fixed="mic" /> },
+                ...(micDesconectado
+                  ? [
+                      {
+                        value: settings.micDeviceId,
+                        label: 'Micrófono guardado (no conectado)',
+                        icon: <GameIcon fixed="mic" />,
+                        disabled: true,
+                      },
+                    ]
+                  : []),
+                ...dispositivos.map((d) => ({
+                  value: d.id,
+                  label: d.name,
+                  icon: <GameIcon fixed="mic" />,
+                })),
+              ]}
+            />
           </label>
           <label>
             Tecla de push to talk
-            <select
-              className="gc-field"
+            <Select
               value={settings.pttHotkey}
               disabled={!settings.pttEnabled || !pttDisponible}
-              onChange={(e) => set('pttHotkey', e.target.value)}
-            >
-              {PTT_HOTKEY_OPTIONS.map((k) => {
+              onChange={(v) => set('pttHotkey', v)}
+              options={PTT_HOTKEY_OPTIONS.map((k) => {
                 const ocupada = hotkeyReservedByPtt(settings, k);
-                return (
-                  <option key={k} value={k} disabled={ocupada !== null}>
-                    {ocupada ? `${k} — atajo de «${ocupada.label}»` : k}
-                  </option>
-                );
+                return {
+                  value: k,
+                  label: k,
+                  detail: ocupada ? `atajo de «${ocupada.label}»` : undefined,
+                  disabled: ocupada !== null,
+                };
               })}
-            </select>
+            />
           </label>
         </div>
         {micDesconectado && (
@@ -352,19 +357,18 @@ export default function AjustesAudio() {
             <div className="settings-addrow is-one">
               <label>
                 Añadir app
-                <select
-                  className="gc-field"
+                <Select
                   value={appSeleccionada}
-                  onChange={(e) => setAppSeleccionada(e.target.value)}
+                  onChange={setAppSeleccionada}
                   disabled={limiteAlcanzado}
-                >
-                  <option value="">Elegir…</option>
-                  {disponiblesParaAgregar.map((a) => (
-                    <option key={a.executable} value={a.executable}>
-                      {a.executable} — {a.windowTitle}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Elegir una app en ejecución…"
+                  options={disponiblesParaAgregar.map((a) => ({
+                    value: a.executable,
+                    label: a.executable,
+                    detail: a.windowTitle,
+                    icon: <GameIcon exe={a.executable} size="md" />,
+                  }))}
+                />
               </label>
               <button
                 type="button"

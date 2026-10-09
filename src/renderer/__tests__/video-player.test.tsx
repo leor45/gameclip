@@ -154,7 +154,10 @@ describe('VideoPlayer', () => {
     await user.click(screen.getByRole('button', { name: 'Velocidad: Normal' }));
     const opciones = screen.getAllByRole('menuitemradio');
     expect(opciones).toHaveLength(VELOCIDADES.length);
-    expect(screen.getByRole('menuitemradio', { name: 'Normal' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('menuitemradio', { name: 'Normal' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
     await user.click(screen.getByRole('menuitemradio', { name: '1,5×' }));
     expect(velocidad()).toBe(1.5);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();

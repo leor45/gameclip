@@ -15,6 +15,7 @@ import { HotkeyInfo } from './HotkeyInfo';
 import { NoSonJuegos } from './NoSonJuegos';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
+import Select from '../../components/Select';
 
 interface ModoOpcion {
   valor: RecordingMode;
@@ -222,20 +223,18 @@ export default function AjustesGrabacion() {
               Monitor de las capturas
               {/* A propósito NO depende de la grabación de escritorio: las capturas pueden estar
                   activas con la grabación apagada, y son ajustes distintos. */}
-              <select
-                className="gc-field"
+              <Select
                 value={settings.screenshotMonitorIndex}
                 disabled={!settings.screenshotsEnabled}
-                onChange={(e) => set('screenshotMonitorIndex', Number(e.target.value))}
-              >
-                <option value={SCREENSHOT_MONITOR_PRIMARY}>Seguir al monitor principal</option>
-                {displays.map((d) => (
-                  <option key={d.index} value={d.index}>
-                    {d.label}
-                    {d.primary ? ' (principal)' : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => set('screenshotMonitorIndex', v)}
+                options={[
+                  { value: SCREENSHOT_MONITOR_PRIMARY, label: 'Seguir al monitor principal' },
+                  ...displays.map((d) => ({
+                    value: d.index,
+                    label: `${d.label}${d.primary ? ' (principal)' : ''}`,
+                  })),
+                ]}
+              />
             </label>
           </div>
           <p className="settings-hint">
@@ -253,19 +252,18 @@ export default function AjustesGrabacion() {
           <div className="settings-addrow">
             <label>
               Proceso en ejecución
-              <select
-                className="gc-field"
+              <Select
                 value={procesoSeleccionado}
-                onChange={(e) => setProcesoSeleccionado(e.target.value)}
+                onChange={setProcesoSeleccionado}
                 disabled={limiteAlcanzado}
-              >
-                <option value="">Elegir…</option>
-                {procesosDisponibles.map((p) => (
-                  <option key={p.executable} value={p.executable}>
-                    {p.executable} — {p.windowTitle}
-                  </option>
-                ))}
-              </select>
+                placeholder="Elegir un proceso…"
+                options={procesosDisponibles.map((p) => ({
+                  value: p.executable,
+                  label: p.executable,
+                  detail: p.windowTitle,
+                  icon: <GameIcon exe={p.executable} size="md" />,
+                }))}
+              />
             </label>
             <label>
               Escribe el ejecutable
@@ -386,31 +384,27 @@ export default function AjustesGrabacion() {
           <div className="settings-fields">
             <label>
               Monitor
-              <select
-                className="gc-field"
+              <Select
                 value={settings.screenMonitorIndex}
                 disabled={!escritorio}
-                onChange={(e) => set('screenMonitorIndex', Number(e.target.value))}
-              >
-                {displays.map((d) => (
-                  <option key={d.index} value={d.index}>
-                    {d.label}
-                    {d.primary ? ' (principal)' : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => set('screenMonitorIndex', v)}
+                options={displays.map((d) => ({
+                  value: d.index,
+                  label: `${d.label}${d.primary ? ' (principal)' : ''}`,
+                }))}
+              />
             </label>
             <label>
               Audio del clip de escritorio
-              <select
-                className="gc-field"
+              <Select<DesktopAudioTracks>
                 value={settings.desktopAudioTracks}
                 disabled={!escritorio}
-                onChange={(e) => set('desktopAudioTracks', e.target.value as DesktopAudioTracks)}
-              >
-                <option value="mixed">Todo junto en una pista</option>
-                <option value="separate">PC y micrófono en pistas separadas</option>
-              </select>
+                onChange={(v) => set('desktopAudioTracks', v)}
+                options={[
+                  { value: 'mixed', label: 'Todo junto en una pista' },
+                  { value: 'separate', label: 'PC y micrófono en pistas separadas' },
+                ]}
+              />
             </label>
           </div>
           <label className="settings-check">

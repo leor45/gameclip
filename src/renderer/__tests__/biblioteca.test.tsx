@@ -54,7 +54,9 @@ async function abrirFiltro(user: Usuario): Promise<HTMLElement> {
 
 async function elegirJuego(user: Usuario, nombre: RegExp) {
   const lista = await abrirFiltro(user);
-  await waitFor(() => expect(within(lista).getByRole('option', { name: nombre })).toBeInTheDocument());
+  await waitFor(() =>
+    expect(within(lista).getByRole('option', { name: nombre })).toBeInTheDocument(),
+  );
   await user.click(within(lista).getByRole('option', { name: nombre }));
 }
 
@@ -182,7 +184,9 @@ describe('Biblioteca — búsqueda y filtros', () => {
     render(<Biblioteca />);
     await elegirJuego(user, /^Valorant/);
     await waitFor(() =>
-      expect(mock().library.list).toHaveBeenLastCalledWith(expect.objectContaining({ game: 'Valorant' })),
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ game: 'Valorant' }),
+      ),
     );
 
     // Se borra el último clip de Valorant: el catálogo ya no lo lista.
@@ -190,7 +194,9 @@ describe('Biblioteca — búsqueda y filtros', () => {
     await act(async () => alCambiar());
 
     await waitFor(() =>
-      expect(mock().library.list).toHaveBeenLastCalledWith(expect.objectContaining({ game: undefined })),
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ game: undefined }),
+      ),
     );
     expect(botonFiltro()).toHaveAccessibleName('Filtrar por juego: Todos los juegos');
   });
@@ -590,7 +596,9 @@ describe('Biblioteca — filtro de juego', () => {
     expect(activa).toHaveTextContent('Valorant');
     await user.keyboard('{Enter}');
     await waitFor(() =>
-      expect(mock().library.list).toHaveBeenLastCalledWith(expect.objectContaining({ game: 'Valorant' })),
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ game: 'Valorant' }),
+      ),
     );
     expect(botonFiltro()).toHaveFocus();
 
@@ -598,7 +606,9 @@ describe('Biblioteca — filtro de juego', () => {
     await user.click(botonFiltro());
     await user.keyboard('cs{Enter}');
     await waitFor(() =>
-      expect(mock().library.list).toHaveBeenLastCalledWith(expect.objectContaining({ game: 'CS2' })),
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ game: 'CS2' }),
+      ),
     );
 
     // Esc cierra sin cambiar nada.
@@ -665,14 +675,18 @@ describe('Biblioteca — panel reproductor', () => {
     mock().library.list.mockResolvedValue(tresClips());
     render(<Biblioteca />);
     await screen.findByRole('button', { name: 'Reproducir Primero' });
-    expect(screen.queryByRole('button', { name: 'Volver a la Biblioteca' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Volver a la Biblioteca' }),
+    ).not.toBeInTheDocument();
 
     await abrirPrimero(user);
     await user.click(screen.getByRole('button', { name: 'Volver a la Biblioteca' }));
     await esperarCierre();
 
     expect(screen.queryByRole('region', { name: 'Primero' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Volver a la Biblioteca' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Volver a la Biblioteca' }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reproducir Primero' })).toHaveFocus();
   });
 
@@ -708,8 +722,12 @@ describe('Biblioteca — panel reproductor', () => {
     // Controles propios (no los nativos), con los saltos de ±10 s.
     expect(video.controls).toBe(false);
     expect(video.autoplay).toBe(true);
-    expect(within(visor).getByRole('button', { name: 'Retroceder 10 segundos' })).toBeInTheDocument();
-    expect(within(visor).getByRole('button', { name: 'Adelantar 10 segundos' })).toBeInTheDocument();
+    expect(
+      within(visor).getByRole('button', { name: 'Retroceder 10 segundos' }),
+    ).toBeInTheDocument();
+    expect(
+      within(visor).getByRole('button', { name: 'Adelantar 10 segundos' }),
+    ).toBeInTheDocument();
     // La cuadrícula da paso a las filas; la del clip abierto, marcada.
     // La cuadrícula queda montada pero oculta (no se re-montan las tarjetas al cerrar).
     expect(document.querySelector('.library-body:not(.split)')).toHaveAttribute('hidden');
@@ -1104,8 +1122,8 @@ describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
       return () => undefined;
     });
     let resolverVieja: (v: unknown) => void = () => undefined;
-    mock().library.gameStats
-      .mockImplementationOnce(() => new Promise((r) => (resolverVieja = r)))
+    mock()
+      .library.gameStats.mockImplementationOnce(() => new Promise((r) => (resolverVieja = r)))
       .mockResolvedValueOnce({ ...STATS, total: 50 });
     mock().library.games.mockResolvedValue(STATS.games.map((g) => g.name));
     mock().library.list.mockResolvedValue([crearClip()]);

@@ -66,6 +66,13 @@ con igualdad exacta (`claveNombre`: recorte + minúsculas). Medido en la bibliot
   iguales que llenan la columna, y al pie «Exportar…», «Guardar edit», progreso con «Cancelar» y el
   resultado («Copiar al portapapeles», «Mostrar en carpeta»). Mismas funciones que antes.
 
+- **Desplegables de Ajustes (ampliación aprobada el 2026-10-09, maqueta
+  https://claude.ai/artifact/4wraWefCYqivnXti8XFYok):** los 17 `<select>` nativos de Ajustes pasan a un
+  desplegable propio (`<Select>`) con el estilo del filtro de juegos: opción elegida con marca
+  amarilla, iconos (micrófono; icono oficial en «Añadir app» y «Proceso en ejecución»; icono del juego
+  en «No son juegos»), segunda línea para el título de la ventana, teclado completo y buscador en las
+  listas de 9 o más opciones. Mismas opciones y mismos valores.
+
 **Fuera (explícito):**
 
 - Cambios en las tarjetas de la cuadrícula (el sello de duración se queda como está).

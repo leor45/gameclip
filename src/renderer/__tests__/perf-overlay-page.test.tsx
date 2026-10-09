@@ -32,9 +32,7 @@ describe('PerfOverlay (página)', () => {
   it('pinta solo las métricas marcadas, con «—» para las no disponibles', () => {
     render(<PerfOverlay />);
     act(() =>
-      emitir(
-        data({ metrics: { ...DEFAULT_PERF_OVERLAY.metrics, gpuTemp: true, ram: false } }),
-      ),
+      emitir(data({ metrics: { ...DEFAULT_PERF_OVERLAY.metrics, gpuTemp: true, ram: false } })),
     );
     expect(screen.getByText('FPS')).toBeInTheDocument();
     expect(screen.getByText('144')).toBeInTheDocument();
@@ -47,7 +45,9 @@ describe('PerfOverlay (página)', () => {
   it('aplica color, opacidad de fondo, disposición y anclaje del preset', () => {
     render(<PerfOverlay />);
     act(() =>
-      emitir(data({ textColor: '#00FF00', bgOpacity: 50, layout: 'horizontal', posX: 100, posY: 50 })),
+      emitir(
+        data({ textColor: '#00FF00', bgOpacity: 50, layout: 'horizontal', posX: 100, posY: 50 }),
+      ),
     );
     const root = screen.getByTestId('perf-root');
     expect(root.dataset.fila).toBe('middle');

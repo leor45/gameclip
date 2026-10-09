@@ -3,6 +3,7 @@ import type { StorageStats } from '@shared/library';
 import { formatStorage } from '@shared/library';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
+import Select from '../../components/Select';
 
 const LIMITE_OPCIONES_GB = [0, 5, 10, 20, 50, 100, 250, 500];
 
@@ -76,17 +77,14 @@ export default function AjustesAlmacenamiento() {
         <div className="settings-fields">
           <label>
             Límite
-            <select
-              className="gc-field"
+            <Select
               value={settings.storageLimitGb}
-              onChange={(e) => set('storageLimitGb', Number(e.target.value))}
-            >
-              {LIMITE_OPCIONES_GB.map((gb) => (
-                <option key={gb} value={gb}>
-                  {gb === 0 ? 'Sin límite' : `${gb} GB`}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => set('storageLimitGb', v)}
+              options={LIMITE_OPCIONES_GB.map((gb) => ({
+                value: gb,
+                label: gb === 0 ? 'Sin límite' : `${gb} GB`,
+              }))}
+            />
           </label>
         </div>
         <label className="settings-check">
