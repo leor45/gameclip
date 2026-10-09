@@ -23,10 +23,11 @@ export default function Login() {
 
   return (
     <form className="auth-form" onSubmit={onSubmit}>
-      <h1>Iniciar sesión</h1>
+      <h1 className="gc-display">Iniciar sesión</h1>
       <label>
         Email
         <input
+          className="gc-field"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -37,6 +38,7 @@ export default function Login() {
       <label>
         Contraseña
         <input
+          className="gc-field"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -45,7 +47,7 @@ export default function Login() {
         />
       </label>
       {error && <p className="auth-error">{error}</p>}
-      <button type="submit" disabled={enviando}>
+      <button type="submit" className="gc-btn" disabled={enviando}>
         {enviando ? 'Entrando…' : 'Entrar'}
       </button>
     </form>

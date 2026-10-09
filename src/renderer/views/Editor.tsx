@@ -7,6 +7,7 @@ import type { ClipAudioTrack } from '@shared/tracks';
 import { hasRoleTracks, selectableTracks, trackKey, trackLabel } from '@shared/tracks';
 import { clipMediaUrl } from '../lib/media';
 import DraftsList from '../components/editor-avanzado/DraftsList';
+import GameIcon from '../components/GameIcon';
 
 type Estado = 'listo' | 'exportando' | 'hecho' | 'error';
 type EstadoEdit = 'listo' | 'guardando' | 'guardado' | 'error';
@@ -70,8 +71,8 @@ export default function Editor() {
 
   if (!id) {
     return (
-      <section>
-        <h1>Editor</h1>
+      <section className="editor-page">
+        <h1 className="editor-title gc-display">Editor</h1>
         <DraftsList />
       </section>
     );
@@ -79,11 +80,11 @@ export default function Editor() {
 
   if (noEncontrado) {
     return (
-      <section>
-        <h1>Editor</h1>
+      <section className="editor-page">
+        <h1 className="editor-title gc-display">Editor</h1>
         <p className="placeholder">
-          Ese clip ya no está en la biblioteca. Vuelve a la{' '}
-          <Link to="/biblioteca">Biblioteca</Link>.
+          Ese clip ya no está en la biblioteca. Vuelve a la <Link to="/biblioteca">Biblioteca</Link>
+          .
         </p>
       </section>
     );
@@ -194,176 +195,195 @@ export default function Editor() {
 
   return (
     <section className="editor">
-      <div className="editor-head">
-        <h1>Editor</h1>
-        <Link className="editor-avanzado-link" to={`/editor-avanzado/${clip.id}`}>
-          Editor avanzado →
-        </Link>
-      </div>
-      <h2 className="editor-clip-title" title={clip.title}>
-        {clip.title}
-      </h2>
-
-      <video
-        ref={videoRef}
-        className="editor-video"
-        src={clipMediaUrl(clip.id, version)}
-        controls
-        onLoadedMetadata={onMetadata}
-        onTimeUpdate={onTimeUpdate}
-      />
-
-      <fieldset className="editor-trim" disabled={ocupado}>
-        <legend>Recorte</legend>
-        <label>
-          Inicio del recorte ({formatDuration(inicio)})
-          <input
-            type="range"
-            min={0}
-            max={duracion}
-            step={PASO}
-            value={inicio}
-            aria-label="Inicio del recorte"
-            onChange={(e) =>
-              setInicio(Math.min(Number(e.target.value), Math.max(0, fin - MIN_RECORTE)))
-            }
-          />
-        </label>
-        <label>
-          Fin del recorte ({formatDuration(fin)})
-          <input
-            type="range"
-            min={0}
-            max={duracion}
-            step={PASO}
-            value={fin}
-            aria-label="Fin del recorte"
-            onChange={(e) =>
-              setFin(Math.max(Number(e.target.value), Math.min(duracion, inicio + MIN_RECORTE)))
-            }
-          />
-        </label>
-        <div className="editor-trim-info">
-          <span>Duración del recorte: {formatDuration(Math.max(0, fin - inicio))}</span>
-          <button type="button" onClick={previsualizar}>
-            Previsualizar recorte
-          </button>
+      <div className="editor-col editor-col-main">
+        <div className="editor-head">
+          <h1 className="editor-title gc-display">Editor</h1>
+          <Link className="editor-avanzado-link" to={`/editor-avanzado/${clip.id}`}>
+            Editor avanzado →
+          </Link>
         </div>
-      </fieldset>
+        <h2 className="editor-clip-title" title={clip.title}>
+          <GameIcon game={clip.game} size="md" />
+          <span>{clip.title}</span>
+        </h2>
 
-      {seleccionables.length > 0 && (
-        <fieldset className="editor-tracks" disabled={ocupado}>
-          <legend>Pistas de audio</legend>
-          <ul className="editor-tracks-list">
-            {seleccionables.map((pista) => {
-              const key = trackKey(pista);
-              return (
-                <li key={key}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={!muteadas.includes(key)}
-                      onChange={() => togglePista(key)}
-                    />
-                    <span>{trackLabel(pista)}</span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="editor-tracks-hint">
-            {formato === 'gif'
-              ? 'El GIF no lleva audio: las pistas solo afectan a "Guardar edit".'
-              : 'El MP4 exportado lleva la mezcla de las pistas marcadas.'}
-          </p>
-          {!puedeGuardarEdit && (
-            <p className="editor-tracks-hint">
-              Este clip trae una sola pista de audio (se grabó en modo escritorio con un solo audio,
-              o antes de que existieran las pistas por rol), así que su mezcla no se puede rehacer:
-              solo se puede exportar con o sin audio.
-            </p>
-          )}
-        </fieldset>
-      )}
+        <video
+          ref={videoRef}
+          className="editor-video"
+          src={clipMediaUrl(clip.id, version)}
+          controls
+          onLoadedMetadata={onMetadata}
+          onTimeUpdate={onTimeUpdate}
+        />
 
-      <fieldset className="editor-export" disabled={ocupado}>
-        <legend>Exportar</legend>
-        <label>
-          Formato
-          <select
-            aria-label="Formato"
-            value={formato}
-            onChange={(e) => setFormato(e.target.value as ExportFormat)}
-          >
-            <option value="mp4">MP4 (H.264)</option>
-            <option value="gif">GIF animado</option>
-          </select>
-        </label>
-        <label>
-          Calidad
-          <select
-            aria-label="Calidad"
-            value={calidad}
-            onChange={(e) => setCalidad(e.target.value as ExportQuality)}
-          >
-            <option value="alta">Alta</option>
-            <option value="media">Media</option>
-            <option value="baja">Baja</option>
-          </select>
-        </label>
-      </fieldset>
-
-      <div className="editor-actions">
-        {!exportando && (
-          <button
-            type="button"
-            className="primary"
-            disabled={guardandoEdit}
-            onClick={() => void exportar()}
-          >
-            Exportar…
-          </button>
-        )}
-        {!exportando && seleccionables.length > 0 && (
-          <button
-            type="button"
-            disabled={!puedeGuardarEdit || guardandoEdit}
-            title={
-              puedeGuardarEdit
-                ? 'Aplica el mute al clip guardado (sin borrar pistas)'
-                : 'Este clip no tiene pistas por rol'
-            }
-            onClick={() => void guardarEdit()}
-          >
-            {guardandoEdit ? 'Guardando…' : 'Guardar edit'}
-          </button>
-        )}
-        {estadoEdit === 'guardado' && <span className="editor-copied">Edit guardado ✓</span>}
-        {exportando && (
-          <>
-            <progress aria-label="Progreso de exportación" max={1} value={progreso} />
-            <span className="editor-progress-label">{Math.round(progreso * 100)} %</span>
-            <button type="button" onClick={() => void window.gameclip.exporter.cancel()}>
-              Cancelar
+        <fieldset className="editor-trim" disabled={ocupado}>
+          <legend className="gc-label">Recorte</legend>
+          <label>
+            Inicio del recorte ({formatDuration(inicio)})
+            <input
+              type="range"
+              className="gc-range"
+              min={0}
+              max={duracion}
+              step={PASO}
+              value={inicio}
+              aria-label="Inicio del recorte"
+              onChange={(e) =>
+                setInicio(Math.min(Number(e.target.value), Math.max(0, fin - MIN_RECORTE)))
+              }
+            />
+          </label>
+          <label>
+            Fin del recorte ({formatDuration(fin)})
+            <input
+              type="range"
+              className="gc-range"
+              min={0}
+              max={duracion}
+              step={PASO}
+              value={fin}
+              aria-label="Fin del recorte"
+              onChange={(e) =>
+                setFin(Math.max(Number(e.target.value), Math.min(duracion, inicio + MIN_RECORTE)))
+              }
+            />
+          </label>
+          <div className="editor-trim-info">
+            <span>Duración del recorte: {formatDuration(Math.max(0, fin - inicio))}</span>
+            <button type="button" className="gc-btn ghost sm" onClick={previsualizar}>
+              Previsualizar recorte
             </button>
-          </>
-        )}
+          </div>
+        </fieldset>
       </div>
 
-      {estado === 'hecho' && (
-        <div className="editor-done">
-          <span>Exportación lista.</span>
-          <button type="button" onClick={() => void copiar()}>
-            Copiar al portapapeles
-          </button>
-          <button type="button" onClick={() => void window.gameclip.exporter.showLast()}>
-            Mostrar en carpeta
-          </button>
-          {copiado && <span className="editor-copied">Copiado ✓</span>}
+      <div className="editor-col editor-col-side">
+        {seleccionables.length > 0 && (
+          <fieldset className="editor-tracks" disabled={ocupado}>
+            <legend className="gc-label">Pistas de audio</legend>
+            <ul className="editor-tracks-list">
+              {seleccionables.map((pista) => {
+                const key = trackKey(pista);
+                return (
+                  <li key={key}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        className="gc-check"
+                        checked={!muteadas.includes(key)}
+                        onChange={() => togglePista(key)}
+                      />
+                      <span>{trackLabel(pista)}</span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="editor-tracks-hint">
+              {formato === 'gif'
+                ? 'El GIF no lleva audio: las pistas solo afectan a "Guardar edit".'
+                : 'El MP4 exportado lleva la mezcla de las pistas marcadas.'}
+            </p>
+            {!puedeGuardarEdit && (
+              <p className="editor-tracks-hint">
+                Este clip trae una sola pista de audio (se grabó en modo escritorio con un solo
+                audio, o antes de que existieran las pistas por rol), así que su mezcla no se puede
+                rehacer: solo se puede exportar con o sin audio.
+              </p>
+            )}
+          </fieldset>
+        )}
+
+        <fieldset className="editor-export" disabled={ocupado}>
+          <legend className="gc-label">Exportar</legend>
+          <label>
+            Formato
+            <select
+              className="gc-field"
+              aria-label="Formato"
+              value={formato}
+              onChange={(e) => setFormato(e.target.value as ExportFormat)}
+            >
+              <option value="mp4">MP4 (H.264)</option>
+              <option value="gif">GIF animado</option>
+            </select>
+          </label>
+          <label>
+            Calidad
+            <select
+              className="gc-field"
+              aria-label="Calidad"
+              value={calidad}
+              onChange={(e) => setCalidad(e.target.value as ExportQuality)}
+            >
+              <option value="alta">Alta</option>
+              <option value="media">Media</option>
+              <option value="baja">Baja</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <div className="editor-actions">
+          {!exportando && (
+            <button
+              type="button"
+              className="gc-btn"
+              disabled={guardandoEdit}
+              onClick={() => void exportar()}
+            >
+              Exportar…
+            </button>
+          )}
+          {!exportando && seleccionables.length > 0 && (
+            <button
+              type="button"
+              className="gc-btn ghost"
+              disabled={!puedeGuardarEdit || guardandoEdit}
+              title={
+                puedeGuardarEdit
+                  ? 'Aplica el mute al clip guardado (sin borrar pistas)'
+                  : 'Este clip no tiene pistas por rol'
+              }
+              onClick={() => void guardarEdit()}
+            >
+              {guardandoEdit ? 'Guardando…' : 'Guardar edit'}
+            </button>
+          )}
+          {estadoEdit === 'guardado' && <span className="editor-copied">Edit guardado ✓</span>}
+          {exportando && (
+            <>
+              <progress aria-label="Progreso de exportación" max={1} value={progreso} />
+              <span className="editor-progress-label">{Math.round(progreso * 100)} %</span>
+              <button
+                type="button"
+                className="gc-btn ghost sm"
+                onClick={() => void window.gameclip.exporter.cancel()}
+              >
+                Cancelar
+              </button>
+            </>
+          )}
         </div>
-      )}
-      {estado === 'error' && mensaje && <p className="editor-error">{mensaje}</p>}
-      {estadoEdit === 'error' && mensajeEdit && <p className="editor-error">{mensajeEdit}</p>}
+
+        {estado === 'hecho' && (
+          <div className="editor-done">
+            <span>Exportación lista.</span>
+            <button type="button" className="gc-btn ghost sm" onClick={() => void copiar()}>
+              Copiar al portapapeles
+            </button>
+            <button
+              type="button"
+              className="gc-btn ghost sm"
+              onClick={() => void window.gameclip.exporter.showLast()}
+            >
+              Mostrar en carpeta
+            </button>
+            {copiado && <span className="editor-copied">Copiado ✓</span>}
+          </div>
+        )}
+        {estado === 'error' && mensaje && <p className="editor-error">{mensaje}</p>}
+        {estadoEdit === 'error' && mensajeEdit && <p className="editor-error">{mensajeEdit}</p>}
+      </div>
     </section>
   );
 }

@@ -83,6 +83,43 @@ describe('Comprobar actualizaciones — sidebar', () => {
     // Un chequeo de arranque + el manual.
     expect(mock().checkForUpdate).toHaveBeenCalledTimes(2);
   });
+
+  it('mientras comprueba, el botón queda desactivado, dice «Comprobando…» y el icono gira', async () => {
+    const user = userEvent.setup();
+    conChequeo({ updateAvailable: false });
+    renderSidebar();
+    await waitFor(() => expect(mock().checkForUpdate).toHaveBeenCalled());
+    await screen.findByRole('button', { name: 'Comprobar actualizaciones' });
+
+    // El chequeo manual queda en vuelo hasta que lo resolvamos.
+    let resolver: (r: UpdateCheckResult) => void = () => undefined;
+    mock().checkForUpdate.mockImplementation(
+      () => new Promise<UpdateCheckResult>((r) => (resolver = r)),
+    );
+    await user.click(screen.getByRole('button', { name: 'Comprobar actualizaciones' }));
+
+    const boton = await screen.findByRole('button', { name: 'Comprobando…' });
+    expect(boton).toBeDisabled();
+    expect(boton).toHaveClass('is-busy');
+    expect(boton.querySelector('svg')).not.toBeNull();
+
+    resolver({ current: '0.5.1', latest: null, updateAvailable: false, url: '' });
+    expect(await screen.findByText('Estás al día ✓')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Comprobar actualizaciones' })).toBeEnabled();
+  });
+
+  it('con una versión nueva no se muestra «Estás al día» tras comprobar', async () => {
+    const user = userEvent.setup();
+    conChequeo({ updateAvailable: true, latest: '0.6.0' });
+    renderSidebar();
+    await screen.findByText(/Actualización disponible: v0\.6\.0/);
+
+    await user.click(screen.getByRole('button', { name: 'Comprobar actualizaciones' }));
+
+    await waitFor(() => expect(mock().checkForUpdate).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Estás al día ✓')).not.toBeInTheDocument();
+    expect(screen.getByText(/Actualización disponible: v0\.6\.0/)).toBeInTheDocument();
+  });
 });
 
 describe('Comprobar actualizaciones — modal de arranque', () => {
@@ -119,6 +156,27 @@ describe('Comprobar actualizaciones — modal de arranque', () => {
 
     expect(abrir).toHaveBeenCalledWith('https://github.com/leor45/gameclip/releases/tag/v0.6.0');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('el foco inicial está en «Ahora no», no en la acción que abre el navegador', async () => {
+    conChequeo({ updateAvailable: true, latest: '0.6.0' });
+    renderModal();
+
+    expect(await screen.findByRole('button', { name: 'Ahora no' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Ver release' })).not.toHaveFocus();
+  });
+
+  it('Esc lo cierra como «Ahora no», sin abrir nada', async () => {
+    const user = userEvent.setup();
+    const abrir = vi.spyOn(window, 'open').mockReturnValue(null);
+    conChequeo({ updateAvailable: true, latest: '0.6.0' });
+    renderModal();
+    await screen.findByRole('dialog');
+
+    await user.keyboard('{Escape}');
+
+    expect(abrir).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('"Ahora no" lo cierra sin abrir nada', async () => {
