@@ -1606,7 +1606,9 @@ v0.9.7. Se trabajan desde `main` (que ya integra las tandas C y D), cada uno en 
 5. **«No son juegos»: guardar la lista puede pisar la recién sincronizada** (Bajo). `setExcluded`
    devuelve la lista calculada antes del refresco del índice, y puede sobrescribir la que ese refresco
    acaba de auto-sincronizar y mandar por `SettingsChanged`. Dónde: `setExcluded` en
-   `src/main/index.ts` y `NoSonJuegos.tsx`.
+   `src/main/index.ts` y `NoSonJuegos.tsx`. ✅ Arreglado en `fix/no-son-juegos-lista-fresca`:
+   `setExcludedAndRefresh` devuelve la lista leída tras el refresco (un refresco fallido ya no
+   rechaza) y el renderer se resincroniza con `getSettings` si el IPC rechaza.
 6. **La misma carpeta por dos caminos se cataloga dos veces** (Bajo): una unidad de red vista como
    `Z:\…` y como `\\nas\recurso\…`, o una carpeta de clips detrás de un junction o de un volumen
    montado en carpeta (la comprobación de unidad ve `C:\`). Duplica la biblioteca mientras ambas

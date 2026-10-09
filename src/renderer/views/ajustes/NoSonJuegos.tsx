@@ -45,7 +45,18 @@ export function NoSonJuegos() {
 
   async function guardar(next: ExcludedGame[]) {
     setLista(next);
-    setLista(await window.gameclip.games.setExcluded(next));
+    try {
+      setLista(await window.gameclip.games.setExcluded(next));
+    } catch (err) {
+      // Falló el guardado: la lista optimista miente. Se vuelve a lo que de verdad hay guardado, y el
+      // rechazo no queda suelto (los handlers llaman a esto con `void`).
+      console.error('[no-son-juegos] no se pudo guardar la lista:', err);
+      try {
+        setLista((await window.gameclip.capture.getSettings()).excludedGames);
+      } catch (err2) {
+        console.error('[no-son-juegos] tampoco se pudo recargar la lista:', err2);
+      }
+    }
   }
 
   function anadir() {
