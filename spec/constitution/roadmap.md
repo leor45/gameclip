@@ -1239,6 +1239,18 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
+## Auditoría bug-hunter (2026-10-08)
+
+> Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
+> 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
+> en una rama de integración temporal antes de mergear cada uno a `main`.
+
+### 🐞 Exportar encima del propio clip lo borraba — 🧪 en rama (`fix/borrado-clip-al-exportar`)
+
+Elegir el mismo `.mp4` como destino del recorte hacía que ffmpeg abortara y que el borrado del parcial
+eliminara el clip original (sin papelera). `ExportManager` rechaza ahora ese destino antes de lanzar
+ffmpeg y nunca borra un parcial que sea la propia entrada.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
