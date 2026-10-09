@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFfmpegArgs, gainMixFilter } from '../export/ffmpeg-args';
+import { buildFfmpegArgs, exportAudioSelection, gainMixFilter } from '../export/ffmpeg-args';
 
 const base = {
   inputPath: 'C:\\Videos\\GameClip\\clip.mp4',
@@ -177,6 +177,46 @@ describe('buildFfmpegArgs — cortes múltiples (concat, Fase 3)', () => {
     expect(graph).toContain('[v0][v1]concat=n=2:v=1:a=0[vout]');
     expect(graph).not.toContain('amix');
     expect(args).toContain('-an');
+  });
+
+  it('regresión: un clip SIN pistas de audio con cortes exporta sin audio (no referencia 0:a:0)', () => {
+    // Antes la selección quedaba «sin definir» y la ruta concat metía `[0:a:0]anull` en el
+    // filtergraph: con un MP4 sin stream de audio ffmpeg abortaba y no salía ningún archivo.
+    const seleccion = exportAudioSelection([], { format: 'mp4', trackVolumes: { game: 1 } });
+    expect(seleccion).toEqual({ audioTracks: [] });
+
+    const args = buildFfmpegArgs({ ...base, format: 'mp4', quality: 'media', segments: segs, ...seleccion });
+    const graph = args[args.indexOf('-filter_complex') + 1];
+    expect(graph).not.toContain('0:a:0');
+    expect(graph).toContain('concat=n=2:v=1:a=0');
+    expect(args).toContain('-an');
+  });
+});
+
+describe('exportAudioSelection — selección de audio a partir del sondeo', () => {
+  const pistas = [
+    { index: 0, name: 'default' },
+    { index: 1, name: 'game' },
+    { index: 2, name: 'mic' },
+  ];
+
+  it('con volúmenes por pista devuelve ganancias (editor avanzado)', () => {
+    expect(exportAudioSelection(pistas, { format: 'mp4', trackVolumes: { mic: 0, game: 1.5 } })).toEqual({
+      audioGains: [
+        { index: 1, gain: 1.5 },
+        { index: 2, gain: 0 },
+      ],
+    });
+  });
+
+  it('con pistas muteadas devuelve los ordinales activos (editor simple)', () => {
+    expect(exportAudioSelection(pistas, { format: 'mp4', mutedTracks: ['mic'] })).toEqual({
+      audioTracks: [1],
+    });
+  });
+
+  it('el GIF no lleva audio: no selecciona nada', () => {
+    expect(exportAudioSelection(pistas, { format: 'gif', mutedTracks: ['mic'] })).toEqual({});
   });
 });
 
