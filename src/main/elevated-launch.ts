@@ -55,20 +55,34 @@ export function elevatedTaskMatches(taskXml: string | null, exePath: string): bo
  * `-Wait` propaga el fin y el exit code de schtasks. Si el usuario cancela el UAC, Start-Process
  * falla con un error **no terminante**: sin `-ErrorAction Stop` + `catch`, `$p` quedaba `$null` y
  * `exit $null` salía con 0, y el llamador daba por aplicado un cambio que no se hizo.
+ *
+ * La línea de schtasks (lleva la ruta del portable) NO se interpola en el script: viaja en una
+ * variable de entorno del hijo (`GAMECLIP_SCHTASKS_ARGS`), como en «Copiar» (`export/clipboard.ts`).
+ * PowerShell trata ‘ ’ ‚ ‛ como comillas simples, así que escapar solo la ' ASCII no bastaba: una
+ * ruta con «Leo’s» cerraba la cadena antes de tiempo (ParserError), schtasks no corría y el ajuste
+ * se revertía. `env` parte de `baseEnv` (PATH, SystemRoot… hacen falta para arrancar powershell).
  */
-export function powershellElevatedArgs(schtasksArgLine: string): string[] {
-  const escaped = schtasksArgLine.replace(/'/g, "''");
-  return [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `try { $p = Start-Process -FilePath schtasks.exe -ArgumentList '${escaped}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop; exit $p.ExitCode } catch { exit 1 }`,
-  ];
+export function powershellElevatedArgs(
+  schtasksArgLine: string,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): { args: string[]; env: NodeJS.ProcessEnv } {
+  return {
+    args: [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'try { $p = Start-Process -FilePath schtasks.exe -ArgumentList $env:GAMECLIP_SCHTASKS_ARGS -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop; exit $p.ExitCode } catch { exit 1 }',
+    ],
+    env: { ...baseEnv, GAMECLIP_SCHTASKS_ARGS: schtasksArgLine },
+  };
 }
 
 export interface ElevatedLaunchDeps {
-  /** Corre powershell.exe con estos args; resuelve true si terminó con exit code 0. */
-  run: (args: string[]) => Promise<boolean>;
+  /**
+   * Corre powershell.exe con estos args y este entorno (la ruta viaja en él, no en el script);
+   * resuelve true si terminó con exit code 0.
+   */
+  run: (args: string[], env: NodeJS.ProcessEnv) => Promise<boolean>;
   /** XML de la tarea actual; null si no existe o no se pudo consultar. */
   query?: () => Promise<string | null>;
 }
@@ -89,7 +103,8 @@ export class ElevatedAutoLaunch {
   async setEnabled(enabled: boolean, exePath: string): Promise<boolean> {
     const argLine = enabled ? schtasksCreateArgs(exePath) : schtasksDeleteArgs();
     try {
-      return await this.deps.run(powershellElevatedArgs(argLine));
+      const { args, env } = powershellElevatedArgs(argLine);
+      return await this.deps.run(args, env);
     } catch {
       return false;
     }
@@ -128,21 +143,34 @@ export class ElevationRelaunch {
   }
 }
 
-function psSingle(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
-/** Argumentos para relanzar el portable real como administrador, conservando flags como `--hidden`. */
-export function powershellRelaunchElevatedArgs(exePath: string, appArgs: string[]): string[] {
-  const file = psSingle(exePath);
-  const args = appArgs.map((arg) => `'${psSingle(arg)}'`).join(', ');
-  const argList = appArgs.length ? ` -ArgumentList @(${args})` : '';
-  return [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `try { Start-Process -FilePath '${file}'${argList} -Verb RunAs; exit 0 } catch { exit 1 }`,
-  ];
+/**
+ * Argumentos y entorno de powershell.exe para relanzar el portable real como administrador,
+ * conservando flags como `--hidden`. Igual que `powershellElevatedArgs`, la ruta y los argumentos no
+ * van en el script sino en variables de entorno del hijo (`GAMECLIP_RELAUNCH_EXE` y
+ * `GAMECLIP_RELAUNCH_ARG_0…n`): el script no depende de ‘ ’ ‚ ‛ ni de ningún otro carácter del dato.
+ * `-ArgumentList` sigue siendo un array de cadenas, como cuando eran literales.
+ */
+export function powershellRelaunchElevatedArgs(
+  exePath: string,
+  appArgs: string[],
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): { args: string[]; env: NodeJS.ProcessEnv } {
+  const env: NodeJS.ProcessEnv = { ...baseEnv, GAMECLIP_RELAUNCH_EXE: exePath };
+  appArgs.forEach((arg, i) => {
+    env[`GAMECLIP_RELAUNCH_ARG_${i}`] = arg;
+  });
+  const argList = appArgs.length
+    ? ` -ArgumentList @(${appArgs.map((_, i) => `$env:GAMECLIP_RELAUNCH_ARG_${i}`).join(', ')})`
+    : '';
+  return {
+    args: [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `try { Start-Process -FilePath $env:GAMECLIP_RELAUNCH_EXE${argList} -Verb RunAs; exit 0 } catch { exit 1 }`,
+    ],
+    env,
+  };
 }
 
 function queryTask(): Promise<string | null> {
@@ -162,9 +190,9 @@ function queryTask(): Promise<string | null> {
   });
 }
 
-function realRun(args: string[]): Promise<boolean> {
+function realRun(args: string[], env: NodeJS.ProcessEnv): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn('powershell.exe', args, { windowsHide: true, stdio: 'ignore' });
+    const child = spawn('powershell.exe', args, { windowsHide: true, stdio: 'ignore', env });
     child.on('error', () => resolve(false));
     child.on('exit', (code) => resolve(code === 0));
   });
@@ -181,10 +209,8 @@ function realIsElevated(): Promise<boolean> {
 
 function realRelaunch(exePath: string, appArgs: string[]): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn('powershell.exe', powershellRelaunchElevatedArgs(exePath, appArgs), {
-      windowsHide: true,
-      stdio: 'ignore',
-    });
+    const { args, env } = powershellRelaunchElevatedArgs(exePath, appArgs);
+    const child = spawn('powershell.exe', args, { windowsHide: true, stdio: 'ignore', env });
     child.on('error', () => resolve(false));
     child.on('exit', (code) => resolve(code === 0));
   });
