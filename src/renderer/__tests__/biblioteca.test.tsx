@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Biblioteca from '../views/Biblioteca';
@@ -59,6 +59,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Desmontar ANTES de restaurar los mocks: restoreAllMocks deja los vi.fn sin implementación y un
+  // efecto tardío (p. ej. el icono de un juego) llamaría a un forGame que devuelve undefined.
+  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -630,7 +633,7 @@ describe('Biblioteca — filtro de juego', () => {
 
     await act(async () => alCambiar());
 
-    expect(mock().library.gameStats).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mock().library.gameStats).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -659,7 +662,9 @@ describe('Biblioteca — panel reproductor', () => {
     expect(video.controls).toBe(true);
     expect(video.autoplay).toBe(true);
     // La cuadrícula da paso a las filas; la del clip abierto, marcada.
-    expect(document.querySelector('.clip-card')).toBeNull();
+    // La cuadrícula queda montada pero oculta (no se re-montan las tarjetas al cerrar).
+    expect(document.querySelector('.library-body:not(.split)')).toHaveAttribute('hidden');
+    expect(screen.queryByRole('button', { name: 'Reproducir Segundo' })).not.toBeInTheDocument();
     const filas = document.querySelectorAll('.lib-row');
     expect(filas).toHaveLength(3);
     expect(filas[0]).toHaveAttribute('aria-current', 'true');
@@ -946,5 +951,209 @@ describe('Biblioteca — modal de eliminar', () => {
 
     expect(mock().library.remove).toHaveBeenCalledWith(30);
     expect(videoVivo).toBe(false);
+  });
+});
+
+describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
+  function tresClips() {
+    return [
+      crearClip({ id: 41, title: 'Uno' }),
+      crearClip({ id: 42, title: 'Dos' }),
+      crearClip({ id: 43, title: 'Tres' }),
+    ];
+  }
+
+  it('cerrar el panel vuelve al mismo scroll y con el foco en la tarjeta del clip abierto', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await screen.findByText('Dos');
+    const rejilla = document.querySelector('.library-body') as HTMLElement;
+    const tarjetaAntes = rejilla.querySelector('[data-clip-id="43"]');
+    // jsdom no hace scroll: un scrollTop con memoria, que se pierde mientras está oculta (como
+    // puede pasar con display: none en Chromium).
+    let scroll = 0;
+    Object.defineProperty(rejilla, 'scrollTop', {
+      configurable: true,
+      get: () => (rejilla.hidden ? 0 : scroll),
+      set: (v: number) => {
+        scroll = v;
+      },
+    });
+    scroll = 640;
+
+    await user.click(screen.getByRole('button', { name: 'Reproducir Dos' }));
+    scroll = 0; // oculta: el navegador la deja arriba
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' }); // cambia a «Tres» desde las filas
+    expect(panel('Tres')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    expect(scroll).toBe(640);
+    const thumb = screen.getByRole('button', { name: 'Reproducir Tres' });
+    expect(thumb).toHaveFocus();
+    // Las mismas tarjetas: no se re-montaron.
+    expect(rejilla.querySelector('[data-clip-id="43"]')).toBe(tarjetaAntes);
+  });
+
+  it('con «×» el foco también vuelve a la tarjeta', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await user.click(await screen.findByRole('button', { name: 'Reproducir Uno' }));
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+
+    expect(screen.getByRole('button', { name: 'Reproducir Uno' })).toHaveFocus();
+  });
+
+  it('con el panel abierto no arranca ninguna vista previa en la cuadrícula oculta', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    matchMediaFalso(false);
+    mock().library.list.mockResolvedValue([crearClip({ id: 3, title: 'Con preview' })]);
+    render(<Biblioteca />);
+    const card = (await screen.findByText('Con preview')).closest('.clip-card') as HTMLElement;
+
+    // El cursor entra (arranque pendiente) y el clic abre el panel antes del retardo.
+    fireEvent.mouseEnter(card);
+    fireEvent.click(within(card).getByRole('button', { name: 'Reproducir Con preview' }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.queryByTestId('preview-3')).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('si gameStats falla, el contador con filtros no se queda en «de …»', async () => {
+    const user = userEvent.setup();
+    mock().library.gameStats.mockRejectedValue(new Error('caído'));
+    mock().library.list.mockResolvedValue([crearClip(), crearClip(), crearClip()]);
+    render(<Biblioteca />);
+    await screen.findByText('3 clips', { selector: '.library-count' });
+
+    await user.click(screen.getByRole('button', { name: '★ Favoritos' }));
+
+    await waitFor(() =>
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ favoritesOnly: true }),
+      ),
+    );
+    expect(document.querySelector('.library-count')?.textContent).toBe('3 clips');
+  });
+
+  it('una respuesta vieja de gameStats no pisa una más nueva', async () => {
+    let alCambiar: () => void = () => undefined;
+    mock().library.onChanged.mockImplementation((cb: () => void) => {
+      alCambiar = cb;
+      return () => undefined;
+    });
+    let resolverVieja: (v: unknown) => void = () => undefined;
+    mock().library.gameStats
+      .mockImplementationOnce(() => new Promise((r) => (resolverVieja = r)))
+      .mockResolvedValueOnce({ ...STATS, total: 50 });
+    mock().library.games.mockResolvedValue(STATS.games.map((g) => g.name));
+    mock().library.list.mockResolvedValue([crearClip()]);
+    const user = userEvent.setup();
+    render(<Biblioteca />);
+    await screen.findByText('1 clip', { selector: '.library-count' });
+
+    await act(async () => alCambiar());
+    await waitFor(() => expect(mock().library.gameStats).toHaveBeenCalledTimes(2));
+    await act(async () => resolverVieja({ ...STATS, total: 7 }));
+    await user.click(screen.getByRole('button', { name: '★ Favoritos' }));
+
+    expect(await screen.findByText('1 de 50')).toBeInTheDocument();
+  });
+
+  it('una ráfaga de cambios del catálogo pide los contadores una sola vez', async () => {
+    let alCambiar: () => void = () => undefined;
+    mock().library.onChanged.mockImplementation((cb: () => void) => {
+      alCambiar = cb;
+      return () => undefined;
+    });
+    render(<Biblioteca />);
+    await waitFor(() => expect(mock().library.gameStats).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      for (let i = 0; i < 5; i++) alCambiar();
+    });
+
+    await waitFor(() => expect(mock().library.gameStats).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(mock().library.gameStats).toHaveBeenCalledTimes(2);
+  });
+
+  it('al pasar la medianoche, «Hoy» pasa a «Ayer» sin recargar', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 9, 8, 23, 59, 0));
+    mock().library.list.mockResolvedValue([
+      crearClip({ title: 'Nocturno', createdAt: new Date(2026, 9, 8, 23, 0).toISOString() }),
+    ]);
+    render(<Biblioteca />);
+    expect(await screen.findByRole('region', { name: 'Hoy' })).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+
+    expect(screen.getByRole('region', { name: 'Ayer' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Hoy' })).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('filtro: ↓ sobre el botón cerrado abre el desplegable sin cambiar el clip del panel; Inicio/Fin', async () => {
+    const user = userEvent.setup();
+    mock().library.gameStats.mockResolvedValue(STATS);
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await waitFor(() => expect(mock().library.gameStats).toHaveBeenCalled());
+    await user.click(await screen.findByRole('button', { name: 'Reproducir Uno' }));
+
+    botonFiltro().focus();
+    await user.keyboard('{ArrowDown}');
+
+    expect(screen.getByRole('listbox', { name: 'Filtrar por juego' })).toBeInTheDocument();
+    expect(panel('Uno')).toBeInTheDocument();
+    const buscador = screen.getByRole('combobox', { name: 'Buscar juego' });
+    const activa = () =>
+      document.getElementById(buscador.getAttribute('aria-activedescendant') ?? '');
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(5));
+    await user.keyboard('{End}');
+    expect(activa()).toHaveTextContent('Pokémon Escarlata');
+    await user.keyboard('{Home}');
+    expect(activa()).toHaveTextContent('Todos los juegos');
+    expect(panel('Uno')).toBeInTheDocument();
+  });
+
+  it('con un modal ajeno abierto, ↑ ↓ e Intro no actúan sobre el panel', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await user.click(await screen.findByRole('button', { name: 'Reproducir Uno' }));
+    const ajeno = document.createElement('div');
+    ajeno.setAttribute('role', 'dialog');
+    ajeno.setAttribute('aria-modal', 'true');
+    document.body.appendChild(ajeno);
+
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+
+    expect(panel('Uno')).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+    ajeno.remove();
+  });
+
+  it('Intro con el foco en un botón de acción del panel no abre el editor', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await user.click(await screen.findByRole('button', { name: 'Reproducir Uno' }));
+    const carpeta = within(panel('Uno')).getByRole('button', { name: 'Abrir carpeta' });
+    carpeta.focus();
+
+    fireEvent.keyDown(carpeta, { key: 'Enter' });
+
+    expect(window.location.hash).toBe('');
   });
 });

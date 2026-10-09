@@ -1,10 +1,5 @@
 /* ── Biblioteca · rediseño «Portada oscura» ──
-   Tokens y primitivas en ../styles.css. Esta hoja solo lleva las reglas de su área.
-
-   Nota de transición: «Ediciones sin terminar» (DraftsList, del Editor) reutiliza .library-grid,
-   .clip-card, .clip-thumb, .clip-duration, .clip-info, .clip-meta, .clip-actions, .clip-action-link y
-   .clip-trash. Las reglas de esas clases son genéricas a propósito para que esa lista siga viéndose
-   bien hasta que tenga clases propias. */
+   Tokens y primitivas en ../styles.css. Esta hoja solo lleva las reglas de su área. */
 
 /* ── Estructura: cabecera fija arriba y cuerpo con scroll propio ── */
 
@@ -248,6 +243,11 @@
   padding-right: 6px;
 }
 
+/* Con un clip abierto la cuadrícula sigue montada pero oculta (conserva tarjetas y scroll). */
+.library-body[hidden] {
+  display: none;
+}
+
 .library-group-head {
   position: sticky;
   top: 0;
@@ -477,8 +477,7 @@
   }
 }
 
-.clip-actions:not(.panel) button,
-.clip-actions .clip-action-link {
+.clip-actions:not(.panel) button {
   display: inline-grid;
   place-items: center;
   width: 32px;
@@ -493,8 +492,7 @@
   cursor: pointer;
 }
 
-.clip-actions:not(.panel) button:hover:not(:disabled),
-.clip-actions .clip-action-link:hover {
+.clip-actions:not(.panel) button:hover:not(:disabled) {
   border-color: var(--dim);
   color: var(--paper);
 }

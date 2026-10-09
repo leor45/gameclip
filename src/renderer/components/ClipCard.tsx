@@ -72,6 +72,7 @@ export default function ClipCard({
   return (
     <article
       className="clip-card"
+      data-clip-id={clip.id}
       onMouseEnter={entrar}
       onMouseLeave={salir}
       onFocus={entrar}

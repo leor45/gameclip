@@ -105,6 +105,10 @@ export default function GameFilter({ value, onChange, stats }: Props) {
       if (visibles.length === 0) return;
       const paso = e.key === 'ArrowDown' ? 1 : -1;
       setActiva((a) => (Math.min(a, visibles.length - 1) + paso + visibles.length) % visibles.length);
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      e.stopPropagation();
+      setActiva(e.key === 'Home' ? 0 : Math.max(0, visibles.length - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
@@ -134,6 +138,13 @@ export default function GameFilter({ value, onChange, stats }: Props) {
         aria-haspopup="listbox"
         aria-expanded={abierto}
         onClick={() => (abierto ? cerrar(false) : abrir())}
+        // ↑ ↓ sobre el botón cerrado abren el desplegable (y no cambian el clip del panel).
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (!abierto) abrir();
+        }}
       >
         <Icono value={value} />
         <span className="game-filter-name">{etiqueta}</span>

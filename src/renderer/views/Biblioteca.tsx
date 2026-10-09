@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { LibraryGameStats } from '@shared/ipc';
 import type { Clip } from '@shared/library';
@@ -25,6 +25,20 @@ function esCampoDeTexto(el: EventTarget | null): boolean {
     return !['button', 'checkbox', 'radio', 'submit', 'reset'].includes(el.type);
   }
   return false;
+}
+
+/** Retardo con el que se agrupan las ráfagas de cambios del catálogo antes de pedir los contadores. */
+const STATS_DEBOUNCE_MS = 300;
+
+/** Medianoche local de hoy (ms): cambia una vez al día y marca cuándo recalcular «Hoy»/«Ayer». */
+function hoyLocal(): number {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** ¿Hay un modal abierto (propio o de otra parte de la app)? Entonces el teclado es suyo. */
+function hayModalAbierto(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null;
 }
 
 /** Resumen del clip en los modales de eliminar: miniatura, título, juego y duración. */
@@ -62,6 +76,14 @@ export default function Biblioteca() {
   const [aBorrar, setABorrar] = useState<Clip | null>(null);
   const [borrando, setBorrando] = useState(false);
   const [errorBorrado, setErrorBorrado] = useState<{ clip: Clip; mensaje: string } | null>(null);
+  // La cuadrícula sigue montada (oculta) con el panel abierto: no se re-montan cientos de tarjetas
+  // al cerrar. Aun así, `display: none` puede perder el scroll: se guarda al abrir y se restaura al
+  // cerrar, junto con el foco en la tarjeta del clip que estaba abierto.
+  const rejilla = useRef<HTMLDivElement>(null);
+  const scrollRejilla = useRef(0);
+  const alCerrar = useRef<{ id: number; foco: boolean } | null>(null);
+  // Día en curso: «Hoy»/«Ayer» se recalculan al pasar la medianoche aunque no cambien los clips.
+  const [dia, setDia] = useState(hoyLocal);
 
   // El desplegable mezcla juegos con un criterio que NO es un juego (escritorio = sin juego): el
   // centinela se traduce aquí y al catálogo le cruza `withoutGame`, no la cadena.
@@ -93,9 +115,14 @@ export default function Biblioteca() {
 
   // Contadores del filtro de juego (todo el catálogo, sin filtros). Si fallan, el desplegable
   // funciona igual sin números: no es motivo para tapar la biblioteca con un error.
+  // Guarda de carrera: solo cuenta la respuesta de la ÚLTIMA petición (una vieja que llega tarde
+  // pisaría contadores más nuevos).
+  const pedidoStats = useRef(0);
   const cargarStats = useCallback(async () => {
+    const yo = ++pedidoStats.current;
     try {
-      setStats(await window.gameclip.library.gameStats());
+      const nuevas = await window.gameclip.library.gameStats();
+      if (yo === pedidoStats.current) setStats(nuevas);
     } catch {
       /* sin contadores */
     }
@@ -109,32 +136,96 @@ export default function Biblioteca() {
     void cargarStats();
   }, [cargarStats]);
 
-  // Push del main: cualquier mutación del catálogo recarga la vista y los contadores.
+  // Los contadores recorren el catálogo entero en el main: las ráfagas de cambios (p. ej. el
+  // thumbnailer guardando miniaturas una tras otra) se agrupan en una sola petición.
+  const temporizadorStats = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const programarStats = useCallback(() => {
+    if (temporizadorStats.current) clearTimeout(temporizadorStats.current);
+    temporizadorStats.current = setTimeout(() => {
+      temporizadorStats.current = null;
+      void cargarStats();
+    }, STATS_DEBOUNCE_MS);
+  }, [cargarStats]);
+  useEffect(
+    () => () => {
+      if (temporizadorStats.current) clearTimeout(temporizadorStats.current);
+    },
+    [],
+  );
+
+  // Push del main: cualquier mutación del catálogo recarga la vista y (agrupados) los contadores.
   useEffect(
     () =>
       window.gameclip.library.onChanged(() => {
         void cargar();
-        void cargarStats();
+        programarStats();
       }),
-    [cargar, cargarStats],
+    [cargar, programarStats],
   );
+
+  // Cambio de día: un temporizador hasta la próxima medianoche local y, por si el equipo durmió
+  // (los temporizadores se paran), una comprobación al volver a la ventana.
+  useEffect(() => {
+    const comprobar = () => setDia(hoyLocal());
+    const manana = new Date(dia);
+    manana.setDate(manana.getDate() + 1);
+    const espera = Math.max(1000, manana.getTime() - Date.now() + 1000);
+    const temporizador = setTimeout(comprobar, espera);
+    window.addEventListener('focus', comprobar);
+    document.addEventListener('visibilitychange', comprobar);
+    return () => {
+      clearTimeout(temporizador);
+      window.removeEventListener('focus', comprobar);
+      document.removeEventListener('visibilitychange', comprobar);
+    };
+  }, [dia]);
 
   useThumbnailer(clips);
 
-  const grupos = useMemo(() => groupByDate(clips ?? []), [clips]);
+  // `dia` no se lee dentro, pero recalcula «Hoy»/«Ayer» al cambiar de día.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const grupos = useMemo(() => groupByDate(clips ?? []), [clips, dia]);
   // Orden visual (el de los grupos): ↑ ↓ recorren la lista tal como se ve.
   const enOrden = useMemo(() => grupos.flatMap((g) => g.items), [grupos]);
   const abierto = abiertoId === null ? null : (enOrden.find((c) => c.id === abiertoId) ?? null);
 
   // El clip abierto se borró o salió del listado (filtro, búsqueda): el panel se cierra.
   useEffect(() => {
-    if (abiertoId !== null && clips && !clips.some((c) => c.id === abiertoId)) setAbiertoId(null);
+    if (abiertoId !== null && clips && !clips.some((c) => c.id === abiertoId)) {
+      alCerrar.current = { id: abiertoId, foco: false };
+      setAbiertoId(null);
+    }
   }, [clips, abiertoId]);
 
   const abrir = useCallback((clip: Clip) => {
     setPreview(null); // con el panel abierto no hay cuadrícula ni vista previa
+    // Al abrir desde la cuadrícula se recuerda su scroll (no al cambiar de clip desde las filas).
+    if (rejilla.current && !rejilla.current.hidden) scrollRejilla.current = rejilla.current.scrollTop;
     setAbiertoId(clip.id);
   }, []);
+
+  /** Cierra el panel; `foco`: devolverlo a la tarjeta del clip (× y Esc; no al borrar). */
+  const cerrarPanel = useCallback((id: number, foco: boolean) => {
+    alCerrar.current = { id, foco };
+    setPreview(null); // un arranque que quedó pendiente con el panel abierto no se cuela al volver
+    setAbiertoId(null);
+  }, []);
+
+  // De vuelta en la cuadrícula: el scroll donde estaba y el foco en la tarjeta del clip que estaba
+  // abierto (si ya no existe, la primera tarjeta).
+  useLayoutEffect(() => {
+    const cierre = alCerrar.current;
+    if (abiertoId !== null || !cierre) return;
+    alCerrar.current = null;
+    const el = rejilla.current;
+    if (!el) return;
+    el.scrollTop = scrollRejilla.current;
+    if (!cierre.foco) return;
+    const destino =
+      el.querySelector<HTMLElement>(`[data-clip-id="${cierre.id}"] .clip-thumb`) ??
+      el.querySelector<HTMLElement>('.clip-thumb');
+    destino?.focus({ preventScroll: true });
+  }, [abiertoId]);
 
   // Teclado del panel: Esc cierra, ↑ ↓ cambian de clip, Intro abre el editor. Con un modal abierto
   // no se atiende nada (el modal además se queda el Esc en captura).
@@ -143,11 +234,13 @@ export default function Biblioteca() {
     if (abiertoId === null || hayModal) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+      // Un modal de otra parte de la app (p. ej. la versión nueva) también se queda el teclado.
+      if (hayModalAbierto()) return;
       const objetivo = e.target;
       if (esCampoDeTexto(objetivo)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
-        setAbiertoId(null);
+        cerrarPanel(abiertoId, true);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         // El vídeo con foco usa las flechas para sus propios controles.
         if (objetivo instanceof HTMLMediaElement) return;
@@ -172,7 +265,7 @@ export default function Biblioteca() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [abiertoId, enOrden, hayModal]);
+  }, [abiertoId, enOrden, hayModal, cerrarPanel]);
 
   function pedirBorrado(clip: Clip) {
     setErrorBorrado(null);
@@ -187,7 +280,7 @@ export default function Biblioteca() {
     // Cerrar el handle es asíncrono; el main además reintenta el borrado.
     flushSync(() => {
       setPreview((p) => (p === clip.id ? null : p));
-      setAbiertoId((id) => (id === clip.id ? null : id));
+      if (abiertoId === clip.id) cerrarPanel(clip.id, false);
       setBorrando(true);
     });
     try {
@@ -205,11 +298,12 @@ export default function Biblioteca() {
   }
 
   const hayFiltros = Boolean(busqueda || soloFavoritos || juego);
+  // «N de M» solo con el total a mano: si los contadores fallan o aún no llegan, «N clips».
   const contador =
     clips === null
       ? null
-      : hayFiltros
-        ? `${clips.length} de ${stats?.total ?? '…'}`
+      : hayFiltros && stats
+        ? `${clips.length} de ${stats.total}`
         : clipsLabel(clips.length);
 
   return (
@@ -259,15 +353,15 @@ export default function Biblioteca() {
           <ClipPlayer
             key={abierto.id}
             clip={abierto}
-            onClose={() => setAbiertoId(null)}
+            onClose={() => cerrarPanel(abierto.id, true)}
             onEliminar={pedirBorrado}
           />
           <ClipRows grupos={grupos} abiertoId={abierto.id} onAbrir={abrir} />
         </div>
       )}
 
-      {clips && clips.length > 0 && !abierto && (
-        <div className="library-body">
+      {clips && clips.length > 0 && (
+        <div className="library-body" ref={rejilla} hidden={abierto !== null}>
           {grupos.map((g) => (
             <section key={g.key} className="library-group" aria-label={g.label}>
               <h2 className="library-group-head">
@@ -281,7 +375,7 @@ export default function Biblioteca() {
                     clip={clip}
                     onPlay={abrir}
                     onEliminar={pedirBorrado}
-                    previewActiva={preview === clip.id}
+                    previewActiva={!abierto && preview === clip.id}
                     // Apagar solo apaga LA PROPIA: un mouseleave tardío de otra tarjeta no puede
                     // matar la preview de la que el cursor ya está apuntando.
                     onPreviewChange={(activa) =>
