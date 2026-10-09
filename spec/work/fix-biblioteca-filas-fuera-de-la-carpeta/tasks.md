@@ -42,6 +42,8 @@
 - [x] 4b. Prefiltro por nombre de archivo (auditoría: coste de `stat` en NAS en cada `reconcile`).
 - [x] 4c. Rescate de filas muertas: bajas al final del escaneo, re-apuntado por nombre + tamaño sin
       ambigüedad (junction deshecho, `Z:`/UNC, carpeta renombrada, copia con el USB quitado).
+- [x] 4c2. Sin ver ningún archivo no se borran las muertas de dentro (junction borrado con la app
+      cerrada, carpeta inexistente o recreada vacía, renombrada, ilegible); las de fuera sí.
 - [x] 4d. `mergeRows`/`setPath` unifican tamaño real, título personalizado y pistas muteadas.
 - [x] 4e. Huella con `birthtimeNs` y sin `0xFFFFFFFFFFFFFFFF`; medido por junction, hard link y UNC.
 - [x] 5. Verificadas las vías de alta (todas guardan dentro de la carpeta de clips) y que `relabelGames`
@@ -49,7 +51,7 @@
 
 ## Verificación (gates)
 
-- [x] Type-check verde · Lint verde · Tests verdes (92 archivos, 1282 tests; 1212 antes).
+- [x] Type-check verde · Lint verde · Tests verdes (92 archivos, 1289 tests; 1212 antes).
 - [x] Medido con junctions y hard links reales en Windows: `stat` bigint (`dev`/`ino`) da la misma
       identidad por el junction y por la ruta real; una copia (`copyFileSync`) da otra.
 

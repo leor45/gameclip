@@ -91,6 +91,17 @@
   nombre solo (no nombre + tamaño) los archivos sin fila: más conservador de lo pedido.
   Por eso el escaneo calcula `getByPath` de todos los archivos antes del bucle (los mismos que antes,
   adelantados) para contar los sin fila.
+- **Sin ver ningún archivo, no se borra lo de dentro (segunda pasada, Media):** el rescate no ayuda si el
+  escaneo no ve nada: un junction borrado con la app cerrada (el arranque escanea antes de que la
+  captura cree la carpeta; luego existe pero vacía por el `mkdirSync` del pipeline), una carpeta
+  renombrada o movida, un volumen montado en carpeta desmontado. Al final de `reconcile`, si
+  `mediaFilesIn` devolvió vacío, las muertas que cuelgan de `outputDir` (`isInsideDir`) se conservan
+  esa pasada; las de fuera se borran como hoy; con al menos un archivo visto, rescate y bajas como
+  antes. Misma filosofía que D5-BUG-3. **Coste aceptado:** vaciar a mano toda la carpeta deja las
+  tarjetas hasta el siguiente archivo y escaneo, o hasta borrarlas desde la app. Las fantasma cuentan
+  su tamaño en el límite y borrarlas solo quita la fila (leído `deleteClip`/`removeClipFile`:
+  `rmSync({ force: true })` no lanza con un archivo inexistente; `trashItem` que falla cae al
+  borrado; test en `storage-manager.test.ts`).
 - **Unificar lo que depende del archivo (revisión, Baja):** `mergeRows(ids, filePath, mismoArchivo?)` y
   `setPath(id, path, sizeBytes?)` reciben el tamaño real y, al fusionar, el título personalizado (el que
   no es el derivado del nombre del archivo; si los dos, el de la conservada) y las pistas muteadas no

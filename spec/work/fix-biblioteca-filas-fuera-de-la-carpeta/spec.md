@@ -48,6 +48,17 @@ raíz: el catálogo conserva filas cuyo archivo existe pero **no cuelga de la ca
   tamaño (sin ambigüedad) se re-apunta en vez de borrarse. Cubre también el preexistente «carpeta de
   clips movida o renombrada: las filas mueren y vuelven a entrar sin metadatos», y la copia hecha con
   el USB ya quitado.
+- **Red de seguridad «sin ver ningún archivo, no se borra»** (segunda pasada de la revisión): si el
+  escaneo de la carpeta de clips no encuentra NINGÚN archivo multimedia (inexistente, ilegible o
+  vacía), las filas muertas que cuelgan de ella no se dan de baja en esa pasada (las muertas de fuera
+  sí). Sin ella, borrar un junction con la app cerrada borraba la fila re-apuntada en el arranque
+  (el escaneo corre antes de que la captura cree la carpeta). Cubre también el preexistente «carpeta
+  de clips renombrada o movida con la app cerrada: se borraba todo el catálogo al arrancar»: ahora
+  sobrevive y, al apuntar a la carpeta nueva, el rescate la recupera. **Coste aceptado:** si el
+  usuario vacía a mano toda la carpeta desde el Explorador, las tarjetas se quedan hasta que haya al
+  menos un archivo en ella (el siguiente clip guardado y el siguiente escaneo) o hasta que las borre
+  desde la app. Esas filas fantasma cuentan su `size_bytes` en el límite; borrarlas por límite solo
+  quita la fila (`deleteClip` → `rmSync` con `force`; la papelera que lo rechaza cae al borrado).
 - Al fusionar o re-apuntar por identidad, lo que depende del archivo se unifica: tamaño real, título
   personalizado y pistas muteadas no vacías (solo en `mergeRows`/`unificar`; la migración de rutas
   queda igual).

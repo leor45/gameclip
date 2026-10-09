@@ -965,6 +965,94 @@ describe('LibraryManager.reconcile — rescate de filas muertas que cambiaron de
     conservaTodo(manager, filaB.id, join(renombrada, 'Terraria', 'b.mp4'));
   });
 
+  describe('sin ver ningún archivo no se borra lo de dentro de la carpeta', () => {
+    // Con la app cerrada se borra el junction (o se renombra la carpeta): al arrancar, el escaneo corre
+    // antes de que la captura cree la carpeta, o la encuentra recién creada y vacía. Borrar entonces las
+    // filas perdía título, favorito y etiquetas; en `main` la fila original nunca se movía y sobrevivía.
+    function junctionRepuntado(manager: LibraryManager) {
+      const ruta = archivo('Fortnite', 'a.mp4');
+      const fila = clipEditado(manager, ruta);
+      real.symlinkSync(outputDir, enlace, 'junction');
+      expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 0 }); // re-apunta al junction
+      real.rmdirSync(enlace); // el owner lo borra con la app cerrada
+      return { ruta, fila };
+    }
+
+    it('junction borrado con la app cerrada (carpeta inexistente): la fila sobrevive y se rescata al volver', () => {
+      const manager = crearManager();
+      const { ruta, fila } = junctionRepuntado(manager);
+
+      expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 0 }); // el arranque
+
+      expect(manager.getClip(fila.id)).not.toBeNull();
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 }); // vuelve a la ruta real
+      expect(manager.list()).toHaveLength(1);
+      conservaTodo(manager, fila.id, ruta);
+    });
+
+    it('junction borrado y carpeta recreada vacía (el mkdir del pipeline): lo mismo', () => {
+      const manager = crearManager();
+      const { ruta, fila } = junctionRepuntado(manager);
+      mkdirSync(enlace);
+
+      expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 0 });
+
+      expect(manager.getClip(fila.id)).not.toBeNull();
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+      expect(manager.list()).toHaveLength(1);
+      conservaTodo(manager, fila.id, ruta);
+    });
+
+    it('carpeta renombrada con la app cerrada: el arranque no pierde nada y al apuntar a la nueva se rescata', () => {
+      const manager = crearManager();
+      const fila = clipEditado(manager, archivo('Fortnite', 'a.mp4'));
+      real.renameSync(outputDir, renombrada);
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 }); // arranque: la carpeta no está
+
+      expect(manager.getClip(fila.id)).not.toBeNull();
+      expect(manager.reconcile(renombrada)).toEqual({ added: 0, removed: 0 });
+      conservaTodo(manager, fila.id, join(renombrada, 'Fortnite', 'a.mp4'));
+    });
+
+    it('con al menos un archivo en la carpeta, las muertas sin pareja se siguen borrando', () => {
+      const manager = crearManager();
+      const ruta = archivo('Fortnite', 'a.mp4');
+      const muerta = clipEditado(manager, ruta);
+      rmSync(ruta);
+      archivo('Terraria', 'otro-clip.mp4'); // distinto nombre: no es pareja
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 1 });
+      expect(manager.getClip(muerta.id)).toBeNull();
+    });
+
+    it('las muertas de fuera de la carpeta se siguen borrando aunque el escaneo esté vacío', () => {
+      const manager = crearManager();
+      const muerta = repo.insert({
+        filePath: `${unidadAusente()}Clips\\a.mp4`,
+        title: 'otra carpeta',
+        game: null,
+        sizeBytes: 18,
+        createdAt: '2026-07-01T10:00:00.000Z',
+        source: 'replay',
+      });
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 1 }); // carpeta vacía
+      expect(manager.getClip(muerta.id)).toBeNull();
+    });
+
+    it('la carpeta ilegible entera tampoco borra lo de dentro', () => {
+      const ruta = archivo('Fortnite', 'a.mp4');
+      const manager = crearManager();
+      const fila = clipEditado(manager, ruta);
+      rmSync(ruta);
+      sinPermisoEn(outputDir);
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+      expect(manager.getClip(fila.id)).not.toBeNull();
+    });
+  });
+
   it('la copia con el USB ya quitado: la fila muerta del USB sigue al archivo copiado', () => {
     const copia = archivo('Fortnite', 'a.mp4');
     const unidad = unidadAusente();
@@ -1067,6 +1155,7 @@ describe('LibraryManager.reconcile — rescate de filas muertas que cambiaron de
     const muerto = clipEditado(manager, ruta);
     const miniatura = manager.getClip(muerto.id)!.thumbnailPath!;
     rmSync(ruta);
+    insertar(archivo('Terraria', 'b.mp4')); // la carpeta no está vacía: el escaneo ve archivos
 
     expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 1 });
     expect(manager.getClip(muerto.id)).toBeNull();

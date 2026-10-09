@@ -587,6 +587,33 @@ describe('StorageManager — clips fuera de la carpeta de clips (Bug 1 de la tan
     expect(new StorageManager(manager).getStats(raiz.toLowerCase()).clipsBytes).toBe(123);
   });
 
+  it('una fila fantasma (archivo que ya no está) dentro de la carpeta cuenta, y borrarla por límite solo quita la fila', async () => {
+    // `reconcile` conserva las filas muertas de dentro cuando el escaneo no ve ningún archivo (carpeta
+    // inexistente o vacía): el límite las cuenta y, si les toca, `deleteClip` no tropieza con el archivo
+    // inexistente (`rmSync` con `force`) ni con la papelera que lo rechaza.
+    const unidad = 1000;
+    const fantasma = repo.insert({
+      filePath: join(outputDir, 'fantasma.mp4'),
+      title: 'fantasma',
+      game: null,
+      sizeBytes: unidad,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      source: 'replay',
+    });
+    await clip('real.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+    const trashItem = vi.fn().mockRejectedValue(new Error('no existe'));
+    const sm = new StorageManager(manager, { trashItem });
+
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: unidad / 1024 ** 3, autoDeleteOldest: true, useRecycleBin: true }),
+      { outputDir },
+    );
+
+    expect(borrados).toEqual([fantasma.filePath]);
+    expect(manager.getClip(fantasma.id)).toBeNull();
+    expect(manager.list().map((c) => c.title)).toEqual(['real']);
+  });
+
   it('combinado con la unidad sin montar: lo de la unidad ausente y lo de otras carpetas, fuera', async () => {
     const [unidadSalida] = unidadesAusentes();
     const salidaEnUsb = `${unidadSalida}Clips`;

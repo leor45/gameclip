@@ -119,6 +119,16 @@ export class LibraryManager extends EventEmitter {
    * pareja se da de baja como siempre (y una fila muerta nunca protege nada por sí misma). El rescate
    * usa el `stat` que ya se hace para el alta: ninguna consulta nueva al disco.
    *
+   * **Sin ver ningún archivo, no se borra lo de dentro.** Si el escaneo de la carpeta de clips no
+   * encuentra NINGÚN archivo multimedia (carpeta inexistente, ilegible o vacía) las filas muertas que
+   * cuelgan de ella se conservan en esa pasada: no hay a qué rescatar y la causa habitual no es que el
+   * usuario lo borrara todo, sino que la carpeta no está (un junction o un volumen montado en carpeta
+   * que se desmontó, una carpeta renombrada o movida con la app cerrada; el arranque escanea antes de que
+   * la captura cree la carpeta). Las filas muertas de fuera de la carpeta sí se dan de baja. **Coste
+   * aceptado:** si el usuario vacía a mano toda la carpeta desde el Explorador, sus tarjetas se quedan
+   * hasta que haya al menos un archivo en ella (el siguiente clip guardado y el siguiente escaneo) o
+   * hasta que las borre desde la app; el auto-borrado por límite solo les quita la fila.
+   *
    * **La misma carpeta por dos caminos.** Una unidad de red vista como `Z:\Clips` y como
    * `\\nas\recurso\Clips`, un junction o un volumen montado en una carpeta: si la carpeta de clips pasa de
    * una forma a la otra, las filas de la forma vieja (su archivo existe, por la otra ruta) no cuelgan de
@@ -239,8 +249,12 @@ export class LibraryManager extends EventEmitter {
       added++;
     }
 
-    // Las que no se rescataron: su archivo no está en ninguna parte de la carpeta de clips.
-    for (const { id } of muertas.values()) {
+    // Las que no se rescataron: su archivo no está en ninguna parte de la carpeta de clips. Salvo que el
+    // escaneo no haya visto NINGÚN archivo (carpeta inexistente, ilegible o vacía): sin poder ver los
+    // archivos no se da de baja lo que cuelga de ella (como D5-BUG-3). Lo de fuera de la carpeta, sí.
+    const sinVerNada = archivos.length === 0;
+    for (const { id, filePath } of muertas.values()) {
+      if (sinVerNada && isInsideDir(outputDir, filePath)) continue;
       this.removeThumbnail(this.repo.get(id));
       this.repo.delete(id);
       removed++;
