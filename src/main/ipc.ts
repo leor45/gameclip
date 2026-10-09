@@ -12,9 +12,7 @@ import {
   activeTrackIndexes,
   hasRoleTracks,
   normalizeSaveAudioEditRequest,
-  selectableTrackGains,
   type SaveAudioEditResult,
-  type TrackGain,
 } from '@shared/tracks';
 import type { ExcludedGame, GameIndex, InstalledGameInfo } from '@shared/games';
 import { normalizeExcludedGames } from '@shared/games';
@@ -24,6 +22,7 @@ import { saveClipFrame } from './capture/frame-capture';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { pickScreenshotSource } from './capture/screenshot-target';
 import { checkForUpdates } from './updates';
+import { exportAudioSelection } from './export/ffmpeg-args';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
@@ -229,15 +228,12 @@ export function registerIpcHandlers(
       // La selección de audio viaja por nombre: el main sondea el archivo y lo traduce a ordinales
       // (`0:a:N`). El editor avanzado manda volúmenes por pista (`trackVolumes`), que tienen
       // precedencia y se traducen a ganancias; el editor simple manda `mutedTracks` (mute on/off).
-      let audioTracks: number[] | undefined;
-      let audioGains: TrackGain[] | undefined;
-      if (request.trackVolumes && request.format === 'mp4') {
-        const tracks = await exporter.probeTracks(clip.filePath);
-        if (tracks.length > 0) audioGains = selectableTrackGains(tracks, request.trackVolumes);
-      } else if (request.mutedTracks && request.format === 'mp4') {
-        const tracks = await exporter.probeTracks(clip.filePath);
-        if (tracks.length > 0) audioTracks = activeTrackIndexes(tracks, request.mutedTracks);
-      }
+      // Un archivo sin pistas de audio exporta sin audio (ver `exportAudioSelection`).
+      const conSeleccion =
+        request.format === 'mp4' && (request.trackVolumes !== undefined || request.mutedTracks !== undefined);
+      const { audioTracks, audioGains } = conSeleccion
+        ? exportAudioSelection(await exporter.probeTracks(clip.filePath), request)
+        : {};
 
       // Con cortes múltiples (Fase 3), el rango exterior sale del primer/último segmento.
       const segments = request.segments;

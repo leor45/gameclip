@@ -7,7 +7,8 @@ import {
   type ReframeGeometry,
 } from '@shared/reframe';
 import type { Segment } from '@shared/timeline';
-import type { TrackGain } from '@shared/tracks';
+import type { ClipAudioTrack, TrackGain, TrackVolumes } from '@shared/tracks';
+import { activeTrackIndexes, selectableTrackGains } from '@shared/tracks';
 
 export interface FfmpegJob {
   inputPath: string;
@@ -43,6 +44,25 @@ export interface FfmpegJob {
   /** Ancho/alto de la fuente en píxeles (para calcular la geometría del reencuadre). */
   sourceWidth?: number;
   sourceHeight?: number;
+}
+
+/**
+ * Selección de audio del export a partir de las pistas **sondeadas** del archivo. Traduce lo que
+ * manda el editor (volúmenes por pista o pistas muteadas, por nombre) a ordinales `0:a:N`.
+ *
+ * Un archivo **sin ninguna pista de audio** exporta sin audio (`audioTracks: []`): dejarlo «sin
+ * selección» hacía que la ruta de concatenación referenciara `[0:a:0]` en el filtergraph y ffmpeg
+ * abortara (un MP4 sin audio entra en la biblioteca por el escaneo de la carpeta).
+ */
+export function exportAudioSelection(
+  tracks: ClipAudioTrack[],
+  request: { format: ExportFormat; trackVolumes?: TrackVolumes; mutedTracks?: string[] },
+): Pick<FfmpegJob, 'audioTracks' | 'audioGains'> {
+  if (request.format !== 'mp4') return {}; // el GIF no lleva audio
+  if (tracks.length === 0) return { audioTracks: [] };
+  if (request.trackVolumes) return { audioGains: selectableTrackGains(tracks, request.trackVolumes) };
+  if (request.mutedTracks) return { audioTracks: activeTrackIndexes(tracks, request.mutedTracks) };
+  return {};
 }
 
 /**
