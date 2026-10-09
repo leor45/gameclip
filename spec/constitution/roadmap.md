@@ -1477,9 +1477,69 @@ arranque con la biblioteca real (229 clips intactos) y la caché de juegos byte 
 español (ź, ł…) en el nombre del exe hay que volver a elegirlos en **Ajustes → Grabación**; los acentos
 españoles y los nombres en japonés/chino siguen funcionando.
 
-## Bugs abiertos (pendientes de su propia rama `fix/`)
+## Tanda E — los preexistentes de la tanda D (2026-10-09) — ✅ integrada en `main`, pendiente de publicar (v0.9.8)
 
-### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
+Los ocho hallazgos que salieron al revisar la tanda D (no los había introducido ningún arreglo: pasaban
+igual en la v0.9.7). Cinco ramas, todas con test de regresión en rojo antes del arreglo. Suite: 1212 →
+**1331 tests**.
+
+**Proceso «mano dura»:**
+- Un agente por rama en un worktree aislado, con el diseño ya decidido en el brief.
+- Cada diff leído entero antes de aceptarlo.
+- Revisores independientes cuyo único trabajo era buscar bugs **introducidos**, en pasadas repetidas hasta «cerrado, nada introducido».
+- Una revisión final cruzada de la integración.
+
+Lo que cazaron antes de integrar, todo corregido:
+- **Biblioteca (tres pasadas):** re-apuntar una fila a la ruta nueva de la carpeta y que esa forma desapareciera después (junction borrado, `Z:` que no reconecta) borraba la fila con sus metadatos al volver; luego, la misma pérdida con el junction borrado con la app cerrada.
+- **Biblioteca:** unas filas «retenidas» que seguían contando para el límite y habrían hecho borrar clips reales.
+- **Biblioteca:** la fusión perdía el título y las pistas muteadas.
+- **Biblioteca:** posibles falsos positivos de identidad en ReFS.
+- **Biblioteca:** `stat` de toda la carpeta en cada guardado de Ajustes.
+- **Auto-inicio elevado:** un test frágil de PowerShell.
+
+- 🐞 **El límite de almacenamiento contaba (y podía borrar) clips de la carpeta anterior**
+  (`fix/biblioteca-filas-fuera-de-la-carpeta`, preexistente 1, Medio, pérdida de datos). Al cambiar la
+  carpeta de clips con la vieja aún accesible (el USB conectado tras copiarla), el límite contaba las
+  dos copias y el auto-borrado se llevaba originales con el uso real por debajo del límite. Ahora el
+  uso y el auto-borrado solo cuentan lo que cuelga de la carpeta de clips actual (`isInsideDir`).
+  **Cambio de comportamiento deliberado:** los clips de una carpeta anterior siguen en la biblioteca
+  mientras existan, pero ya no cuentan para el uso ni se auto-borran.
+- 🐞 **La misma carpeta por dos caminos se catalogaba dos veces** (misma rama, preexistente 6).
+  - **Qué pasaba:** `Z:\` frente a `\\nas\recurso\`, un junction o un volumen montado en carpeta.
+  - **Identidad física:** `reconcile` reconoce el mismo archivo por volumen + índice + tamaño + fecha de creación (con un prefiltro por nombre, sin `stat` en el caso normal).
+  - **Re-apunte o fusión:** re-apunta la fila, o fusiona el duplicado que ya dejó la v0.9.7, con el tamaño real, el título personalizado y las pistas muteadas.
+  - **Rescate de filas muertas:** una fila cuyo archivo cambió de ruta (carpeta movida o renombrada) se re-apunta por nombre + tamaño únicos en vez de perderse.
+  - **Red de seguridad:** si el escaneo no ve ningún archivo, no se da de baja lo de dentro de la carpeta, y esas filas no cuentan para el límite (`heldIds()`).
+  - **Preexistente resuelto de paso:** renombrar la carpeta de clips con la app cerrada ya no borra el catálogo al arrancar.
+- 🐞 **Editor avanzado** (`fix/editor-avanzado-carga-audio`, preexistentes 2/3/4): el volumen o la
+  pista quitada durante «Cargando audio…» ya se aplican; ■ durante la carga cancela el ▶; ▶ desde un
+  hueco salta al siguiente tramo antes de sonar.
+- 🐞 **«No son juegos»** (`fix/no-son-juegos-lista-fresca`, preexistente 5): guardar devuelve la lista
+  de después del refresco (ya no pisa la recién sincronizada) y un refresco fallido no rechaza.
+- 🐞 **Auto-inicio elevado con ’ en la ruta** (`fix/auto-inicio-elevado-rutas-con-comillas`,
+  preexistente 7): la ruta y los argumentos viajan en variables de entorno, no en el script. Probado
+  con PowerShell real y un `Start-Process` falso (‘ ’ ‚ ‛ ', `$()`, ñ, CJK).
+- 🐞 **Rechazo no capturado en el auto-switcher** (`hotfix/auto-switcher-rechazo`, preexistente 8).
+
+**Verificado en la máquina del owner:**
+- Gates verdes.
+- Selftest de grabación con la biblioteca real: 229 clips, 0 filas perdidas o cambiadas fila a fila, y el clip nuevo registrado.
+- `stat` bigint medido por ruta real, junction, hard link y `\\localhost\C$\…`: misma identidad. Una copia da otra.
+
+**Residuos aceptados (documentados en el spec de la rama):**
+- Con la carpeta vaciada a mano desde el Explorador, las tarjetas se quedan hasta que entre un archivo en ella o se borren desde la app. No cuentan para el uso.
+- Junction borrado con la app cerrada, un clip nuevo grabado en la carpeta recreada y otro escaneo antes de volver a la ruta real: se pierden los metadatos de esas filas (en `main` se conservaban). Exige los tres pasos y el arreglo natural (cambiar la carpeta) los rescata.
+
+**Para las notas de la v0.9.8:** el cambio de comportamiento del límite con una carpeta anterior.
+
+## Resueltos fuera del código
+
+### ✅ Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2) — ya no es un bug
+
+> **Resuelto (2026-10-09, sin código):** los releases se compilan con todos los binarios firmados,
+> `obs64.exe` incluido, y con eso libobs resuelve el proceso del juego, engancha y el clip sale con
+> imagen y con el audio del juego (verificado por contraste, ver abajo). Se deja la investigación
+> como referencia: el método y las hipótesis descartadas.
 
 **Síntoma:** con HD2 detectado, el clip sale **negro y sin audio del juego**. Reportado por un
 usuario en la 0.8.1 y reproducido en la máquina del owner.
@@ -1530,7 +1590,8 @@ del juego a −28.1 dB**, con las pistas separadas intactas.
 función `OBS_Negotiate` y la variable `DISABLE_VULKAN_MEDAL_OBS_CAPTURE`. No usan otra tecnología:
 usan la misma, firmada.
 
-**Estado:** el arreglo **no es código**. Opciones, por orden de coste:
+**Estado: ✅ resuelto con el build firmado.** El arreglo no era código. Alternativas que se evaluaron,
+por orden de coste (siguen valiendo si algún día hace falta otra vía de firma):
 
 1. **Pedir a Streamlabs que firme su `obs64.exe`** (`obs-studio-node` es open source). Gratis y
    arreglaría el problema para todos los que usan la librería.
@@ -1548,7 +1609,12 @@ overlay en un frame, la resolución de un clip— y las tres las tumbó el owner
 funcionó fue medir directamente: comparar la firma de los binarios. Cuando una explicación deje un
 dato sin encajar (aquí: que elevar a admin no cambiara nada), ese dato es la pista, no el ruido.
 
+## Bugs abiertos (pendientes de su propia rama `fix/`)
+
 ### 🐞 El perfil de juego se decide por proceso, no por ventana (menú de LoL)
+
+> **Decisión del owner (2026-10-09):** fuera de la v0.9.8. Va en su propia tarea (spec + plan), junto
+> con el siguiente, después del release: tocan el núcleo de captura y exigen probar con juegos reales.
 
 **Síntoma:** con el cliente de LoL abierto (menú, aún sin partida) el clip sale negro. En partida
 real funciona.
@@ -1569,6 +1635,8 @@ saltar durante el anti-cheat.
 
 ### 🐞 Nadie comprueba que la fuente de vídeo dé píxeles
 
+> **Decisión del owner (2026-10-09):** fuera de la v0.9.8, en la misma tarea que el anterior.
+
 **Síntoma:** los dos bugs de arriba (y cualquier hook fallido) terminan en un clip negro **guardado
 en silencio**. La app no mira en ningún momento si la escena está produciendo imagen: los
 `signalHandler` solo escuchan `start`/`stop`/`wrote` de las *salidas*.
@@ -1581,47 +1649,35 @@ UI. **Ojo con el alcance:** `effectiveCapture` hoy ata el modo de audio al perfi
 (`audioMode: 'desktop'` forzado fuera del perfil `game`); un fallback que arrastre eso degradaría el
 audio por app a «todo el PC junto» sin necesidad. Los dos ejes deben desacoplarse.
 
-### 🐞 Hallazgos preexistentes de la tanda D (pendientes, 2026-10-09)
+### 🐞 Hallazgos preexistentes de la tanda E (pendientes, 2026-10-09)
 
-Salieron al revisar los arreglos de la tanda D. **No los introdujo ningún arreglo**: pasan igual en la
-v0.9.7. Se trabajan desde `main` (que ya integra las tandas C y D), cada uno en su rama `fix/`.
+Salieron al revisar los arreglos de la tanda E. **No los introdujo ningún arreglo**: pasan igual en la
+v0.9.7. Todos Bajo o Muy bajo; ninguno pierde clips.
 
-1. **Repuntar la carpeta de clips con el USB viejo aún conectado puede borrar clips reales** (Medio,
-   pérdida de datos). Si el owner copia su carpeta (`E:\Clips` → `D:\Clips`) y cambia la carpeta en
-   **Ajustes** con el USB todavía conectado, el guardado escanea la carpeta nueva y da de alta las
-   copias (`scan`) mientras las filas del USB siguen vivas (sus archivos existen); `aplicarLimite`
-   corre justo después y cuenta las dos copias. Con el auto-borrado activo puede borrar clips reales,
-   incluidos los originales del USB. Dónde: `syncLibraryAfterSettings` → `reconcile` +
-   `StorageManager.enforceLimit`. Ideas: no aplicar el límite en el mismo guardado que cambia
-   `outputDir`; contar/borrar solo filas bajo la carpeta de clips actual; detectar duplicados por
-   nombre + tamaño.
-2. **Editor avanzado: un volumen cambiado durante «Cargando audio…» no se aplica** (Bajo). Al acabar la
-   carga, `ensureAudioLoaded` aplica los volúmenes y pistas quitadas del momento del clic (cierre
-   viejo): el motor suena al 100 % con el deslizador en 30 %. Dónde: `EditorAvanzado.tsx`
-   (`ensureAudioLoaded`/`togglePlay`). Idea: leer volúmenes desde refs.
-3. **Editor avanzado: ■ durante «Cargando audio…» no cancela el ▶ pendiente** (Bajo): al terminar la
-   carga, la reproducción arranca igual. Idea: un contador de «intento de reproducción» que ■ invalide.
-4. **Editor avanzado: ▶ desde un hueco suena ~1 frame de lo recortado** antes de que el bucle salte
-   (Bajo, cosmético).
-5. **«No son juegos»: guardar la lista puede pisar la recién sincronizada** (Bajo). `setExcluded`
-   devuelve la lista calculada antes del refresco del índice, y puede sobrescribir la que ese refresco
-   acaba de auto-sincronizar y mandar por `SettingsChanged`. Dónde: `setExcluded` en
-   `src/main/index.ts` y `NoSonJuegos.tsx`. ✅ Arreglado en `fix/no-son-juegos-lista-fresca`:
-   `setExcludedAndRefresh` devuelve la lista leída tras el refresco (un refresco fallido ya no
-   rechaza) y el renderer se resincroniza con `getSettings` si el IPC rechaza.
-6. **La misma carpeta por dos caminos se cataloga dos veces** (Bajo): una unidad de red vista como
-   `Z:\…` y como `\\nas\recurso\…`, o una carpeta de clips detrás de un junction o de un volumen
-   montado en carpeta (la comprobación de unidad ve `C:\`). Duplica la biblioteca mientras ambas
-   formas existen.
-7. **Auto-inicio elevado con una ruta que lleva ’** (Bajo): `powershellElevatedArgs` y
-   `powershellRelaunchElevatedArgs` (`src/main/elevated-launch.ts`) solo escapan la `'` ASCII;
-   PowerShell también trata ‘ ’ ‚ ‛ como comillas, así que una ruta del portable con ’ da error de
-   sintaxis y el ajuste se revierte. Arreglo: pasar la ruta por variable de entorno, como «Copiar»
-   (`src/main/export/clipboard.ts`).
-8. **Rechazo no capturado improbable en el auto-switcher** (Muy bajo): `getForegroundWindowTitle().then(...)`
-   sin `.catch` en `src/main/index.ts`; solo si `execFile` lanzara en síncrono. ✅ Arreglado en
-   `hotfix/auto-switcher-rechazo`: `try/catch` en `foreground.ts` (devuelve `null`) y `.catch` en el
-   intervalo.
+1. **Editor avanzado: Restablecer durante la reproducción no actualiza las ganancias del motor.**
+   - **Síntoma:** los deslizadores vuelven al 100 % pero sigue sonando como antes hasta ❚❚ ▶.
+   - **Arreglo:** `engine.setGain` con la base en `resetEdit`.
+2. **Editor avanzado: un seek a un hueco con un salto pendiente reproduce lo recortado.**
+   - **Causa:** `seek()` no limpia `skipTargetRef`.
+   - **Relacionado:** el seek a un hueco durante la reproducción suena ~1 fotograma de lo recortado.
+3. **Editor avanzado: ❚❚ durante un salto, y ▶ mientras el vídeo aún busca, arrancan el audio en vivo dos veces.**
+   - **Síntoma:** un microcorte, benigno.
+4. **«No son juegos»: «Sincronizar» deja un rechazo sin capturar si `rescan` o `getSettings` fallan.**
+   - **Causa:** `try/finally` sin `catch` en `NoSonJuegos.tsx`.
+5. **`src/main/index.ts`: promesas sin `.catch`.**
+   - `void capture?.setSettings({ autoLaunchElevated: prev })`, al revertir el auto-inicio elevado.
+   - `capture.initialize().then(runSelfTest)`.
+6. **Auto-inicio elevado: `schtasks /TR` admite ~261 caracteres.**
+   - **Síntoma:** un portable con una ruta muy larga no crea la tarea y pide UAC en cada arranque (`ensureEnabled`).
+7. **Relanzado elevado: `Start-Process` une `-ArgumentList` sin comillas.**
+   - **Síntoma:** un argumento con espacios llegaría partido.
+   - **Alcance:** hoy solo se reenvía `--hidden`.
+8. **Biblioteca: `protectPath` se compara como texto crudo.**
+   - **Síntoma:** si la reubicación del clip falla y la ruta conserva la `/` de libobs, el clip recién guardado no queda protegido del auto-borrado.
+9. **Biblioteca: `getByPath` usa `NOCASE` de SQLite, que solo cubre ASCII.**
+   - **Síntoma:** una carpeta renombrada solo en mayúsculas no ASCII (ñ/Ñ) duplica sus clips.
+   - **Relacionado:** una fila guardada con prefijo `\\?\` también se duplicaría.
+10. **Biblioteca: el escaneo no entra en junctions, enlaces de directorio ni volúmenes montados dentro de la carpeta de clips.**
 
 ## Futuro (fuera de alcance por ahora)
 
