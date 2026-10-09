@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -49,6 +49,30 @@ async function clip(
 
 function settings(overrides: Partial<typeof DEFAULT_CAPTURE_SETTINGS> = {}) {
   return { ...DEFAULT_CAPTURE_SETTINGS, ...overrides };
+}
+
+/** Una letra de unidad que no existe en esta máquina: la de un USB quitado. */
+function unidadAusente(): string {
+  for (const letra of 'ZYXWVUTSRQPONMLKJIH') {
+    if (!existsSync(`${letra}:\\`)) return `${letra}:\\`;
+  }
+  throw new Error('No queda ninguna letra de unidad libre para simular un USB quitado.');
+}
+
+/** Fila de un clip que vive en una unidad que no está (no hay archivo que crear). */
+function clipEnUnidadAusente(
+  nombre: string,
+  bytes: number,
+  opts: { source?: ClipSource; createdAt?: string } = {},
+) {
+  return repo.insert({
+    filePath: `${unidadAusente()}Clips\\${nombre}`,
+    title: nombre,
+    game: null,
+    sizeBytes: bytes,
+    createdAt: opts.createdAt ?? '2026-01-01T00:00:00.000Z',
+    source: opts.source ?? 'replay',
+  });
 }
 
 describe('StorageManager — getStats', () => {
@@ -245,5 +269,77 @@ describe('StorageManager — enforceLimit', () => {
     expect(trashItem).toHaveBeenCalledWith(viejo.filePath);
     expect(borrados).toEqual([viejo.filePath]);
     expect(manager.list().map((c) => c.title)).not.toContain('viejo');
+  });
+});
+
+describe('StorageManager — clips de una unidad que no está (regresión B1-1)', () => {
+  // Las filas de una unidad sin montar se conservan (D5-BUG-3), pero no ocupan espacio que se pueda
+  // medir ni liberar: «borrarlas» no libera nada y destruye las ediciones que esas filas guardan.
+  it('getStats no los cuenta', async () => {
+    await clip('real.mp4', 100, { source: 'replay' });
+    clipEnUnidadAusente('muerto.mp4', 500);
+    clipEnUnidadAusente('grabacion.mp4', 300, { source: 'recording' });
+    clipEnUnidadAusente('captura.png', 40, { source: 'scan' });
+
+    const stats = new StorageManager(manager).getStats(outputDir);
+
+    expect(stats.clipsBytes).toBe(100);
+    expect(stats.recordingsBytes).toBe(0);
+    expect(stats.screenshotsBytes).toBe(0);
+  });
+
+  it('el límite no cuenta las copias muertas: con el uso real bajo el límite no borra nada', async () => {
+    // El caso de la revisión: copia del USB hecha con el Explorador (mismo mtime) y USB quitado.
+    // Las filas muertas y las reales se intercalan de la más vieja a la más nueva.
+    const unidad = 1000;
+    for (const [i, dia] of ['01', '02', '03'].entries()) {
+      const createdAt = `2026-01-${dia}T00:00:00.000Z`;
+      await clip(`clip ${i}.mp4`, unidad, { createdAt });
+      clipEnUnidadAusente(`clip ${i}.mp4`, unidad, { createdAt });
+    }
+    const sm = new StorageManager(manager);
+
+    // Uso real: 3 unidades; límite: 4. Contando las muertas serían 6 y se borraban clips reales.
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 4) / 1024 ** 3, autoDeleteOldest: true }),
+    );
+
+    expect(borrados).toEqual([]);
+    expect(manager.list()).toHaveLength(6);
+  });
+
+  it('sobre el límite borra solo clips accesibles y mide el uso sin los de la unidad ausente', async () => {
+    const unidad = 1000;
+    const muerto = clipEnUnidadAusente('muerto.mp4', unidad, {
+      createdAt: '2025-12-31T00:00:00.000Z', // el más viejo de todos
+    });
+    const a = await clip('a.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
+    await clip('b.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+    await clip('c.mp4', unidad, { createdAt: '2026-01-03T00:00:00.000Z' });
+    const sm = new StorageManager(manager);
+
+    // Uso real: 3; límite: 2 → basta con borrar `a`. Contando el muerto (4) caía él primero, sin
+    // liberar nada, y su fila se perdía.
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+    );
+
+    expect(borrados).toEqual([a.filePath]);
+    expect(manager.getClip(muerto.id)).not.toBeNull();
+  });
+
+  it('una ruta con prefijo \\\\?\\ (Node no ve su raíz) cuenta como siempre', () => {
+    const ruta = join(outputDir, 'largo.mp4');
+    writeFileSync(ruta, Buffer.alloc(100, 'x'));
+    repo.insert({
+      filePath: `\\\\?\\${ruta}`,
+      title: 'largo',
+      game: null,
+      sizeBytes: 100,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      source: 'replay',
+    });
+
+    expect(new StorageManager(manager).getStats(outputDir).clipsBytes).toBe(100);
   });
 });

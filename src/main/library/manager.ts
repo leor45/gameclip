@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events';
 import type { Dirent, Stats } from 'node:fs';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, parse, relative, sep } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { gameFromFolderName } from '@shared/clip-naming';
 import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
 import { isTempMediaFile, normalizeClipPatch, titleFromFileName } from '@shared/library';
+import { createVolumeAccessCheck, volumeRootKey } from './clip-path';
 import type { ClipsRepository } from './clips-repository';
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
@@ -94,18 +95,25 @@ export class LibraryManager extends EventEmitter {
   /**
    * Sincroniza el catálogo con la carpeta de salida: altas nuevas y bajas de borrados.
    *
-   * Solo da de baja un clip si falta su archivo **en una unidad que está**: con la unidad sin montar
-   * (un USB, o una de red que aún no conectó al arrancar con Windows) el archivo no se borró, solo no
-   * se ve — y dar de baja la fila perdía para siempre título, etiquetas, favorito y pistas muteadas.
+   * Un clip cuyo archivo falta se da de baja, salvo que viva en la unidad de la carpeta de clips y esa
+   * unidad no esté montada (un USB, o una de red que aún no conectó al arrancar con Windows): ahí el
+   * archivo no se borró, solo no se ve, y dar de baja la fila perdía para siempre título, etiquetas,
+   * favorito y pistas muteadas. Las filas de **otra** unidad que no está (una carpeta de salida
+   * anterior) sí se dan de baja: si el owner copió esa carpeta a la nueva y quitó el USB, conservarlas
+   * duplicaba la biblioteca para siempre.
    */
   reconcile(outputDir: string): { added: number; removed: number } {
     let added = 0;
     let removed = 0;
 
-    const unidadAccesible = accesibilidadDeUnidades();
+    const unidadAccesible = createVolumeAccessCheck();
+    const unidadDeLaSalida = volumeRootKey(outputDir);
     for (const { id, filePath } of this.repo.allPaths()) {
-      // La unidad primero: una de red caída tarda en contestar cada consulta, y así es una por unidad.
-      if (!unidadAccesible(filePath) || existsSync(filePath)) continue;
+      // En la unidad de la salida se mira la unidad antes que el archivo: sin montar, sus clips se
+      // conservan sin preguntar por cada uno.
+      const enSalidaSinMontar =
+        volumeRootKey(filePath) === unidadDeLaSalida && !unidadAccesible(filePath);
+      if (enSalidaSinMontar || existsSync(filePath)) continue;
       this.removeThumbnail(this.repo.get(id));
       this.repo.delete(id);
       removed++;
@@ -264,25 +272,6 @@ export class LibraryManager extends EventEmitter {
 
 function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
-}
-
-/**
- * ¿Está accesible la unidad de cada ruta? Mira la raíz del volumen (`D:\`, `\\servidor\recurso\`)
- * una sola vez por unidad durante la pasada. Sin raíz reconocible se responde `false`: en la duda,
- * la fila se conserva.
- */
-function accesibilidadDeUnidades(): (filePath: string) => boolean {
-  const vistas = new Map<string, boolean>();
-  return (filePath) => {
-    const raiz = parse(filePath).root;
-    const clave = raiz.toLowerCase();
-    let accesible = vistas.get(clave);
-    if (accesible === undefined) {
-      accesible = raiz !== '' && existsSync(raiz);
-      vistas.set(clave, accesible);
-    }
-    return accesible;
-  };
 }
 
 /**

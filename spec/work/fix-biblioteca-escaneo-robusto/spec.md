@@ -40,9 +40,11 @@ por un referee independiente.
   cualquier profundidad: un volumen montado en una carpeta trae las suyas); una carpeta que no se
   deja leer —incluida la propia carpeta de clips— se salta sin cortar el recorrido.
 - `reconcile`: un archivo que desaparece o no se deja leer entre el listado y el `stat` se salta (el
-  mismo fallo de D5-BUG-1 un nivel más abajo); una fila solo se da de baja si falta su archivo **y**
-  la raíz de su volumen (`D:\`, `\\servidor\recurso\`) es accesible, mirada una vez por unidad y
-  pasada.
+  mismo fallo de D5-BUG-1 un nivel más abajo); una fila cuyo archivo falta se conserva solo si vive
+  en la unidad de la carpeta de clips y la raíz de esa unidad (`D:\`, `\\servidor\recurso\`) no es
+  accesible (ver «Corrección tras revisión (B1-1)»).
+- `StorageManager` (`getStats`, `enforceLimit`): los clips de una unidad no accesible ni cuentan ni
+  se borran (B1-1).
 - El listener de `'settings'` pasa a `src/main/library/settings-sync.ts`
   (`syncLibraryAfterSettings`, testeable): no escanea con la captura en `'recording'` y nunca lanza
   (cada paso aislado y registrado con `console.error`).
@@ -56,10 +58,12 @@ por un referee independiente.
 - Las ventanas cortas en que libobs ya escribe en la raíz y el estado aún no es `'recording'`
   (arranque de la salida) o no lo es nunca (guardado de un replay + remux de nombres de pista):
   cerrarlas exige que `CaptureManager` exponga «hay una operación de captura en curso».
-- Que el límite de almacenamiento ignore los clips de una unidad sin montar (ver Riesgos del plan).
 - El coste del escaneo recursivo de una unidad entera cuando la carpeta de clips es su raíz y tiene
   mucho más que clips: diseño de la Fase 10, no de este fix.
-- Purgar solas las filas de una unidad que no vuelve nunca: se quitan a mano desde la biblioteca.
+- Conservar las filas de una carpeta de salida **anterior** cuya unidad no está: se dan de baja como
+  antes del fix (B1-1).
+- Purgar solas las filas de la unidad de la carpeta de clips si esa unidad no vuelve nunca: se quitan
+  a mano desde la biblioteca o al cambiar de carpeta.
 
 ## Criterios de aceptación
 
@@ -67,12 +71,34 @@ por un referee independiente.
       se cataloga.
 - [ ] La papelera y `System Volume Information` no se catalogan, en ninguna capitalización.
 - [ ] Un archivo que desaparece entre el listado y el `stat` se salta sin abortar el escaneo.
-- [ ] Un clip de una unidad no montada conserva fila, título, etiquetas, favorito, pistas muteadas y
-      miniatura; en una unidad montada, el clip borrado se sigue dando de baja.
-- [ ] Una unidad caída cuesta una consulta a su raíz por pasada, no una por clip.
+- [ ] Con la unidad de la carpeta de clips sin montar, sus clips conservan fila, título, etiquetas,
+      favorito, pistas muteadas y miniatura; en una unidad montada, el clip borrado se sigue dando de
+      baja.
+- [ ] Con la unidad de la carpeta de clips caída, se consulta su raíz una vez por pasada y ningún
+      archivo suyo.
+- [ ] Las filas de otra unidad que no está (carpeta de salida anterior) se dan de baja: copiar la
+      carpeta a otra unidad y quitar el USB no duplica la biblioteca (B1-1).
+- [ ] El uso medido y el auto-borrado ignoran los clips de una unidad no accesible: ni cuentan ni se
+      borran (B1-1).
 - [ ] Guardar ajustes grabando no cataloga la grabación en curso; el re-etiquetado y el límite siguen
       corriendo.
 - [ ] Un fallo del escaneo, del re-etiquetado o del límite no sale del listener de `'settings'`: el
       guardado y el rebuild siguen.
 - [ ] Un fallo de la migración o del escaneo inicial no deja la app sin biblioteca.
 - [ ] Suite verde.
+
+## Corrección tras revisión (B1-1)
+
+Una revisión de regresiones independiente encontró un fallo **introducido** por la primera versión
+de este fix (Medium). Conservar toda fila cuya unidad no está duplicaba la biblioteca para siempre en
+este caso: el owner graba en el USB `E:\Clips`, copia la carpeta a `D:\Clips` con el Explorador, quita
+el USB para siempre y apunta GameClip a `D:\Clips`. Las filas de `E:` no se iban nunca y el escaneo
+añadía cada archivo de `D:` como `scan`: cada clip salía dos veces (uno muerto). Además
+`StorageManager.enforceLimit` sumaba las dos copias. Como el Explorador conserva el mtime, las muertas
+y las reales se intercalan de la más vieja a la más nueva, así que se borraban archivos reales de `D:`
+con el uso real por debajo del límite (p. ej. 40 GB reales y límite de 50 GB → se medían 80 GB → caían
+~15 GB de clips reales). Antes del fix las filas de `E:` se daban de baja al arrancar y esto no pasaba.
+
+**Causa raíz:** la regla «unidad no accesible → se conserva» no distinguía la unidad de la carpeta de
+clips (el caso de D5-BUG-3) de la de una carpeta de salida anterior; y el límite y las estadísticas
+contaban filas que no ocupan espacio medible ni liberable.

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createVolumeAccessCheck } from '../library/clip-path';
 import { ClipsRepository } from '../library/clips-repository';
 import { LibraryManager } from '../library/manager';
 
@@ -171,15 +172,17 @@ describe('LibraryManager.reconcile — carpetas de sistema de la raíz de una un
 
 describe('LibraryManager.reconcile — unidad no montada (regresión D5-BUG-3)', () => {
   const unidad = unidadAusente();
+  /** La carpeta de clips vive en el USB desenchufado (o en la unidad de red aún sin conectar). */
+  const salidaEnUsb = `${unidad}Clips`;
 
-  it('un clip de una unidad que no está conserva su fila, sus ediciones y su miniatura', () => {
+  it('si no está la unidad de la carpeta de clips, sus clips conservan fila, ediciones y miniatura', () => {
     const manager = crearManager();
-    const enUsb = insertar(`${unidad}Clips\\Fortnite\\Fortnite 2026.07.01.mp4`);
+    const enUsb = insertar(`${salidaEnUsb}\\Fortnite\\Fortnite 2026.07.01.mp4`);
     manager.updateClip(enUsb.id, { title: 'jugadón', tags: ['final'], favorite: true });
     const conThumb = manager.setClipMedia(enUsb.id, { thumbnailDataUrl: dataUrl });
     manager.setAudioEdit(enUsb.id, ['mic']);
 
-    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+    expect(manager.reconcile(salidaEnUsb)).toEqual({ added: 0, removed: 0 });
 
     const clip = manager.getClip(enUsb.id);
     expect(clip?.title).toBe('jugadón');
@@ -189,34 +192,110 @@ describe('LibraryManager.reconcile — unidad no montada (regresión D5-BUG-3)',
     expect(existsSync(conThumb.thumbnailPath!)).toBe(true);
   });
 
-  it('no regresión: en una unidad que sí está, el clip cuyo archivo se borró se da de baja', () => {
+  it('no regresión: en la misma pasada, el clip borrado de una unidad que sí está se da de baja', () => {
     const manager = crearManager();
-    const ruta = archivo('Terraria', 'borrado.mp4');
+    const ruta = archivo('Terraria', 'borrado.mp4'); // carpeta de salida anterior, en una unidad que está
     const borrado = insertar(ruta);
     const conThumb = manager.setClipMedia(borrado.id, { thumbnailDataUrl: dataUrl });
-    const enUsb = insertar(`${unidad}Clips\\otro.mp4`);
+    const enUsb = insertar(`${salidaEnUsb}\\otro.mp4`);
     rmSync(ruta);
 
-    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 1 });
+    expect(manager.reconcile(salidaEnUsb)).toEqual({ added: 0, removed: 1 });
     expect(manager.getClip(borrado.id)).toBeNull();
     expect(existsSync(conThumb.thumbnailPath!)).toBe(false);
     expect(manager.getClip(enUsb.id)).not.toBeNull();
   });
 
-  it('mira la raíz una vez por unidad y no pregunta por cada archivo de una unidad caída', () => {
+  it('mira la raíz de la unidad caída una vez y no pregunta por cada uno de sus archivos', () => {
     // Una unidad de red caída tarda en responder cada consulta: N clips no pueden ser N esperas.
     const manager = crearManager();
-    for (let i = 0; i < 5; i++) insertar(`${unidad}Clips\\clip ${i}.mp4`);
+    for (let i = 0; i < 5; i++) insertar(`${salidaEnUsb}\\clip ${i}.mp4`);
     for (let i = 0; i < 3; i++) insertar(archivo('Terraria', `vivo ${i}.mp4`));
     vi.mocked(existsSync).mockClear();
 
-    manager.reconcile(outputDir);
+    manager.reconcile(salidaEnUsb);
 
     const consultas = vi.mocked(existsSync).mock.calls.map(([p]) => String(p).toLowerCase());
-    expect(consultas.filter((p) => p.startsWith(unidad.toLowerCase()))).toEqual([
-      unidad.toLowerCase(),
-    ]);
-    const raizLocal = parse(outputDir).root.toLowerCase();
-    expect(consultas.filter((p) => p === raizLocal)).toHaveLength(1);
+    const enLaUnidad = consultas.filter((p) => p.startsWith(unidad.toLowerCase()));
+    expect(enLaUnidad.filter((p) => p === unidad.toLowerCase())).toHaveLength(1);
+    expect(enLaUnidad.filter((p) => p.endsWith('.mp4'))).toEqual([]);
+  });
+});
+
+describe('LibraryManager.reconcile — clips de otra unidad que ya no está (regresión B1-1)', () => {
+  const unidad = unidadAusente();
+
+  it('copió la carpeta del USB a otra unidad y quitó el USB: sus filas se van y no hay duplicados', () => {
+    // Grabado en el USB (E:\Clips); el owner copia la carpeta con el Explorador a la carpeta nueva,
+    // quita el USB para siempre y apunta GameClip a la copia.
+    const nombres = [
+      'Fortnite 2026.07.01 - 10.00.00.00.mp4',
+      'Fortnite 2026.07.02 - 10.00.00.00.mp4',
+    ];
+    const muertos = nombres.map((n) => insertar(`${unidad}Clips\\Fortnite\\${n}`));
+    for (const n of nombres) archivo('Fortnite', n);
+    const manager = crearManager();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 2, removed: 2 });
+
+    for (const muerto of muertos) expect(manager.getClip(muerto.id)).toBeNull();
+    const rutas = manager.list().map((c) => c.filePath);
+    expect(rutas).toHaveLength(2);
+    expect(rutas.every((p) => p.startsWith(outputDir))).toBe(true);
+  });
+
+  it('la unidad de la carpeta de clips se compara sin mayúsculas ni tipo de barra', () => {
+    const manager = crearManager();
+    const enUsb = insertar(`${unidad}Clips\\clip.mp4`);
+
+    // La carpeta de salida escrita con otra capitalización y con `/` sigue siendo la misma unidad.
+    expect(manager.reconcile(`${unidad.toLowerCase().replace('\\', '/')}Clips`)).toEqual({
+      added: 0,
+      removed: 0,
+    });
+    expect(manager.getClip(enUsb.id)).not.toBeNull();
+  });
+
+  it('una ruta con prefijo \\\\?\\ se juzga por su archivo, como antes (Node no ve su raíz)', () => {
+    const fuera = join(dir, 'otra-carpeta');
+    mkdirSync(fuera, { recursive: true });
+    const vivo = join(fuera, 'largo.mp4');
+    const borrado = join(fuera, 'largo-borrado.mp4');
+    writeFileSync(vivo, 'video');
+    const conVivo = insertar(`\\\\?\\${vivo}`);
+    const conBorrado = insertar(`\\\\?\\${borrado}`);
+    const manager = crearManager();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 1 });
+    expect(manager.getClip(conVivo.id)).not.toBeNull();
+    expect(manager.getClip(conBorrado.id)).toBeNull();
+    rmSync(fuera, { recursive: true, force: true });
+  });
+});
+
+describe('createVolumeAccessCheck', () => {
+  const unidad = unidadAusente();
+
+  it('false solo para la raíz de una unidad que no está; cada unidad se consulta una vez', () => {
+    const accesible = createVolumeAccessCheck();
+    const raizLocal = parse(dir).root;
+    vi.mocked(existsSync).mockClear();
+
+    expect(accesible(`${unidad}Clips\\a.mp4`)).toBe(false);
+    expect(accesible(`${unidad.toLowerCase()}otra\\b.mp4`)).toBe(false);
+    expect(accesible(join(dir, 'c.mp4'))).toBe(true);
+    expect(accesible(`${raizLocal.replace('\\', '/')}d.mp4`)).toBe(true);
+
+    expect(vi.mocked(existsSync)).toHaveBeenCalledTimes(2);
+  });
+
+  it('lo que no puede comprobar (prefijo \\\\?\\ o \\\\.\\, sin raíz) lo da por accesible', () => {
+    // Node no ve `\\?\D:\` aunque la unidad esté (existsSync → false): tratarla como ausente
+    // sacaría esos clips del límite y del uso para siempre. Se tratan como antes del fix.
+    const accesible = createVolumeAccessCheck();
+
+    expect(accesible(`\\\\?\\${unidad}Clips\\a.mp4`)).toBe(true);
+    expect(accesible('\\\\.\\C:\\a.mp4')).toBe(true);
+    expect(accesible('relativo\\a.mp4')).toBe(true);
   });
 });
