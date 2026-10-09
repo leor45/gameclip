@@ -1275,6 +1275,14 @@ abrirse, pisando lo cambiado mientras tanto por otras vías (duración desde la 
 del overlay, reversión del auto-inicio elevado). Ahora el rebuild queda pendiente para el final de la
 grabación y cada sección manda solo lo editado y sigue `settings:changed` en lo demás.
 
+### 🐞 Salir mientras graba dejaba el vídeo en negro — ✅ entregado (`fix/grabacion-al-salir`, 2026-10-08)
+
+Confirmado por el owner: «Salir» con una grabación en curso (lo normal en modo auto) dejaba el MP4
+con el vídeo en negro y solo el audio, sin reubicar ni catalogar, porque `will-quit` destruía la salida
+activa sin pararla. Ahora `before-quit` cancela el cierre, para la grabación (`stopRecording`, con
+tope de 10 s) y vuelve a salir. De paso, la grabación manual se etiqueta con el juego con el que
+empezó (antes, con el activo al pararla). Limitación: el apagado de Windows no se puede demorar.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

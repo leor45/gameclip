@@ -53,3 +53,31 @@ export function teardown(partes: PartesDelCierre): void {
     }
   }
 }
+
+/** Lo que el cierre necesita de la captura para no dejar una grabación a medias. */
+export interface CapturaAlSalir {
+  getStatus(): { state: string };
+  stopRecording(): Promise<unknown>;
+}
+
+/**
+ * Antes de salir, cierra **de verdad** la grabación en curso (señal `wrote` incluida), para que el
+ * clip quede reproducible, en la carpeta de su juego y catalogado. Sin esto, `teardown` destruía la
+ * salida activa: el MP4 quedaba con el vídeo en negro y solo el audio.
+ *
+ * Nunca rechaza y nunca cuelga el cierre: si parar falla o tarda más de `timeoutMs`, se sale igual.
+ */
+export async function finalizarGrabacion(capture: CapturaAlSalir, timeoutMs: number): Promise<void> {
+  if (capture.getStatus().state !== 'recording') return;
+  let timer: NodeJS.Timeout | undefined;
+  const tope = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([capture.stopRecording().then(() => undefined), tope]);
+  } catch (err) {
+    console.error('[cierre] no se pudo parar la grabación antes de salir:', err);
+  } finally {
+    clearTimeout(timer);
+  }
+}

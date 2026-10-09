@@ -130,7 +130,9 @@ export class CaptureManager extends EventEmitter {
   private aimTimer: ReturnType<typeof setInterval> | null = null;
   private aimAttempts = 0;
   /** Juego de la grabación en curso: el clip pertenece a él, no al que esté activo al cortarla. */
-  private sessionGameName: string | null = null;
+  // `undefined` = no hay sesión; `null` = sesión de escritorio. Hay que distinguirlos: una grabación
+  // de escritorio no pasa a ser del juego que se lance a mitad.
+  private sessionGameName: string | null | undefined = undefined;
   /** Todos los juegos en ejecución (el activo es uno de ellos). */
   private runningGames: RunningGameMatch[] = [];
   /** Juego activo: el que se graba y cuyo audio se captura. */
@@ -501,15 +503,16 @@ export class CaptureManager extends EventEmitter {
     const raw = await this.obs.stopRecording();
     // El juego es el que tenía la sesión al arrancar: al cambiar de juego, el status ya apunta al
     // nuevo pero el clip que se cierra es del anterior.
-    const file = await this.finishSavedClip(raw, this.sessionGameName ?? game);
-    this.sessionGameName = null;
+    const juego = this.sessionGameName !== undefined ? this.sessionGameName : game;
+    const file = await this.finishSavedClip(raw, juego);
+    this.sessionGameName = undefined;
     await this.settleAfterRecording();
     this.setStatus({
       state: this.bufferRunning ? 'buffering' : 'idle',
       error: null,
       lastClipPath: file,
     });
-    this.emitClipSaved(file, 'recording', game);
+    this.emitClipSaved(file, 'recording', juego);
   }
 
   /**
@@ -533,6 +536,8 @@ export class CaptureManager extends EventEmitter {
     try {
       this.syncOverlayProtection(true); // proteger antes de que la salida arranque
       await this.obs.startRecording();
+      // La grabación es del juego con el que empieza, no del que esté activo al pararla.
+      this.sessionGameName = this.activeGame?.name ?? null;
       this.setStatus({ state: 'recording', error: null });
     } catch (err) {
       this.setStatus({ error: err instanceof Error ? err.message : String(err) });
@@ -548,8 +553,10 @@ export class CaptureManager extends EventEmitter {
     if (this.status.state !== 'recording') return;
     try {
       const raw = await this.obs.stopRecording();
-      const file = await this.finishSavedClip(raw, this.status.detectedGame);
-      this.sessionGameName = null;
+      const juego =
+        this.sessionGameName !== undefined ? this.sessionGameName : this.status.detectedGame;
+      const file = await this.finishSavedClip(raw, juego);
+      this.sessionGameName = undefined;
       await this.settleAfterRecording();
       this.syncOverlayProtection(); // la salida ya paró: desproteger tarde
       this.setStatus({
@@ -557,7 +564,7 @@ export class CaptureManager extends EventEmitter {
         error: null,
         lastClipPath: file,
       });
-      this.emitClipSaved(file, 'recording');
+      this.emitClipSaved(file, 'recording', juego);
     } catch (err) {
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',

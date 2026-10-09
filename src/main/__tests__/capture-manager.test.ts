@@ -584,6 +584,33 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     ]);
   });
 
+  it('regresión: la grabación manual pertenece al juego con el que empezó, aunque se cierre antes de parar', async () => {
+    const manager = crear({ bufferMode: 'always' });
+    await manager.initialize();
+    await manager.setGameDetected('Valorant', 'valorant.exe');
+    const guardados: ClipSavedInfo[] = [];
+    manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+    await manager.startRecording();
+    await manager.setGameDetected(null); // el juego se cierra con la grabación en curso
+    await manager.stopRecording();
+
+    expect(guardados).toEqual([{ filePath: 'C:\\v\\clip.mp4', source: 'recording', game: 'Valorant' }]);
+  });
+
+  it('regresión: una grabación manual de escritorio sigue siendo de escritorio si a mitad se lanza un juego', async () => {
+    const manager = crear({ bufferMode: 'always' });
+    await manager.initialize();
+    const guardados: ClipSavedInfo[] = [];
+    manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+    await manager.startRecording();
+    await manager.setGameDetected('Valorant', 'valorant.exe');
+    await manager.stopRecording();
+
+    expect(guardados.map((g) => g.game)).toEqual([null]);
+  });
+
   it('un rebuild que falla no envenena la cadena: el siguiente guardado se aplica igual', async () => {
     const manager = crear({ bufferMode: 'always' });
     await manager.initialize();
