@@ -24,7 +24,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [x] Comprobación manual: en la app real, dividir, recortar bordes, borrar, volumen y render.
+- [x] Comprobación manual: en la app real, dividir, recortar bordes, seleccionar y volumen (el render con trozos lo cubren los tests; no se lanzó un render real).
 
 ## Cierre
 
