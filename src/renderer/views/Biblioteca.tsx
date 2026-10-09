@@ -31,6 +31,12 @@ export default function Biblioteca() {
         }),
         window.gameclip.library.games(),
       ]);
+      // El juego filtrado ya no tiene clips (se borró el último): el select no tendría opción para él
+      // y pintaría «Todos los juegos» con el filtro aún aplicado. Se suelta el filtro y se recarga.
+      if (juego && !esEscritorio && !listaJuegos.includes(juego)) {
+        setJuego('');
+        return;
+      }
       setClips(lista);
       setJuegos(listaJuegos);
       setError(null);
