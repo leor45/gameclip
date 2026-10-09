@@ -37,6 +37,15 @@ describe('powershellElevatedArgs', () => {
     expect(comando).toContain('exit $p.ExitCode');
   });
 
+  it('si Start-Process falla (UAC cancelado) sale con 1, no con el 0 de `exit $null`', () => {
+    // Regresión: el error de Start-Process no es terminante; `$p` quedaba $null y `exit $p.ExitCode`
+    // salía con 0, así que cancelar el UAC se daba por aplicado (medido en Windows: EXIT=0).
+    const comando = powershellElevatedArgs('/Delete /TN X /F').at(-1)!;
+    expect(comando).toMatch(/^try \{/);
+    expect(comando).toContain('-ErrorAction Stop');
+    expect(comando).toMatch(/catch \{ exit 1 \}$/);
+  });
+
   it('escapa comillas simples del arg line', () => {
     const comando = powershellElevatedArgs("/TR \"C:\\D'Angelo\\app.exe\"").pop()!;
     expect(comando).toContain("D''Angelo");

@@ -52,8 +52,9 @@ export function elevatedTaskMatches(taskXml: string | null, exePath: string): bo
 
 /**
  * Argumentos de powershell.exe para correr schtasks elevado (UAC) y esperar su resultado.
- * `-Wait` propaga el fin; si el usuario cancela el UAC, Start-Process lanza y el exit code de
- * PowerShell deja de ser 0 — así el llamador sabe que NO se aplicó.
+ * `-Wait` propaga el fin y el exit code de schtasks. Si el usuario cancela el UAC, Start-Process
+ * falla con un error **no terminante**: sin `-ErrorAction Stop` + `catch`, `$p` quedaba `$null` y
+ * `exit $null` salía con 0, y el llamador daba por aplicado un cambio que no se hizo.
  */
 export function powershellElevatedArgs(schtasksArgLine: string): string[] {
   const escaped = schtasksArgLine.replace(/'/g, "''");
@@ -61,7 +62,7 @@ export function powershellElevatedArgs(schtasksArgLine: string): string[] {
     '-NoProfile',
     '-NonInteractive',
     '-Command',
-    `$p = Start-Process -FilePath schtasks.exe -ArgumentList '${escaped}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode`,
+    `try { $p = Start-Process -FilePath schtasks.exe -ArgumentList '${escaped}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop; exit $p.ExitCode } catch { exit 1 }`,
   ];
 }
 
