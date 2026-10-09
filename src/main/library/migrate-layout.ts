@@ -20,6 +20,10 @@ export interface MigrateLayoutResult {
  * El juego sale del catálogo (`clip.game`) y la marca de tiempo de `createdAt`: el nombre debe decir
  * cuándo se grabó el clip, no cuándo se migró. Clip por clip y best-effort: el que no se pueda mover
  * (archivo abierto, permisos) se queda donde está, con su fila intacta.
+ *
+ * Solo migra lo que **creó GameClip** (`replay`/`recording`). Corre en cada arranque, y lo que el
+ * escaneo encuentra suelto en la raíz (`scan`) es del usuario —la carpeta de salida puede ser
+ * «Vídeos», o guardó ahí un export—: antes se movía a `Desktop/` y se renombraba.
  */
 export function migrateClipLayout(
   repo: ClipsRepository,
@@ -32,6 +36,7 @@ export function migrateClipLayout(
   for (const clip of repo.list()) {
     // Solo lo que está suelto en la raíz: lo que ya vive en una subcarpeta se respeta.
     if (canonicalClipPath(dirname(clip.filePath)) !== raiz) continue;
+    if (clip.source === 'scan') continue; // archivo del usuario, no un clip de GameClip
     if (!existsSync(clip.filePath)) continue;
 
     const destino = targetPathFor({
