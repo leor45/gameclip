@@ -3,9 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import type { StorageStats } from '@shared/library';
 import { formatStorage } from '@shared/library';
 
-const RADIO = 16;
-const CIRCUNFERENCIA = 2 * Math.PI * RADIO;
-
 /**
  * Espacio usado por los clips del catálogo sobre el límite configurado (el mismo par de cifras
  * que gobierna el auto-borrado). Se refresca con `library:changed`, que es lo que emite el main al
@@ -42,7 +39,7 @@ export default function StorageIndicator() {
 
   if (!stats) return null;
 
-  // Las capturas cuentan: el auto-borrado compara el límite contra el total, y si el anillo las
+  // Las capturas cuentan: el auto-borrado compara el límite contra el total, y si la barra las
   // ignorara, diría menos de lo que la app está midiendo.
   const usados = stats.clipsBytes + stats.recordingsBytes + stats.screenshotsBytes;
   const limiteBytes = limitGb * 1024 ** 3;
@@ -60,21 +57,18 @@ export default function StorageIndicator() {
         sinLimite ? 'sin límite' : `${limitGb} GB`
       }`}
     >
-      <svg className="storage-ring" viewBox="0 0 40 40" aria-hidden="true">
-        <circle className="storage-ring-track" cx="20" cy="20" r={RADIO} />
-        {!sinLimite && (
-          <circle
-            className="storage-ring-value"
-            cx="20"
-            cy="20"
-            r={RADIO}
-            strokeDasharray={CIRCUNFERENCIA}
-            strokeDashoffset={CIRCUNFERENCIA * (1 - ratio)}
-          />
-        )}
-      </svg>
-      <span className="storage-used">{formatStorage(usados)}</span>
-      <span className="storage-limit">{sinLimite ? 'Sin límite' : `${limitGb} GB`}</span>
+      <span className="storage-head">
+        <span className="gc-label">Almacenamiento</span>
+      </span>
+      <span className="storage-figures">
+        <span className="storage-used">{formatStorage(usados)}</span>
+        <span className="storage-limit">{sinLimite ? 'Sin límite' : `${limitGb} GB`}</span>
+      </span>
+      {!sinLimite && (
+        <span className="storage-meter" aria-hidden="true">
+          <i style={{ width: `${ratio * 100}%` }} />
+        </span>
+      )}
     </button>
   );
 }

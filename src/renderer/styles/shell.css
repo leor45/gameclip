@@ -1,2 +1,547 @@
 /* ── Barra lateral y barra superior · rediseño «Portada oscura» ──
    Tokens y primitivas en ../styles.css. Esta hoja solo lleva las reglas de su área. */
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 40px;
+}
+
+/* ── Barra lateral ─────────────────────────────────────────────────────────── */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--page);
+  border-right: 1px solid var(--rule);
+  padding: 18px 12px 14px;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 8px 22px;
+}
+
+.sidebar-brand img {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.sidebar-brand span {
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.nav-link {
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--paper);
+}
+
+/* La activa se apoya en el fondo del contenido (--ink) con un filete amarillo a la izquierda. */
+.nav-link.active {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: inset 2px 0 0 var(--sello);
+}
+
+.sidebar-footer {
+  padding: 10px 8px 0;
+  font: 500 11px/1.2 var(--font-mono);
+  color: var(--dim);
+}
+
+/* Bloque de actualizaciones: se empuja al fondo, por encima del almacenamiento. */
+.sidebar-updates {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0 12px;
+}
+
+.update-notice {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--sello);
+  color: var(--on-sello);
+  font: 700 12.5px/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.update-notice:hover {
+  background: var(--sello-hover);
+}
+
+.update-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font: 600 12.5px/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.update-check svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.update-check:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--dim);
+}
+
+.update-check:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.update-check.is-busy svg {
+  animation: gc-giro 1s linear infinite;
+}
+
+@keyframes gc-giro {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.update-uptodate {
+  padding-left: 2px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+/* Almacenamiento: usado / límite con una barra fina (misma información que el anillo de antes). */
+.storage-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 10px 2px 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+  color: var(--paper);
+  text-align: left;
+  cursor: pointer;
+}
+
+.storage-indicator:hover .storage-limit {
+  color: var(--paper);
+}
+
+.storage-head {
+  display: flex;
+}
+
+.storage-figures {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.storage-used {
+  font: 600 13px/1.2 var(--font-mono);
+}
+
+.storage-limit {
+  font: 500 12px/1.2 var(--font-mono);
+  color: var(--dim);
+}
+
+.storage-meter {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.storage-meter i {
+  display: block;
+  height: 100%;
+  background: var(--paper);
+  transition: width 240ms ease;
+}
+
+.storage-indicator.is-full .storage-meter i {
+  background: var(--rec);
+}
+
+.storage-indicator.is-full .storage-used {
+  color: var(--rec);
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 2px;
+  border-top: 1px solid var(--rule);
+}
+
+.sidebar-user-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--paper);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-logout {
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--dim);
+  font: 400 12px/1.2 var(--font-ui);
+  cursor: pointer;
+}
+
+.sidebar-logout:hover {
+  color: var(--sello);
+  text-decoration: underline;
+}
+
+/* ── Modal de versión nueva (solo al arrancar) ─────────────────────────────── */
+
+.update-modal .gc-modal-body p {
+  margin: 0;
+}
+
+.update-modal .gc-modal-body strong {
+  color: var(--paper);
+}
+
+/* ── Barra superior (variante A) ───────────────────────────────────────────── */
+
+.capture-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 20px;
+  background: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  font-size: 14px;
+}
+
+.capture-bar > * {
+  flex: none;
+}
+
+.cap-game {
+  /* El nombre del juego manda: solo cede después del último clip. */
+  flex: 0 1 auto;
+  min-width: 56px;
+  max-width: 38%;
+  font-size: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cap-game.is-wait {
+  color: var(--dim);
+}
+
+.cap-tag {
+  padding: 2px 6px;
+  border: 1px solid var(--sello);
+  border-radius: 3px;
+  color: var(--sello);
+  font: 500 11px/1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.cap-state {
+  color: var(--dim);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.cap-state.is-rec {
+  color: var(--rec);
+  font-weight: 700;
+}
+
+.cap-error {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
+  color: var(--rec);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Último clip: lo primero que se recorta cuando falta sitio. */
+.capture-bar > .cap-last {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1000 1 280px;
+  min-width: 0;
+  color: var(--dim);
+  font: 500 12px/1.2 var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  justify-content: flex-end;
+}
+
+.cap-last svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.cap-last-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Botón dividido: «Guardar clip | 1 m ▾». */
+.cap-split {
+  display: inline-flex;
+  flex: none;
+}
+
+.cap-split-main {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--sello);
+  color: var(--on-sello);
+  font: 700 13px/1.2 var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cap-split-main:hover:not(:disabled) {
+  background: var(--sello-hover);
+}
+
+.cap-split-main:disabled,
+.cap-dur-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cap-dur {
+  position: relative;
+  display: inline-flex;
+}
+
+.cap-dur-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 0;
+  font: 600 12.5px/1.2 var(--font-mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cap-dur-split .cap-dur-btn {
+  border-left: 1px solid rgba(13, 14, 18, 0.25);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--sello);
+  color: var(--on-sello);
+}
+
+.cap-dur-split .cap-dur-btn:hover:not(:disabled) {
+  background: var(--sello-hover);
+}
+
+.cap-dur-split .cap-dur-btn.is-open {
+  background: #d9ad0f;
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+/* Sin «Guardar clip»: la duración queda como botón suelto, con filete. */
+.cap-dur-solo .cap-dur-btn {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+}
+
+.cap-dur-solo .cap-dur-btn:hover:not(:disabled),
+.cap-dur-solo .cap-dur-btn.is-open {
+  background: var(--page);
+  border-color: var(--dim);
+}
+
+.cap-chev {
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+
+.cap-dur-btn.is-open .cap-chev {
+  transform: rotate(180deg);
+}
+
+.cap-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 216px;
+  padding: 6px;
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.8);
+}
+
+.cap-menu-title {
+  padding: 5px 8px 4px;
+}
+
+.cap-menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  outline: none;
+}
+
+.cap-opt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font: 500 13px/1 var(--font-mono);
+  cursor: pointer;
+}
+
+.cap-opt.is-current {
+  font-weight: 700;
+}
+
+.cap-opt.is-active {
+  background: var(--page);
+  box-shadow: inset 2px 0 0 var(--sello);
+}
+
+.cap-opt-check {
+  color: var(--sello);
+  font: 700 13px/1 var(--font-ui);
+}
+
+.cap-menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 8px 6px;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: none;
+  color: var(--dim);
+  font: 400 12px/1.3 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cap-menu-foot b {
+  color: var(--sello);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cap-menu-foot:hover {
+  background: var(--page);
+  color: var(--paper);
+}
+
+.cap-menu-foot:hover b {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Grabar / Detener: botones de icono. */
+.cap-rec {
+  color: var(--rec);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-check.is-busy svg {
+    animation: none;
+  }
+
+  .storage-meter i {
+    transition: none;
+  }
+}
