@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Login from './Login';
 import Registro from './Registro';
+import logoUrl from '../assets/logo.svg';
 
 type Modo = 'login' | 'registro';
 
@@ -10,7 +11,10 @@ export default function AuthGate() {
   return (
     <div className="auth-gate">
       <div className="auth-card">
-        <div className="auth-brand">GameClip</div>
+        <div className="auth-brand">
+          <img src={logoUrl} alt="" draggable={false} />
+          <span className="gc-display">GameClip</span>
+        </div>
         {modo === 'login' ? <Login /> : <Registro />}
         <button
           type="button"

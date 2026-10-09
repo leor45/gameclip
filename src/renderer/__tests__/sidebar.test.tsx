@@ -50,8 +50,8 @@ function renderIndicador() {
   );
 }
 
-function anillo(): SVGCircleElement | null {
-  return document.querySelector('.storage-ring-value');
+function relleno(): HTMLElement | null {
+  return document.querySelector('.storage-meter i');
 }
 
 describe('Indicador de almacenamiento del sidebar', () => {
@@ -72,14 +72,12 @@ describe('Indicador de almacenamiento del sidebar', () => {
     expect(await screen.findByText('4 GB')).toBeInTheDocument();
   });
 
-  it('el anillo representa el porcentaje usado', async () => {
+  it('la barra representa el porcentaje usado', async () => {
     conAlmacenamiento(3, 0, 10); // 30 %
     renderIndicador();
     await screen.findByText('3 GB');
 
-    const circunferencia = 2 * Math.PI * 16;
-    const offset = Number(anillo()?.getAttribute('stroke-dashoffset'));
-    expect(offset).toBeCloseTo(circunferencia * 0.7, 1); // 70 % del anillo sin pintar
+    expect(parseFloat(relleno()?.style.width ?? '')).toBeCloseTo(30, 1);
   });
 
   it('sin límite muestra solo lo usado y no pinta progreso', async () => {
@@ -88,15 +86,15 @@ describe('Indicador de almacenamiento del sidebar', () => {
     renderIndicador();
 
     expect(await screen.findByText('Sin límite')).toBeInTheDocument();
-    expect(anillo()).toBeNull();
+    expect(relleno()).toBeNull();
   });
 
-  it('pasado del límite el anillo se completa y entra en alerta', async () => {
+  it('pasado del límite la barra se completa y entra en alerta', async () => {
     conAlmacenamiento(12, 0, 10);
     renderIndicador();
     await screen.findByText('12 GB');
 
-    expect(Number(anillo()?.getAttribute('stroke-dashoffset'))).toBe(0);
+    expect(parseFloat(relleno()?.style.width ?? '')).toBe(100);
     expect(document.querySelector('.storage-indicator')).toHaveClass('is-full');
   });
 
@@ -128,13 +126,11 @@ describe('Indicador de almacenamiento del sidebar', () => {
     renderIndicador();
     await screen.findByText('10 GB');
 
-    // El usuario sube el límite en Ajustes: el catálogo no cambia, pero el anillo sí.
+    // El usuario sube el límite en Ajustes: el catálogo no cambia, pero la barra sí.
     notificarAjustes({ ...DEFAULT_CAPTURE_SETTINGS, storageLimitGb: 50 });
 
     expect(await screen.findByText('50 GB')).toBeInTheDocument();
-    const circunferencia = 2 * Math.PI * 16;
-    const offset = Number(anillo()?.getAttribute('stroke-dashoffset'));
-    expect(offset).toBeCloseTo(circunferencia * (1 - 3 / 50), 1);
+    expect(parseFloat(relleno()?.style.width ?? '')).toBeCloseTo((3 / 50) * 100, 1);
   });
 
   it('lleva a Ajustes → Almacenamiento al pulsarlo', async () => {

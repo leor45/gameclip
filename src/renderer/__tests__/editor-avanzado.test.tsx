@@ -124,7 +124,9 @@ describe('EditorAvanzado — render', () => {
     // Antes: `rendering` quedaba en true para siempre (barra al 0 % y un Cancelar que no cancela nada).
     expect(await screen.findByText('El recorte debe durar al menos 0.5 s.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Progreso del render')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Renderizar vídeo' }).length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByRole('button', { name: 'Renderizar vídeo' }).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it('salir vuelve a la biblioteca', async () => {
@@ -1082,7 +1084,9 @@ describe('EditorAvanzado — clip aún sin duración en el catálogo (regresión
   }
 
   async function abrirSinDuracion() {
-    mock().library.get.mockResolvedValue(crearClip({ id: 7, title: 'Recién guardado', durationSeconds: null }));
+    mock().library.get.mockResolvedValue(
+      crearClip({ id: 7, title: 'Recién guardado', durationSeconds: null }),
+    );
     renderEA();
     await screen.findByText(/Recién guardado/);
   }
@@ -1115,5 +1119,109 @@ describe('EditorAvanzado — clip aún sin duración en el catálogo (regresión
     cargarVideo(60);
     expect(await screen.findByText(/2 segmentos/)).toBeInTheDocument();
     localStorage.removeItem(DRAFT_KEY);
+  });
+});
+
+describe('EditorAvanzado — acciones y atajos tras el rediseño «Portada oscura»', () => {
+  function seekRuler(clientX: number) {
+    fireEvent.pointerDown(screen.getByLabelText('Posición de reproducción'), { clientX });
+  }
+
+  it('la barra de herramientas conserva todas sus acciones con su nombre accesible', async () => {
+    await prepararClip();
+    for (const nombre of [
+      'Reproducir',
+      'Detener',
+      'Dividir',
+      'Borrar segmento',
+      'Deshacer',
+      'Rehacer',
+      'Restablecer',
+      'Alejar',
+      'Acercar',
+      'Capturar fotograma',
+      'Salir',
+      'Renderizar vídeo',
+    ]) {
+      expect(screen.getByRole('button', { name: nombre })).toBeInTheDocument();
+    }
+  });
+
+  it('la barra superior lleva el icono del juego y el título del clip', async () => {
+    await prepararClip();
+    expect(document.querySelector('.eav-topbar .gc-icon')).not.toBeNull();
+    expect(screen.getByRole('heading', { name: /Jugada épica/ })).toBeInTheDocument();
+  });
+
+  it('los controles de encuadre siguen siendo botones con aria-pressed', async () => {
+    await prepararClip();
+    const original = screen.getByRole('button', { name: 'Original' });
+    expect(original).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '9:16' }));
+    expect(screen.getByRole('button', { name: '9:16' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Recorte' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Barras' })).toBeInTheDocument();
+  });
+
+  it('atajos: S divide, Ctrl+Z deshace, Ctrl+Y rehace y Supr borra el segmento elegido', async () => {
+    await prepararClip();
+    seekRuler(240); // 10 s
+    fireEvent.keyDown(window, { key: 's' });
+    expect(screen.getByText(/2 segmentos/)).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    expect(screen.queryByText(/segmentos/)).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'y', ctrlKey: true });
+    expect(screen.getByText(/2 segmentos/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Segmento 1/ }));
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(screen.queryByText(/segmentos/)).not.toBeInTheDocument();
+  });
+
+  it('la pista eliminada se atenúa con su nota y se puede restaurar', async () => {
+    await prepararClip();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar mic' }));
+    expect(document.querySelector('.eav-track.is-removed')).not.toBeNull();
+    expect(screen.getByText(/no entra en el render/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurar mic' }));
+    expect(document.querySelector('.eav-track.is-removed')).toBeNull();
+  });
+});
+
+describe('RenderDialog — cierre con clic fuera', () => {
+  it('sin renderizar, el clic en el fondo cierra el diálogo', async () => {
+    await prepararClip();
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    expect(screen.getByRole('dialog', { name: 'Renderizar vídeo' })).toBeInTheDocument();
+    fireEvent.click(document.querySelector('.gc-modal-backdrop') as HTMLElement);
+    expect(screen.queryByRole('dialog', { name: 'Renderizar vídeo' })).not.toBeInTheDocument();
+  });
+
+  it('mientras renderiza, el clic en el fondo NO lo cierra y se ofrece Cancelar', async () => {
+    await prepararClip();
+    mock().exporter.run.mockReturnValue(new Promise(() => undefined)); // render en curso
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const botones = screen.getAllByRole('button', { name: 'Renderizar vídeo' });
+    fireEvent.click(botones[botones.length - 1]);
+
+    expect(await screen.findByLabelText('Progreso del render')).toBeInTheDocument();
+    fireEvent.click(document.querySelector('.gc-modal-backdrop') as HTMLElement);
+    expect(screen.getByRole('dialog', { name: 'Renderizar vídeo' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Progreso del render')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(mock().exporter.cancel).toHaveBeenCalled();
+  });
+
+  it('la calidad se elige con radios de un mismo grupo (tarjetas-radio)', async () => {
+    await prepararClip();
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const radios = screen.getAllByRole('radio');
+    expect(radios).toHaveLength(3);
+    expect(screen.getByRole('radio', { name: /Media/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: /Alta/ }));
+    expect(screen.getByRole('radio', { name: /Alta/ })).toBeChecked();
   });
 });

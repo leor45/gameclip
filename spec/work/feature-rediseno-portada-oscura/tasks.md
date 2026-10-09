@@ -19,7 +19,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [ ] 10. Lateral y barra superior (variante A, menú de duración con enlace a General, estados de actualización).
 - [ ] 11. Biblioteca (grupos por fecha, panel reproductor, filas, teclado, filtro propio, acciones, modales de eliminar).
 - [ ] 12. Ajustes (pie fijo, 8 secciones, iconos en listas y mezcla, llegada a General con foco, modal HDR main + renderer).
-- [ ] 13. Editor y acceso (sin clip, básico, avanzado, render, login, registro).
+- [x] 13. Editor y acceso (sin clip, básico, avanzado, render, login, registro).
 
 ## Tests unitarios (obligatorios)
 
@@ -30,7 +30,7 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [ ] Barra superior: texto de estado solo fuera de «Buffer activo»; menú de duración (opciones, valor fuera de lista, aplicar, Esc); enlace a General.
 - [ ] Biblioteca: agrupación por fecha (bordes de día, semana, mes); panel abre/cierra/navega; Intro abre el editor; filtro con contadores, orden y buscador; modal de eliminar (cancelar, confirmar, error).
 - [ ] Ajustes: pie fijo presente en las 8 secciones; llegada a General enfoca la duración; modal HDR responde `now`/`later`; respaldo nativo sin ventana o sin respuesta.
-- [ ] Editor: acciones y atajos intactos tras el restyle.
+- [x] Editor: acciones y atajos intactos tras el restyle.
 
 ## Verificación (gates)
 
