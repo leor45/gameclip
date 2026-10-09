@@ -274,6 +274,11 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Un contenedor con scroll recorta lo que sale de su caja: sin margen a la izquierda, el filete
+     amarillo de la tarjeta apuntada (2 px por fuera de la miniatura) se cortaba en la primera columna.
+     El margen interior se compensa con uno negativo: la cuadrícula no se mueve. */
+  padding-left: 4px;
+  margin-left: -4px;
   padding-right: 6px;
 }
 
