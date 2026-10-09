@@ -119,6 +119,35 @@ export function nextKeptTime(segments: Segment[], t: number): number | null {
   return null; // pasado el último segmento
 }
 
+/**
+ * Recorta (o devuelve tiempo a) el borde de un trozo, como en DaVinci: el `start` no baja del fin del
+ * trozo anterior (ni de 0) ni deja el trozo por debajo de `MIN_TRIM_SECONDS`; el `end` no pasa del
+ * inicio del siguiente (ni de `duration`). Los demás trozos no cambian. Sin cambio o con un índice
+ * inválido, devuelve la misma lista (misma referencia).
+ */
+export function trimSegmentEdge(
+  segments: Segment[],
+  index: number,
+  side: 'start' | 'end',
+  value: number,
+  duration: number,
+): Segment[] {
+  const s = segments[index];
+  if (!s) return segments;
+  let next: Segment;
+  if (side === 'start') {
+    const piso = index > 0 ? segments[index - 1].end : 0;
+    const tope = Math.max(piso, s.end - MIN_TRIM_SECONDS);
+    next = { start: Math.max(piso, Math.min(value, tope)), end: s.end };
+  } else {
+    const tope = index < segments.length - 1 ? segments[index + 1].start : duration;
+    const piso = Math.min(tope, s.start + MIN_TRIM_SECONDS);
+    next = { start: s.start, end: Math.min(tope, Math.max(value, piso)) };
+  }
+  if (next.start === s.start && next.end === s.end) return segments;
+  return segments.map((seg, i) => (i === index ? next : seg));
+}
+
 /** Mueve el inicio del recorte (borde del primer segmento), sin cruzar su fin (deja el mínimo). */
 export function setSegmentsStart(segments: Segment[], value: number, duration: number): Segment[] {
   const first = segments[0];

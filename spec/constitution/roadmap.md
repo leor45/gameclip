@@ -1574,6 +1574,17 @@ Tras un día de uso del build de prueba. Maqueta: https://claude.ai/artifact/VWn
 - [x] Reproductor propio: posición con arrastre y hora al pasar el ratón, ±10 s, volumen, velocidad, imagen
       en imagen y pantalla completa; teclado ← → (±5 s), J L (±10 s), Espacio/K, M, F.
 
+## Editor avanzado: timeline por trozos (2026-10-09) — ✅ entregado en `feature/editor-avanzado-timeline` (pendiente de merge)
+
+Maqueta: https://claude.ai/artifact/4wraWefCYqivnXti8XFYok
+
+- [x] Cada segmento conservado es un bloque propio en todas las pistas (vídeo y audio), separado del
+      siguiente; el seleccionado se marca en todas. Fotogramas y onda de su propio tramo.
+- [x] Recortar por los bordes de cualquier trozo (ratón y teclado, sin cruzar al vecino, mínimo 0,5 s,
+      un paso de deshacer por arrastre). `trimSegmentEdge` en `shared/timeline.ts`.
+- [x] Cabeceras en su columna (icono por rol, nombre, volumen 0–200 % visible, quitar/restaurar) y barra
+      de herramientas con iconos dibujados, como la maqueta aprobada del rediseño.
+
 ## Resueltos fuera del código
 
 ### ✅ Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2) — ya no es un bug

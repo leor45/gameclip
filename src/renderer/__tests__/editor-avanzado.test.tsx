@@ -1183,10 +1183,10 @@ describe('EditorAvanzado — acciones y atajos tras el rediseño «Portada oscur
   it('la pista eliminada se atenúa con su nota y se puede restaurar', async () => {
     await prepararClip();
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar mic' }));
-    expect(document.querySelector('.eav-track.is-removed')).not.toBeNull();
+    expect(document.querySelector('.eav-track-head.is-removed')).not.toBeNull();
     expect(screen.getByText(/no entra en el render/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Restaurar mic' }));
-    expect(document.querySelector('.eav-track.is-removed')).toBeNull();
+    expect(document.querySelector('.eav-track-head.is-removed')).toBeNull();
   });
 });
 
@@ -1223,5 +1223,87 @@ describe('RenderDialog — cierre con clic fuera', () => {
     expect(screen.getByRole('radio', { name: /Media/ })).toBeChecked();
     fireEvent.click(screen.getByRole('radio', { name: /Alta/ }));
     expect(screen.getByRole('radio', { name: /Alta/ })).toBeChecked();
+  });
+});
+
+describe('EditorAvanzado — timeline por trozos (tipo DaVinci)', () => {
+  function seekRuler(clientX: number) {
+    fireEvent.pointerDown(screen.getByLabelText('Posición de reproducción'), { clientX });
+  }
+  /** Bloques (trozos) de cada pista, en orden: vídeo primero y luego las de audio. */
+  function bloquesPorPista(): Element[][] {
+    return Array.from(document.querySelectorAll('.eav-lane')).map((l) =>
+      Array.from(l.querySelectorAll('.eav-clip')),
+    );
+  }
+
+  it('al dividir, cada pista (vídeo y audio) muestra un bloque por trozo', async () => {
+    await prepararClip(); // 60 s; pistas game y mic
+    expect(bloquesPorPista().map((b) => b.length)).toEqual([1, 1, 1]);
+    seekRuler(240); // 10 s
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    expect(bloquesPorPista().map((b) => b.length)).toEqual([2, 2, 2]);
+  });
+
+  it('el trozo seleccionado se marca en todas las pistas a la vez', async () => {
+    await prepararClip();
+    seekRuler(240);
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Segmento 2' }));
+    for (const bloques of bloquesPorPista()) {
+      expect(bloques[0]).not.toHaveClass('is-selected');
+      expect(bloques[1]).toHaveClass('is-selected');
+    }
+  });
+
+  it('recortar con el teclado el inicio de un trozo intermedio cambia solo ese trozo; deshacer lo revierte', async () => {
+    await prepararClip();
+    seekRuler(240); // 10 s
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    seekRuler(720); // 30 s
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    // [0,10] [10,30] [30,60]: el inicio del 2.º avanza 2 s (Mayús + → dos veces).
+    const asa = screen.getByRole('slider', { name: 'Inicio del segmento 2' });
+    fireEvent.keyDown(asa, { key: 'ArrowRight', shiftKey: true });
+    fireEvent.keyDown(asa, { key: 'ArrowRight', shiftKey: true });
+    expect(screen.getByRole('slider', { name: 'Inicio del segmento 2' })).toHaveAttribute(
+      'aria-valuenow',
+      '12',
+    );
+    expect(screen.getByRole('slider', { name: 'Fin del segmento 1' })).toHaveAttribute(
+      'aria-valuenow',
+      '10',
+    );
+    expect(screen.getByRole('slider', { name: 'Inicio del segmento 3' })).toHaveAttribute(
+      'aria-valuenow',
+      '30',
+    );
+    // La duración de salida pierde esos 2 s.
+    expect(screen.getByText(/Duración: 0:58/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deshacer' }));
+    expect(screen.getByRole('slider', { name: 'Inicio del segmento 2' })).toHaveAttribute(
+      'aria-valuenow',
+      '11',
+    );
+  });
+
+  it('el borde nunca cruza al trozo vecino', async () => {
+    await prepararClip();
+    seekRuler(240);
+    fireEvent.click(screen.getByRole('button', { name: 'Dividir' }));
+    // El fin del 1.º no puede pasar del inicio del 2.º (10 s): ya está pegado.
+    const asa = screen.getByRole('slider', { name: 'Fin del segmento 1' });
+    fireEvent.keyDown(asa, { key: 'ArrowRight', shiftKey: true });
+    expect(screen.getByRole('slider', { name: 'Fin del segmento 1' })).toHaveAttribute(
+      'aria-valuenow',
+      '10',
+    );
+  });
+
+  it('la cabecera de cada pista muestra su volumen y lo cambia', async () => {
+    await prepararClip();
+    fireEvent.change(screen.getByLabelText('Volumen de mic'), { target: { value: '150' } });
+    expect(screen.getByText('150%')).toHaveClass('is-loud');
   });
 });
