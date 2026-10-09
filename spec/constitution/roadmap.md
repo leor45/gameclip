@@ -1267,6 +1267,14 @@ Elegir el mismo `.mp4` como destino del recorte hacía que ffmpeg abortara y que
 eliminara el clip original (sin papelera). `ExportManager` rechaza ahora ese destino antes de lanzar
 ffmpeg y nunca borra un parcial que sea la propia entrada.
 
+### 🐞 Ajustes que se pierden o se pisan — ✅ entregado (`fix/ajustes-se-pisan`, 2026-10-08)
+
+Dos fallos: los ajustes guardados durante una grabación no se aplicaban nunca (`setSettings` saltaba
+el rebuild sin dejarlo pendiente), y cada sección de Ajustes guardaba su copia entera cargada al
+abrirse, pisando lo cambiado mientras tanto por otras vías (duración desde la barra superior, atajo
+del overlay, reversión del auto-inicio elevado). Ahora el rebuild queda pendiente para el final de la
+grabación y cada sección manda solo lo editado y sigue `settings:changed` en lo demás.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

@@ -345,8 +345,7 @@ describe('Ajustes — Avanzado', () => {
     await user.click(casilla);
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
-    expect(mock().capture.setSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ screenshotHdrCompatibility: false, hdrCompatibility: false }),
-    );
+    expect(mock().capture.setSettings).toHaveBeenCalledWith({ screenshotHdrCompatibility: false });
+    // La de vídeo ni se envía: guardar solo manda lo que se tocó en la sección.
   });
 });

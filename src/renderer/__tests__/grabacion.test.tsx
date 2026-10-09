@@ -209,10 +209,8 @@ describe('Ajustes — Grabación', () => {
     expect(mock().capture.setSettings).toHaveBeenCalledWith(
       expect.objectContaining({ screenshotMonitorIndex: 1 }),
     );
-    // El monitor de grabación no se toca: son ajustes independientes.
-    expect(mock().capture.setSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ screenMonitorIndex: DEFAULT_CAPTURE_SETTINGS.screenMonitorIndex }),
-    );
+    // El monitor de grabación no se toca: son ajustes independientes (ni siquiera se envía).
+    expect(mock().capture.setSettings.mock.calls[0][0]).not.toHaveProperty('screenMonitorIndex');
   });
 
   it('el selector de capturas NO depende de la grabación de escritorio', async () => {
