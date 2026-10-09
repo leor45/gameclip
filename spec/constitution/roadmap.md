@@ -1239,7 +1239,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
-## Auditoría bug-hunter (2026-10-08)
+## Auditoría bug-hunter (2026-10-08) — ✅ publicado en v0.9.5 (portable)
 
 > Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
