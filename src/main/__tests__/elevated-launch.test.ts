@@ -93,6 +93,38 @@ describe('ElevatedAutoLaunch', () => {
     expect(elevatedTaskMatches(xml, 'C:\\Game Clip\\GameClip.exe')).toBe(true);
     expect(elevatedTaskMatches(xml, 'C:\\Game Clip\\GameClip-actualizado.exe')).toBe(false);
   });
+
+  describe('XML real de schtasks (regresión: la tarea nunca coincidía y se recreaba en cada arranque)', () => {
+    // Copiado de `schtasks /Query /TN GameClipAutoStart /XML` en la máquina del owner: schtasks guarda
+    // la ruta ENTRECOMILLADA, tal como la crea schtasksCreateArgs.
+    const real =
+      '<Task><Actions Context="Author"><Exec>\r\n' +
+      '      <Command>"D:\\Projects\\gameclip\\release\\GameClip-0.9.4-portable.exe"</Command>\r\n' +
+      '      <Arguments>--hidden</Arguments>\r\n' +
+      '    </Exec></Actions></Task>';
+    const exe = 'D:\\Projects\\gameclip\\release\\GameClip-0.9.4-portable.exe';
+
+    it('reconoce la tarea aunque la ruta venga entre comillas', () => {
+      expect(elevatedTaskMatches(real, exe)).toBe(true);
+    });
+
+    it('decodifica entidades XML y no distingue mayúsculas (rutas de Windows)', () => {
+      const conAmp = real.replace('gameclip\\release', 'juegos &amp; clips');
+      expect(elevatedTaskMatches(conAmp, 'D:\\Projects\\juegos & clips\\GameClip-0.9.4-portable.exe')).toBe(true);
+      expect(elevatedTaskMatches(real, exe.toLowerCase())).toBe(true);
+    });
+
+    it('otra versión del portable sigue sin coincidir', () => {
+      expect(elevatedTaskMatches(real, exe.replace('0.9.4', '0.9.5'))).toBe(false);
+    });
+
+    it('ensureEnabled con la tarea real correcta no eleva', async () => {
+      const run = vi.fn();
+      const launcher = new ElevatedAutoLaunch({ run, query: vi.fn().mockResolvedValue(real) });
+      await expect(launcher.ensureEnabled(exe)).resolves.toBe(true);
+      expect(run).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('ElevationRelaunch', () => {

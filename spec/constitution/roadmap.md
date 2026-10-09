@@ -1239,6 +1239,19 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
+## Auditoría bug-hunter (2026-10-08)
+
+> Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
+> 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
+> en una rama de integración temporal antes de mergear cada uno a `main`.
+
+### 🐞 La tarea de auto-inicio elevado se recreaba en cada arranque — 🧪 en rama (`fix/tarea-elevada-comillas`)
+
+`elevatedTaskMatches` comparaba el `<Command>` del XML con la ruta sin comillas, pero schtasks lo
+guarda entrecomillado (verificado con la tarea real): nunca coincidía, la tarea se recreaba elevando en
+cada arranque y, si se cancelaba el UAC del relanzado, se pedía un segundo UAC. Ahora el valor se
+normaliza (comillas, entidades XML, mayúsculas) antes de comparar.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

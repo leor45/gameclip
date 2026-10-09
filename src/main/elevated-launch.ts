@@ -22,12 +22,32 @@ export function schtasksDeleteArgs(): string {
   return `/Delete /TN ${ELEVATED_TASK_NAME} /F`;
 }
 
-/** La tarea correcta tiene que lanzar exactamente el portable actual y arrancar en bandeja. */
+/**
+ * Valor de un nodo del XML de schtasks tal como lo escribimos: entidades decodificadas, sin espacios
+ * alrededor y sin el par de comillas que envuelve la ruta (schtasks la guarda entrecomillada, igual
+ * que la pasa `schtasksCreateArgs`).
+ */
+function valorXml(raw: string | undefined): string {
+  const texto = (raw ?? '')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .trim();
+  return texto.length >= 2 && texto.startsWith('"') && texto.endsWith('"') ? texto.slice(1, -1) : texto;
+}
+
+/**
+ * La tarea correcta tiene que lanzar exactamente el portable actual y arrancar en bandeja. La ruta se
+ * compara sin comillas ni mayúsculas: antes se comparaba en crudo con la ruta sin comillas, la tarea
+ * real nunca coincidía y se recreaba (elevando) en cada arranque.
+ */
 export function elevatedTaskMatches(taskXml: string | null, exePath: string): boolean {
   if (!taskXml) return false;
-  const command = taskXml.match(/<Command>([^<]*)<\/Command>/i)?.[1];
-  const arguments_ = taskXml.match(/<Arguments>([^<]*)<\/Arguments>/i)?.[1];
-  return command === exePath && arguments_ === '--hidden';
+  const command = valorXml(taskXml.match(/<Command>([^<]*)<\/Command>/i)?.[1]);
+  const arguments_ = valorXml(taskXml.match(/<Arguments>([^<]*)<\/Arguments>/i)?.[1]);
+  return command.toLowerCase() === exePath.toLowerCase() && arguments_ === '--hidden';
 }
 
 /**
