@@ -43,8 +43,12 @@ export function useThumbnailer(clips: Clip[] | null, extraer: ExtraerMedia = ext
         setIntento((n) => n + 1);
         return;
       }
-      // Duración sí, miniatura no: el clip seguiría pendiente y se reextraería en cada recarga.
-      if (!media.thumbnailDataUrl) fallidos.current.add(pendiente.id);
+      // Duración sí, miniatura no —o miniatura sí pero duración no finita (MKV cortado, MP4
+      // fragmentado), que el main descarta—: el clip seguiría pendiente y se reextraería en cada
+      // recarga, bloqueando a los de detrás.
+      if (!media.thumbnailDataUrl || !Number.isFinite(media.durationSeconds)) {
+        fallidos.current.add(pendiente.id);
+      }
       window.gameclip.library.setMedia(pendiente.id, media).catch(() => {
         // el clip pudo borrarse mientras se generaba
       });

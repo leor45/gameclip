@@ -26,4 +26,30 @@ describe('useThumbnailer (regresión: un clip ilegible bloqueaba las miniaturas 
     );
     expect(mock().library.setMedia).not.toHaveBeenCalledWith(1, expect.anything());
   });
+
+  it('un vídeo sin duración (Infinity) guarda su miniatura pero no se reextrae en cada recarga', async () => {
+    // MKV cortado o MP4 fragmentado: hay miniatura, pero el main descarta la duración no finita y
+    // el clip sigue «pendiente». Antes se reextraía en cada recarga y bloqueaba a los de detrás.
+    const sinDuracion = crearClip({ id: 1, durationSeconds: null, thumbnailPath: null });
+    const bueno = crearClip({ id: 2, durationSeconds: null, thumbnailPath: null });
+    const extraer = vi.fn((clip: { id: number }) =>
+      Promise.resolve({
+        durationSeconds: clip.id === 1 ? Infinity : 12,
+        thumbnailDataUrl: 'data:image/jpeg;base64,AA',
+      }),
+    );
+
+    const { rerender } = renderHook(({ clips }) => useThumbnailer(clips, extraer), {
+      initialProps: { clips: [sinDuracion, bueno] },
+    });
+    await waitFor(() => expect(mock().library.setMedia).toHaveBeenCalledWith(1, expect.anything()));
+
+    // La recarga tras `changed`: el clip 1 sigue sin duración en el catálogo.
+    rerender({ clips: [{ ...sinDuracion }, { ...bueno }] });
+
+    await waitFor(() =>
+      expect(mock().library.setMedia).toHaveBeenCalledWith(2, expect.objectContaining({ durationSeconds: 12 })),
+    );
+    expect(extraer.mock.calls.filter(([c]) => c.id === 1)).toHaveLength(1);
+  });
 });
