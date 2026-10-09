@@ -202,6 +202,9 @@
 
 .storage-meter {
   display: block;
+  /* Dentro de un <button> flex la barra no se estira sola: sin ancho explícito medía 0 px. */
+  align-self: stretch;
+  width: 100%;
   height: 4px;
   border-radius: 2px;
   background: var(--rule);
@@ -467,7 +470,7 @@
   z-index: 40;
   top: calc(100% + 6px);
   right: 0;
-  width: 216px;
+  width: 248px;
   padding: 6px;
   background: var(--raise);
   border: 1px solid var(--rule);
@@ -514,6 +517,7 @@
 
 .cap-menu-foot {
   display: flex;
+  white-space: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -547,7 +551,8 @@
 }
 
 /* Grabar / Detener: botones de icono. */
-.cap-rec {
+/* Con .gc-btn.ghost delante (más específica) el círculo salía blanco: se sube la especificidad. */
+.gc-btn.cap-rec {
   color: var(--rec);
 }
 
