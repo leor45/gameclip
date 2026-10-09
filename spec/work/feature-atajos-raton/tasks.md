@@ -29,12 +29,12 @@
 - [x] Comprobación con la app real y `SendInput` (2026-10-08): `Mouse4` → clip guardado con la app
       delante y en segundo plano; `Ctrl+Mouse5` → captura, `Mouse5` solo → nada; encender y apagar
       el PTT no deja sin hook a los atajos de ratón.
-- [ ] Pulsación con el ratón físico del owner (pendiente de su prueba).
+- [x] Pulsación con el ratón físico del owner: funciona (confirmado por el owner, 2026-10-09).
 - [x] Comprobación con la app real: Biblioteca → Ajustes y «atrás» (XBUTTON1) → sigue en Ajustes;
       «adelante» con historial disponible → no navega. Sin el `mouseup` prevenido, navegaba.
 
 ## Cierre
 
-- [ ] Aprobación del owner
+- [x] Aprobación del owner (2026-10-09)
 - [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [ ] `spec/constitution/roadmap.md` actualizado
