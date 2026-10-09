@@ -1290,6 +1290,13 @@ ruta relativa que salía de la carpeta), y los clips de escritorio se catalogaba
 ventana en primer plano (confirmado por el owner). Ahora el re-etiquetado ignora los clips de fuera de
 la carpeta actual y el juego de un clip guardado sale solo de la detección (sin ella, «Sin juego»).
 
+### 🐞 La tarea de auto-inicio elevado se recreaba en cada arranque — ✅ entregado (`fix/tarea-elevada-comillas`, 2026-10-08)
+
+`elevatedTaskMatches` comparaba el `<Command>` del XML con la ruta sin comillas, pero schtasks lo
+guarda entrecomillado (verificado con la tarea real): nunca coincidía, la tarea se recreaba elevando en
+cada arranque y, si se cancelaba el UAC del relanzado, se pedía un segundo UAC. Ahora el valor se
+normaliza (comillas, entidades XML, mayúsculas) antes de comparar.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
