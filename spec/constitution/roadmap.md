@@ -1406,7 +1406,7 @@ del fabricante como teclas, que ya sirven como atajo de teclado. Acordes de mand
 segundo plano, `Ctrl+Mouse5` captura y `Mouse5` solo no, sin navegación con historial disponible,
 PTT encendido y apagado sin perder el hook) y ratón físico del owner.
 
-## Tandas C y D de bug-hunter (2026-10-09) — ✅ integradas en `main`, pendientes de publicar (v0.9.8)
+## Tandas C y D de bug-hunter (2026-10-09) — ✅ publicadas en v0.9.8 (portable)
 
 Dos auditorías seguidas: la **C** sobre `src/` completo tras la v0.9.7 y la **D**, sobre la integración
 de la C y con el alcance ampliado al repo entero (`src/`, `server/`, `native/`, scripts y configs). 25
@@ -1477,7 +1477,7 @@ arranque con la biblioteca real (229 clips intactos) y la caché de juegos byte 
 español (ź, ł…) en el nombre del exe hay que volver a elegirlos en **Ajustes → Grabación**; los acentos
 españoles y los nombres en japonés/chino siguen funcionando.
 
-## Tanda E — los preexistentes de la tanda D (2026-10-09) — ✅ integrada en `main`, pendiente de publicar (v0.9.8)
+## Tanda E — los preexistentes de la tanda D (2026-10-09) — ✅ publicada en v0.9.8 (portable)
 
 Los ocho hallazgos que salieron al revisar la tanda D (no los había introducido ningún arreglo: pasaban
 igual en la v0.9.7). Cinco ramas, todas con test de regresión en rojo antes del arreglo. Suite: 1212 →

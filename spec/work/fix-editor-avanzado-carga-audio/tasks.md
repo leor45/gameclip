@@ -30,9 +30,10 @@
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Comprobación manual en la app: mover un volumen durante «Cargando audio…», ■ durante la carga
+- [x] Aprobación del owner
+- [ ] *(No hecha: la cubren los 13 tests jsdom nuevos; queda pendiente de probar a mano.)*
+      Comprobación manual en la app: mover un volumen durante «Cargando audio…», ■ durante la carga
       y ▶ con el cursor parado en un hueco (con y sin audio en vivo)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md`: entrada entregada en la tanda D y quitar los hallazgos 2, 3 y 4
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md`: entrada entregada en la tanda D y quitar los hallazgos 2, 3 y 4
       de «Hallazgos preexistentes de la tanda D» (se hace en la integración para no pisar otras ramas)

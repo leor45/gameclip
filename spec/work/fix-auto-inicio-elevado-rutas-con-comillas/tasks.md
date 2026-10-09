@@ -26,7 +26,7 @@
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado (lo hace quien integra la tanda: la lista de pendientes
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado (lo hace quien integra la tanda: la lista de pendientes
       es compartida entre ramas y el cambio chocaría)
