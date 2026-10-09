@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Clip } from '@shared/library';
 import { formatDuration } from '@shared/library';
-import type { ExportQuality } from '@shared/export';
+import type { ExportQuality, ExportResult } from '@shared/export';
 import type { ClipAudioTrack, TrackVolumes, TrackWaveform } from '@shared/tracks';
 import { mutedToVolumes, selectableTracks, trackGain, trackKey, trackLabel } from '@shared/tracks';
 import {
@@ -558,21 +558,29 @@ export default function EditorAvanzado() {
       const k = trackKey(t);
       trackVolumes[k] = effectiveGain(trackGain(volumes, k), removed.has(k));
     }
-    const res = await window.gameclip.exporter.run({
-      clipId: clip.id,
-      startSeconds: segments[0].start,
-      endSeconds: segments[segments.length - 1].end,
-      format: 'mp4',
-      quality,
-      trackVolumes,
-      // Solo se mandan segmentos si hay cortes (2+); con uno, el rango simple basta.
-      ...(segments.length >= 2 ? { segments } : {}),
-      // Reencuadre (Fase 4): solo si reencuadra de verdad y conocemos las dimensiones de la fuente.
-      ...(hasReframe(reframe) && sourceDims
-        ? { reframe, sourceWidth: sourceDims.w, sourceHeight: sourceDims.h }
-        : {}),
-    });
-    setRendering(false);
+    let res: ExportResult;
+    try {
+      res = await window.gameclip.exporter.run({
+        clipId: clip.id,
+        startSeconds: segments[0].start,
+        endSeconds: segments[segments.length - 1].end,
+        format: 'mp4',
+        quality,
+        trackVolumes,
+        // Solo se mandan segmentos si hay cortes (2+); con uno, el rango simple basta.
+        ...(segments.length >= 2 ? { segments } : {}),
+        // Reencuadre (Fase 4): solo si reencuadra de verdad y conocemos las dimensiones de la fuente.
+        ...(hasReframe(reframe) && sourceDims
+          ? { reframe, sourceWidth: sourceDims.w, sourceHeight: sourceDims.h }
+          : {}),
+      });
+    } catch (err) {
+      // Un rechazo del IPC (pedido inválido, canal caído) no puede dejar el modal en «renderizando»
+      // con un Cancelar que no cancela nada: se trata como un error más.
+      res = { status: 'error', message: err instanceof Error ? err.message : String(err) };
+    } finally {
+      setRendering(false);
+    }
     if (res.status === 'done') {
       setShowRender(false);
       setDone(true);

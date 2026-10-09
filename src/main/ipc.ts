@@ -6,7 +6,7 @@ import { IpcChannel } from '@shared/ipc';
 import type { CaptureFrameResult, IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings, type CaptureSettings } from '@shared/capture';
 import { normalizePerfOverlay, type PerfOverlayConfig } from '@shared/perf';
-import { normalizeExportRequest, type ExportResult } from '@shared/export';
+import { normalizeExportRequest, type ExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
 import {
   activeTrackIndexes,
@@ -197,7 +197,14 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IpcChannel.ExportRun,
     async (event, rawRequest: unknown): Promise<ExportResult> => {
-      const request = normalizeExportRequest(rawRequest);
+      // Un pedido inválido es un resultado, no una excepción: si el handler lanza, el `invoke` del
+      // renderer rechaza y los editores se quedaban en «exportando» para siempre.
+      let request: ExportRequest;
+      try {
+        request = normalizeExportRequest(rawRequest);
+      } catch (err) {
+        return { status: 'error', message: err instanceof Error ? err.message : String(err) };
+      }
       const clip = lib.getClip(request.clipId);
       if (!clip) return { status: 'error', message: 'El clip ya no existe.' };
       if (exporter.isBusy) {
