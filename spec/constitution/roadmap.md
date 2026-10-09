@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🐞 GOG Galaxy detectado como «REDLauncher» — 🧪 en rama (`fix/deteccion-falsos-positivos`)
+### 🐞 GOG Galaxy detectado como «REDLauncher» — ✅ entregado (`fix/deteccion-falsos-positivos`, 2026-10-08)
 
 La fuente del registro admitía a REDlauncher por ser de CD Projekt RED, y su carpeta aportaba al
 índice el `QtWebEngineProcess.exe` que también lanza GOG Galaxy. Ahora los launchers/actualizadores
