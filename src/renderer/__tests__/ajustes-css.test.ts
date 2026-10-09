@@ -53,3 +53,26 @@ describe('Ajustes: pie fijo con scroll propio', () => {
     expect(rule('.settings-savebar')).toMatch(/flex:\s*none/);
   });
 });
+
+describe('Ajustes: filas «grupo | controles» solo en pantalla ancha', () => {
+  const bloque = css.match(/@container ajustes \(min-width: (\d+)px\) \{([\s\S]*)\}\s*$/);
+
+  it('el formulario es el contenedor que se mide (no la ventana)', () => {
+    expect(rule('.settings-form')).toMatch(/container:\s*ajustes \/ inline-size/);
+  });
+
+  it('por debajo del umbral no cambia nada: las filas viven solo dentro de la container query', () => {
+    expect(bloque).not.toBeNull();
+    expect(Number(bloque![1])).toBeGreaterThanOrEqual(1100);
+    expect(rule('.settings-form fieldset')).toMatch(/display:\s*flex/);
+  });
+
+  it('en ancho: grupo a la izquierda, controles a la derecha, columna centrada y pie alineado', () => {
+    const dentro = bloque![2];
+    expect(dentro).toMatch(/\.settings-form fieldset \{[^}]*grid-template-columns:\s*\d+px minmax\(0, 1fr\)/);
+    expect(dentro).toMatch(/fieldset > legend \{[^}]*grid-column:\s*1/);
+    expect(dentro).toMatch(/fieldset > :not\(legend\) \{[^}]*grid-column:\s*2/);
+    expect(dentro).toMatch(/\.settings-body \{[^}]*margin-inline:\s*auto/);
+    expect(dentro).toMatch(/\.settings-savebar \{[^}]*padding-inline:\s*max\(/);
+  });
+});

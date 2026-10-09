@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import Biblioteca from '../views/Biblioteca';
+import Biblioteca, { SALIDA_MS } from '../views/Biblioteca';
 import { crearClip } from './helpers';
 import { resetWindowFocus } from '../lib/windowFocus';
 import { crearGameclipMock } from './setup';
@@ -15,6 +15,14 @@ function matchMediaFalso(reduce: boolean) {
 }
 
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
+
+/**
+ * Con movimiento (matchMedia sin «reducir»), cerrar el panel espera al fundido de salida
+ * (SALIDA_MS) antes de volver a la cuadrícula.
+ */
+async function esperarCierre() {
+  await act(() => new Promise((r) => setTimeout(r, SALIDA_MS + 30)));
+}
 
 function mock(): GameclipMock {
   return window.gameclip as unknown as GameclipMock;
@@ -652,6 +660,43 @@ describe('Biblioteca — panel reproductor', () => {
     return panel('Primero');
   }
 
+  it('la flecha atrás aparece solo con un clip abierto y vuelve a la cuadrícula con el foco en la tarjeta', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await screen.findByRole('button', { name: 'Reproducir Primero' });
+    expect(screen.queryByRole('button', { name: 'Volver a la Biblioteca' })).not.toBeInTheDocument();
+
+    await abrirPrimero(user);
+    await user.click(screen.getByRole('button', { name: 'Volver a la Biblioteca' }));
+    await esperarCierre();
+
+    expect(screen.queryByRole('region', { name: 'Primero' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Volver a la Biblioteca' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reproducir Primero' })).toHaveFocus();
+  });
+
+  it('con «reducir movimiento» el cierre es inmediato (sin esperar al fundido)', async () => {
+    matchMediaFalso(true);
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    await abrirPrimero(user);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('region', { name: 'Primero' })).not.toBeInTheDocument();
+  });
+
+  it('con el foco en el reproductor, ↓ sigue cambiando de clip', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(tresClips());
+    render(<Biblioteca />);
+    const visor = await abrirPrimero(user);
+    const reproductor = within(visor).getByRole('group', { name: /^Reproductor/ });
+    reproductor.focus();
+    fireEvent.keyDown(reproductor, { key: 'ArrowDown' });
+    expect(panel('Segundo')).toBeInTheDocument();
+  });
+
   it('clic en la tarjeta abre el panel con el vídeo y las filas; «×» vuelve a la cuadrícula', async () => {
     const user = userEvent.setup();
     mock().library.list.mockResolvedValue(tresClips());
@@ -660,8 +705,11 @@ describe('Biblioteca — panel reproductor', () => {
     const visor = await abrirPrimero(user);
     const video = visor.querySelector('video') as HTMLVideoElement;
     expect(video.getAttribute('src')).toBe('gameclip-media://clip/21');
-    expect(video.controls).toBe(true);
+    // Controles propios (no los nativos), con los saltos de ±10 s.
+    expect(video.controls).toBe(false);
     expect(video.autoplay).toBe(true);
+    expect(within(visor).getByRole('button', { name: 'Retroceder 10 segundos' })).toBeInTheDocument();
+    expect(within(visor).getByRole('button', { name: 'Adelantar 10 segundos' })).toBeInTheDocument();
     // La cuadrícula da paso a las filas; la del clip abierto, marcada.
     // La cuadrícula queda montada pero oculta (no se re-montan las tarjetas al cerrar).
     expect(document.querySelector('.library-body:not(.split)')).toHaveAttribute('hidden');
@@ -672,6 +720,7 @@ describe('Biblioteca — panel reproductor', () => {
     expect(within(visor).getByRole('heading', { name: 'Primero' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+    await esperarCierre();
     expect(screen.queryByRole('region', { name: 'Primero' })).not.toBeInTheDocument();
     expect(document.querySelectorAll('.clip-card')).toHaveLength(3);
   });
@@ -683,6 +732,7 @@ describe('Biblioteca — panel reproductor', () => {
     await abrirPrimero(user);
 
     await user.keyboard('{Escape}');
+    await esperarCierre();
 
     expect(screen.queryByRole('region', { name: 'Primero' })).not.toBeInTheDocument();
   });
@@ -988,6 +1038,7 @@ describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
     fireEvent.keyDown(document.body, { key: 'ArrowDown' }); // cambia a «Tres» desde las filas
     expect(panel('Tres')).toBeInTheDocument();
     await user.keyboard('{Escape}');
+    await esperarCierre();
 
     expect(scroll).toBe(640);
     const thumb = screen.getByRole('button', { name: 'Reproducir Tres' });
@@ -1003,6 +1054,7 @@ describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
     await user.click(await screen.findByRole('button', { name: 'Reproducir Uno' }));
 
     await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+    await esperarCierre();
 
     expect(screen.getByRole('button', { name: 'Reproducir Uno' })).toHaveFocus();
   });
@@ -1175,6 +1227,7 @@ describe('Biblioteca — foco devuelto al cerrar el panel', () => {
 
     // Con «×» el foco estaba en el botón de cerrar: devolverlo a la miniatura SÍ dispara focus.
     await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+    await esperarCierre();
     expect(screen.getByRole('button', { name: 'Reproducir Cerrado' })).toHaveFocus();
     await new Promise((r) => setTimeout(r, 300));
 
@@ -1260,6 +1313,7 @@ describe('Biblioteca — segunda revisión', () => {
       await user.click(screen.getByRole('button', { name: 'Reproducir Beta' }));
       scroll.valor = 0;
       await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+      await esperarCierre();
 
       expect(scroll.valor).toBe(300);
       expect(vistas).toContain(rejilla.querySelector('[data-clip-id="62"]'));

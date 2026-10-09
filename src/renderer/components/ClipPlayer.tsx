@@ -6,6 +6,7 @@ import { selloDe } from './ClipCard';
 import ClipActions from './library/ClipActions';
 import ClipEditForm from './library/ClipEditForm';
 import GameLine from './library/GameLine';
+import VideoPlayer from './library/VideoPlayer';
 import { useClipAcciones } from './library/useClipAcciones';
 
 interface Props {
@@ -35,13 +36,7 @@ export default function ClipPlayer({ clip, onClose, onEliminar }: Props) {
         {esImagen ? (
           <img className="lib-player-video" src={clipMediaUrl(clip.id)} alt={clip.title} />
         ) : (
-          <video
-            className="lib-player-video"
-            data-testid="player-video"
-            src={clipMediaUrl(clip.id)}
-            controls
-            autoPlay
-          />
+          <VideoPlayer src={clipMediaUrl(clip.id)} title={clip.title} />
         )}
         <button
           type="button"

@@ -11,7 +11,7 @@ import { abrirEditor } from '../components/library/ClipActions';
 import ClipRows from '../components/library/ClipRows';
 import GameFilter from '../components/library/GameFilter';
 import GameLine from '../components/library/GameLine';
-import { SearchGlyph } from '../components/library/glyphs';
+import { BackGlyph, SearchGlyph } from '../components/library/glyphs';
 import { clipsLabel, groupByDate } from '../lib/libraryGroups';
 import { thumbMediaUrl } from '../lib/media';
 import { useThumbnailer } from '../lib/useThumbnailer';
@@ -25,6 +25,18 @@ function esCampoDeTexto(el: EventTarget | null): boolean {
     return !['button', 'checkbox', 'radio', 'submit', 'reset'].includes(el.type);
   }
   return false;
+}
+
+/** Duración de las transiciones del panel (deben cuadrar con library.css). */
+export const ENTRADA_MS = 180;
+export const SALIDA_MS = 120;
+
+/** ¿Hay que animar? No con «reducir movimiento» de Windows (ni donde no hay matchMedia). */
+function conMovimiento(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
 
 /** Retardo con el que se agrupan las ráfagas de cambios del catálogo antes de pedir los contadores. */
@@ -82,6 +94,13 @@ export default function Biblioteca() {
   const rejilla = useRef<HTMLDivElement>(null);
   const scrollRejilla = useRef(0);
   const alCerrar = useRef<{ id: number; foco: boolean } | null>(null);
+  // Transición del panel: de dónde crece (la miniatura pulsada), si está entrando o saliendo, y la
+  // vuelta de la cuadrícula. Sin movimiento, nada de esto se usa.
+  const origen = useRef<DOMRect | null>(null);
+  const [fase, setFase] = useState<'entra' | 'sale' | null>(null);
+  const [volviendo, setVolviendo] = useState(false);
+  const temporizadorFase = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const split = useRef<HTMLDivElement>(null);
   // Día en curso: «Hoy»/«Ayer» se recalculan al pasar la medianoche aunque no cambien los clips.
   const [dia, setDia] = useState(hoyLocal);
   // Filtros con los que se ve la lista (para saber al cerrar el panel si sigue siendo la misma).
@@ -217,21 +236,77 @@ export default function Biblioteca() {
 
   const abrir = useCallback((clip: Clip) => {
     setPreview(null); // con el panel abierto no hay cuadrícula ni vista previa
+    // Una transición en curso (p. ej. el cierre) se cancela: manda el clip que se abre ahora.
+    if (temporizadorFase.current) clearTimeout(temporizadorFase.current);
+    setFase(null);
     // Al abrir desde la cuadrícula se recuerda su scroll y con qué filtros se veía (no al cambiar
-    // de clip desde las filas).
+    // de clip desde las filas), y de dónde crece el reproductor.
     if (rejilla.current && !rejilla.current.hidden) {
       scrollRejilla.current = rejilla.current.scrollTop;
       filtrosAlAbrir.current = claveFiltros.current;
+      if (conMovimiento()) {
+        const miniatura = rejilla.current.querySelector<HTMLElement>(
+          `[data-clip-id="${clip.id}"] .clip-thumb`,
+        );
+        origen.current = miniatura?.getBoundingClientRect() ?? null;
+        setVolviendo(false);
+        setFase('entra');
+        temporizadorFase.current = setTimeout(() => setFase(null), ENTRADA_MS + 60);
+      }
     }
     setAbiertoId(clip.id);
   }, []);
 
-  /** Cierra el panel; `foco`: devolverlo a la tarjeta del clip (× y Esc; no al borrar). */
-  const cerrarPanel = useCallback((id: number, foco: boolean) => {
+  /** Cierra el panel ya, sin animación; `foco`: devolverlo a la tarjeta del clip. */
+  const cerrarYa = useCallback((id: number, foco: boolean) => {
     alCerrar.current = { id, foco };
     setPreview(null); // un arranque que quedó pendiente con el panel abierto no se cuela al volver
     setAbiertoId(null);
   }, []);
+
+  /**
+   * Cierra el panel; `foco`: devolverlo a la tarjeta del clip (×, flecha y Esc; no al borrar).
+   * Con `animar`, primero un fundido corto (SALIDA_MS) y la cuadrícula vuelve con otro. Al borrar no
+   * se anima: el `<video>` tiene que soltarse ya (en Windows bloquea el archivo).
+   */
+  const cerrarPanel = useCallback(
+    (id: number, foco: boolean, animar = false) => {
+      if (temporizadorFase.current) clearTimeout(temporizadorFase.current);
+      if (!animar || !conMovimiento()) {
+        setFase(null);
+        cerrarYa(id, foco);
+        return;
+      }
+      setFase('sale');
+      temporizadorFase.current = setTimeout(() => {
+        setFase(null);
+        setVolviendo(true);
+        cerrarYa(id, foco);
+        temporizadorFase.current = setTimeout(() => setVolviendo(false), ENTRADA_MS);
+      }, SALIDA_MS);
+    },
+    [cerrarYa],
+  );
+  useEffect(
+    () => () => {
+      if (temporizadorFase.current) clearTimeout(temporizadorFase.current);
+    },
+    [],
+  );
+
+  // Entrada: el reproductor crece desde la miniatura pulsada. Se mide antes de pintar y se le pasa
+  // al CSS como desplazamiento y escala de partida.
+  useLayoutEffect(() => {
+    if (fase !== 'entra' || !origen.current) return;
+    const media = split.current?.querySelector<HTMLElement>('.lib-player-media');
+    const destino = media?.getBoundingClientRect();
+    const desde = origen.current;
+    origen.current = null;
+    if (!media || !destino || destino.width <= 0) return;
+    media.style.setProperty('--gc-from-x', `${desde.left - destino.left}px`);
+    media.style.setProperty('--gc-from-y', `${desde.top - destino.top}px`);
+    media.style.setProperty('--gc-from-s', String(desde.width / destino.width));
+  }, [fase, abiertoId]);
 
   // De vuelta en la cuadrícula:
   // - Scroll: si la lista se ve con los mismos filtros que al abrir, donde estaba (y, si entraron
@@ -276,7 +351,7 @@ export default function Biblioteca() {
       if (esCampoDeTexto(objetivo)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
-        cerrarPanel(abiertoId, true);
+        cerrarPanel(abiertoId, true, true);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         // El vídeo con foco usa las flechas para sus propios controles.
         if (objetivo instanceof HTMLMediaElement) return;
@@ -346,6 +421,17 @@ export default function Biblioteca() {
   return (
     <section className={abierto ? 'library open' : 'library'}>
       <div className="library-head">
+        {abierto && (
+          <button
+            type="button"
+            className="library-back"
+            aria-label="Volver a la Biblioteca"
+            title="Volver (Esc)"
+            onClick={() => cerrarPanel(abierto.id, true, true)}
+          >
+            <BackGlyph />
+          </button>
+        )}
         <h1 className="gc-display">Biblioteca</h1>
         <div className="library-filters">
           <label className="library-search">
@@ -386,11 +472,20 @@ export default function Biblioteca() {
       )}
 
       {clips && clips.length > 0 && abierto && (
-        <div className="library-body split">
+        <div
+          ref={split}
+          className={
+            fase === 'entra'
+              ? 'library-body split is-entering'
+              : fase === 'sale'
+                ? 'library-body split is-leaving'
+                : 'library-body split'
+          }
+        >
           <ClipPlayer
             key={abierto.id}
             clip={abierto}
-            onClose={() => cerrarPanel(abierto.id, true)}
+            onClose={() => cerrarPanel(abierto.id, true, true)}
             onEliminar={pedirBorrado}
           />
           <ClipRows grupos={grupos} abiertoId={abierto.id} onAbrir={abrir} />
@@ -398,7 +493,11 @@ export default function Biblioteca() {
       )}
 
       {clips && clips.length > 0 && (
-        <div className="library-body" ref={rejilla} hidden={abierto !== null}>
+        <div
+          className={volviendo ? 'library-body is-returning' : 'library-body'}
+          ref={rejilla}
+          hidden={abierto !== null}
+        >
           {grupos.map((g) => (
             <section key={g.key} className="library-group" aria-label={g.label}>
               <h2 className="library-group-head">
