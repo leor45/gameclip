@@ -598,6 +598,92 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     });
   });
 
+  describe('cambios que llegan mientras la grabación está arrancando (auditoría C: C1-BUG-2)', () => {
+    /**
+     * startRecording de libobs que no resuelve hasta `soltar()`: deja la tarea de grabar a medias, con
+     * el estado aún en 'buffering', que es la ventana donde se colaban los rebuilds.
+     */
+    function grabacionLenta() {
+      let soltar: () => void = () => undefined;
+      obs.startRecording = () => {
+        obs.llamadas.push('startRecording');
+        return new Promise<void>((resolve) => {
+          soltar = () => {
+            obs.grabando = true;
+            resolve();
+          };
+        });
+      };
+      return { soltar: () => soltar() };
+    }
+
+    it('regresión: un ajuste de pipeline guardado al empezar a grabar no destruye la grabación', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const builds = obs.buildCount;
+      const lenta = grabacionLenta();
+
+      const grabar = manager.startRecording();
+      await vi.waitFor(() => expect(obs.llamadas).toContain('startRecording'));
+      const guardar = manager.setSettings({ quality: 'lossless' }); // estado aún 'buffering'
+      lenta.soltar();
+      await grabar;
+      await guardar;
+
+      // Antes: el rebuild encolado corría con la grabación ya activa y la destruía.
+      expect(obs.buildCount).toBe(builds);
+      expect(manager.getStatus().state).toBe('recording');
+
+      // El cambio no se pierde: se aplica al parar.
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(builds + 1);
+      expect(obs.ultimosAjustes?.quality).toBe('lossless');
+    });
+
+    it('regresión: un cambio de modo de buffer al empezar a grabar no pisa el estado ni arranca el buffer', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const lenta = grabacionLenta();
+
+      const grabar = manager.startRecording();
+      await vi.waitFor(() => expect(obs.llamadas).toContain('startRecording'));
+      const guardar = manager.setSettings({ bufferMode: 'game' });
+      lenta.soltar();
+      await grabar;
+      await guardar;
+
+      // Antes: reconcileBuffer + setStatus('buffering') con la grabación corriendo (imposible pararla).
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.bufferActivo).toBe(false);
+      await manager.stopRecording();
+      expect(obs.grabando).toBe(false);
+    });
+
+    it('regresión: un cambio de monitor al empezar a grabar se aplaza hasta parar', async () => {
+      const OLED: DisplayInfo = { width: 3840, height: 2160, x: 0, y: 0 };
+      const estado = { encendido: false };
+      const manager = crear({ bufferMode: 'always', screenMonitorIndex: 0 }, (index) =>
+        index === 0 && estado.encendido ? OLED : null,
+      );
+      await manager.initialize();
+      const builds = obs.buildCount;
+      const lenta = grabacionLenta();
+
+      const grabar = manager.startRecording();
+      await vi.waitFor(() => expect(obs.llamadas).toContain('startRecording'));
+      estado.encendido = true;
+      const pantallas = manager.displaysChanged();
+      lenta.soltar();
+      await grabar;
+      await pantallas;
+
+      expect(obs.buildCount).toBe(builds);
+      expect(manager.getStatus().state).toBe('recording');
+      await manager.stopRecording();
+      expect(obs.ultimoScreen).toEqual(OLED);
+    });
+  });
+
   describe('guardar ajustes solo reconstruye cuando el pipeline lo necesita (auditoría B: BUG-7, BUG-4)', () => {
     it('regresión: un ajuste ajeno a la captura (perfOverlayVisible) no reconstruye ni vacía el buffer', async () => {
       const manager = crear({ bufferMode: 'always' });
