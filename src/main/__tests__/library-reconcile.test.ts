@@ -559,8 +559,8 @@ describe('LibraryManager.reconcile — la misma carpeta por dos caminos (Bug 6 d
     expect(bigint()).toEqual([]);
   });
 
-  it('con filas de fuera se mira la identidad de ellas y de cada archivo de dentro, y nada más', () => {
-    // Carpeta anterior legítima con 2 clips (sin copiar), y la actual con 3 filas ya catalogadas más 1 nuevo.
+  it('una carpeta anterior de clips distintos (nombres que no coinciden) no cuesta ningún stat', () => {
+    // El caso más común: el owner cambió de carpeta sin copiar nada y la vieja sigue ahí con lo suyo.
     mkdirSync(viejaDir, { recursive: true });
     const manager = crearManager();
     for (const n of ['x.mp4', 'y.mp4']) {
@@ -573,11 +573,71 @@ describe('LibraryManager.reconcile — la misma carpeta por dos caminos (Bug 6 d
 
     expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
 
-    // 2 filas de fuera + los 4 archivos de dentro: una sola consulta por archivo, ninguna repetida.
-    const consultados = bigint().map(([p]) => String(p));
-    expect(consultados).toHaveLength(6);
-    expect(new Set(consultados).size).toBe(6);
-    expect(consultados).toContain(join(outputDir, 'nuevo.mp4'));
+    expect(bigint()).toEqual([]);
+  });
+
+  it('con nombres que coinciden solo se mira la identidad de esas filas de fuera y de esos archivos', () => {
+    mkdirSync(viejaDir, { recursive: true });
+    const manager = crearManager();
+    for (const n of ['x.mp4', 'y.mp4', 'w.mp4']) {
+      writeFileSync(join(viejaDir, n), 'v'.repeat(500));
+      insertar(join(viejaDir, n));
+    }
+    archivo('x.mp4'); // sin fila, se llama como una de fuera (otro archivo: copia)
+    insertar(archivo('y.mp4')); // con fila, se llama como otra de fuera (otro archivo)
+    for (const n of ['a.mp4', 'b.mp4']) insertar(archivo(n)); // sin pareja por nombre
+    archivo('NUEVO.mp4');
+    vi.mocked(statSync).mockClear();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 2, removed: 0 });
+
+    // Filas de fuera x e y (w no tiene pareja por nombre) + los archivos de dentro x e y: 4 consultas.
+    const consultados = bigint()
+      .map(([p]) => String(p).toLowerCase())
+      .sort();
+    expect(consultados).toEqual(
+      [
+        join(viejaDir, 'x.mp4'),
+        join(viejaDir, 'y.mp4'),
+        join(outputDir, 'x.mp4'),
+        join(outputDir, 'y.mp4'),
+      ]
+        .map((p) => p.toLowerCase())
+        .sort(),
+    );
+    expect(manager.list()).toHaveLength(8); // son copias: ninguna se fusiona
+  });
+
+  it('el nombre se compara sin distinguir mayúsculas', () => {
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    const original = join(viejaDir, 'Fortnite', 'CLIP.MP4');
+    writeFileSync(original, 'contenido-de-video');
+    const fila = insertar(original, 'original');
+    mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+    real.linkSync(original, join(outputDir, 'Fortnite', 'clip.mp4'));
+    const manager = crearManager();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list().map((c) => c.id)).toEqual([fila.id]);
+  });
+
+  it('límite conocido: un hard link con OTRO nombre no se reconoce y queda como clip aparte', () => {
+    // El prefiltro por nombre no toca el disco; las tres formas del bug (Z:/UNC, junction, volumen
+    // montado en carpeta) conservan el nombre. Un hard link renombrado es exótico y queda fuera.
+    const original = join(viejaDir, 'Fortnite', 'a.mp4');
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    writeFileSync(original, 'contenido-de-video');
+    insertar(original, 'original');
+    mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+    real.linkSync(original, join(outputDir, 'Fortnite', 'otro-nombre.mp4'));
+    const manager = crearManager();
+    vi.mocked(statSync).mockClear();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+
+    expect(manager.list()).toHaveLength(2);
+    expect(bigint()).toEqual([]);
   });
 
   it('si la identidad de una fila de fuera no se puede leer, esa fila no se fusiona y el escaneo sigue', () => {

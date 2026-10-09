@@ -28,10 +28,13 @@
    - En el bucle de bajas, las filas que **sobreviven** porque su archivo existe y no cuelgan de la
      carpeta de clips se apuntan como «filas de fuera». Las conservadas por la unidad sin montar no
      (no se puede preguntar al disco por ellas).
-   - Si hay filas de fuera **y** archivos que escanear: identidad de cada una (`statSync(p, { bigint:
-     true })` → `dev:ino:tamaño`; `null` si el `stat` falla, `ino` es 0 o el archivo está vacío) en un
-     mapa identidad → ids. Si no, no se hace ninguna consulta más.
-   - Por cada archivo de `mediaFilesIn(outputDir)`, mientras el mapa no esté vacío, su identidad: si
+   - **Prefiltro por nombre de archivo** (sin tocar el disco): solo se pide la identidad de las filas de
+     fuera cuyo nombre (sin distinguir mayúsculas) coincide con el de algún archivo de `mediaFilesIn`.
+     Identidad = `statSync(p, { bigint: true })` → `dev:ino:tamaño`; `null` si el `stat` falla, `ino`
+     es 0 o el archivo está vacío. Se guarda en un mapa identidad → ids y el conjunto de nombres de las
+     filas con identidad. Si no hay candidatas, no se hace ninguna consulta más.
+   - Por cada archivo de `mediaFilesIn(outputDir)` cuyo nombre está en ese conjunto, mientras el mapa no
+     esté vacío, su identidad: si
      coincide, `unificar`: sin fila propia → `setPath` de la de fuera (re-apuntar); con fila propia, o
      varias de fuera → `mergeRows` y se borran las miniaturas huérfanas. La entrada del mapa se borra
      al usarla (cada fila de fuera se consume una vez). Un fallo se registra y no corta el escaneo.
@@ -66,11 +69,15 @@
 - **Identidad física frente a nombre + tamaño:** las copias del Explorador tienen el mismo nombre,
   tamaño y fecha; fusionarlas por eso destruiría el segundo archivo lógico. Volumen + índice de archivo
   distingue «el mismo archivo» de «una copia».
-- **Sin precondición por tamaño de la fila (`size_bytes`):** se valoró no pedir el `stat` de los
-  archivos con fila cuyo tamaño en la DB no coincide con ninguna fila de fuera. Se descartó: el tamaño
-  de la DB puede estar desfasado (un edit de audio reescribe el archivo) y se perdería la fusión; el
-  coste ya existe a esa escala (`existsSync` de cada fila, `getByPath` de cada archivo) y solo se paga
-  mientras haya filas de fuera sin usar.
+- **Prefiltro por nombre de archivo (pedido en la auditoría):** la primera versión pedía el `stat` de
+  TODAS las filas de fuera y de TODOS los archivos de dentro en cada `reconcile` mientras hubiera filas
+  de fuera —el caso más común: carpeta cambiada sin copiar y la vieja sigue existiendo—, para siempre y
+  en el hilo principal; en un NAS, miles de idas y vueltas SMB nuevas. Las tres formas del bug (`Z:\` /
+  UNC, junction, volumen montado en carpeta) conservan el nombre del archivo, así que el nombre decide,
+  sin tocar el disco, quién puede tener pareja. Con una carpeta vieja de clips distintos: cero `stat`
+  extra. En el escenario del Bug 1 (copias con el mismo nombre) sigue habiendo `stat`, y está bien.
+  **Queda fuera, documentado:** un hard link con otro nombre. Se descartó antes un prefiltro por
+  `size_bytes` de la DB: puede estar desfasado tras un edit de audio.
 - **Todas las filas de fuera con la misma identidad se fusionan a la vez** (no una por archivo): con
   tres caminos al mismo archivo (v0.9.7 + otro cambio) una sola pasada deja una fila.
 - **Hard link = el mismo archivo.** Mismo volumen e índice: es literalmente el mismo contenido; se
@@ -85,9 +92,10 @@
 - **Cambio de comportamiento deliberado:** quien cambia la carpeta de clips **sin mover** los clips
   viejos deja de verlos en el uso del almacenamiento y de que el auto-borrado los toque (antes
   contaban). Siguen en la biblioteca mientras existan sus archivos.
-- **Coste:** con filas de fuera sin consumir (carpeta anterior legítima), cada `reconcile` hace un
-  `stat` bigint por cada una y por cada archivo de dentro. Local: milisegundos por millar. Sin filas de
-  fuera, cero. La unidad de la salida sin montar, o una carpeta vacía, no hacen ninguno.
+- **Coste:** un `stat` bigint por cada fila de fuera cuyo nombre coincide con un archivo de dentro y por
+  cada archivo de dentro cuyo nombre coincide con una de ellas. Con una carpeta anterior de clips
+  distintos, cero; sin filas de fuera, cero; con la unidad de la salida sin montar o una carpeta vacía,
+  cero. Los clips de GameClip llevan fecha y hora en el nombre: las coincidencias reales son las copias.
 - **Falso positivo de identidad:** exigiría mismo volumen, mismo índice de archivo y mismo tamaño en
   archivos distintos; un servidor con índices no únicos es el único camino. Tendría como efecto
   re-apuntar una fila al archivo equivocado, sin borrar nada del disco.
@@ -101,3 +109,5 @@
 - Se añade la exclusión de archivos vacíos de la identidad (no estaba en el diseño).
 - Se salta el cómputo de identidades cuando `mediaFilesIn` no devuelve nada (carpeta de clips sin
   montar o vacía).
+- Prefiltro por nombre de archivo (ver «Decisiones»): no estaba en el diseño aprobado; lo pidió la
+  auditoría por el coste en NAS. Deja fuera el hard link con otro nombre.

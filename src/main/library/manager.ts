@@ -119,8 +119,15 @@ export class LibraryManager extends EventEmitter {
    * - si ya tenía fila (el duplicado que dejó la v0.9.7) se **fusionan** en la de menor id, y cada fila
    *   que sobra cuenta como baja.
    * Dos archivos distintos con el mismo nombre y tamaño (la carpeta copiada con el Explorador) tienen
-   * identidad distinta: siguen siendo dos filas. Sin filas de fuera —el caso normal— no se hace ninguna
-   * consulta más al disco.
+   * identidad distinta: siguen siendo dos filas.
+   *
+   * **Coste:** `stat` es una ida y vuelta al servidor en un NAS y esto corre en el hilo principal en cada
+   * guardado de Ajustes y al arrancar, así que la identidad solo se pide donde puede haber pareja, y
+   * eso se decide por el **nombre de archivo**, sin tocar el disco: las tres formas del bug conservan
+   * el nombre. Solo se mira la identidad de las filas de fuera cuyo nombre coincide con el de algún
+   * archivo de dentro y, luego, la de los archivos de dentro que se llaman como alguna de ellas. Sin
+   * filas de fuera, o con una carpeta anterior de clips distintos —lo más común—, no se hace ninguna
+   * consulta más al disco. Queda fuera, a propósito, el hard link con otro nombre.
    */
   reconcile(outputDir: string): { added: number; removed: number } {
     let added = 0;
@@ -147,14 +154,22 @@ export class LibraryManager extends EventEmitter {
     // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…` y las capturas en
     // `<Juego>/Capturas/`. La carpeta es la única pista del juego que tiene un archivo escaneado.
     const archivos = mediaFilesIn(outputDir);
-    // Vacío salvo que haya filas vivas de otra ruta y archivos con los que compararlas: lo normal es
-    // no pedirle nada más al disco.
-    const porIdentidad =
-      archivos.length > 0 ? idsPorIdentidad(filasDeFuera) : new Map<string, number[]>();
+    // Prefiltro por nombre de archivo, sin tocar el disco: el mismo archivo visto por otro camino
+    // conserva su nombre, así que solo se pide la identidad de las filas de fuera que se llaman como
+    // algún archivo de dentro y, después, de los archivos de dentro que se llaman como alguna de ellas.
+    // Una carpeta anterior con clips distintos —lo más común— no cuesta ni un `stat`.
+    const nombresDeDentro = new Set(archivos.map(nombreEnMinusculas));
+    const candidatas = filasDeFuera.filter((f) =>
+      nombresDeDentro.has(nombreEnMinusculas(f.filePath)),
+    );
+    const { porIdentidad, nombres: nombresConIdentidad } = idsPorIdentidad(candidatas);
     for (const filePath of archivos) {
       const existente = this.repo.getByPath(filePath);
 
-      const huella = porIdentidad.size > 0 ? identidadDe(filePath) : null;
+      const huella =
+        porIdentidad.size > 0 && nombresConIdentidad.has(nombreEnMinusculas(filePath))
+          ? identidadDe(filePath)
+          : null;
       const idsDeFuera = huella === null ? undefined : porIdentidad.get(huella);
       if (huella !== null && idsDeFuera) {
         porIdentidad.delete(huella); // cada fila de fuera se usa una sola vez
@@ -359,17 +374,30 @@ function identidadDe(filePath: string): string | null {
   }
 }
 
-/** Ids de las filas por identidad física del archivo; las que no tienen identidad no entran. */
-function idsPorIdentidad(filas: { id: number; filePath: string }[]): Map<string, number[]> {
+/** Nombre del archivo en minúsculas (NTFS no distingue mayúsculas): la clave del prefiltro. */
+function nombreEnMinusculas(filePath: string): string {
+  return fileName(filePath).toLowerCase();
+}
+
+/**
+ * Ids de las filas por identidad física del archivo (las que no tienen identidad no entran) y los
+ * nombres, en minúsculas, de las que sí.
+ */
+function idsPorIdentidad(filas: { id: number; filePath: string }[]): {
+  porIdentidad: Map<string, number[]>;
+  nombres: Set<string>;
+} {
   const porIdentidad = new Map<string, number[]>();
+  const nombres = new Set<string>();
   for (const { id, filePath } of filas) {
     const huella = identidadDe(filePath);
     if (huella === null) continue;
+    nombres.add(nombreEnMinusculas(filePath));
     const ids = porIdentidad.get(huella);
     if (ids) ids.push(id);
     else porIdentidad.set(huella, [id]);
   }
-  return porIdentidad;
+  return { porIdentidad, nombres };
 }
 
 /**

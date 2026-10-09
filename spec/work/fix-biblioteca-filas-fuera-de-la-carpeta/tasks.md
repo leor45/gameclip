@@ -17,8 +17,10 @@
       la miniatura sobrante se borra, cuenta como baja; tres caminos al mismo archivo → una fila.
 - [x] Bug 6: copias distintas (mismo nombre y tamaño) no se fusionan; hard link sí; archivo vacío, `ino`
       0 y `stat` fallido no identifican; fila de fuera sin pareja se queda como estaba.
-- [x] Bug 6: sin filas de fuera no hay `stat` bigint; con ellas, uno por fila y por archivo; con la
-      unidad de la salida sin montar, ninguno; un fallo al unificar no corta el escaneo.
+- [x] Bug 6: sin filas de fuera no hay `stat` bigint; con una carpeta anterior de clips distintos
+      (nombres que no coinciden) tampoco; con nombres que coinciden, solo esas filas y esos archivos;
+      el nombre se compara sin distinguir mayúsculas; con la unidad de la salida sin montar, ninguno;
+      un fallo al unificar no corta el escaneo. Límite documentado: hard link con otro nombre.
 - [x] Bug 6: tras re-apuntar, `relabelGames` deja el juego de la carpeta.
 - [x] Repositorio: `mergeRows` (suma de datos, menor id, miniatura huérfana, tres filas, atómica, una
       sola fila, id inexistente); los tests de la migración de rutas siguen verdes sin tocarlos.
@@ -29,6 +31,7 @@
 - [x] 2. `StorageManager`: `clipsDeLaCarpeta` en `getStats` y `enforceLimit`, con TSDoc.
 - [x] 3. Repositorio: `fusionarFilas` extraída de la migración y `mergeRows`.
 - [x] 4. `reconcile`: filas de fuera, identidad física, re-apuntar/fusionar, contadores y `'changed'`.
+- [x] 4b. Prefiltro por nombre de archivo (auditoría: coste de `stat` en NAS en cada `reconcile`).
 - [x] 5. Verificadas las vías de alta (todas guardan dentro de la carpeta de clips) y que `relabelGames`
       corre después del escaneo (guardado de Ajustes y arranque).
 
