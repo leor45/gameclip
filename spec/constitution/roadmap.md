@@ -1239,6 +1239,19 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
+## Auditoría bug-hunter (2026-10-08)
+
+> Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
+> 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
+> en una rama de integración temporal antes de mergear cada uno a `main`.
+
+### 🐞 Juegos mal etiquetados en la biblioteca — 🧪 en rama (`fix/etiquetado-biblioteca`)
+
+Cambiar la carpeta de clips re-etiquetaba los clips antiguos como `..` o `E:` (primer segmento de una
+ruta relativa que salía de la carpeta), y los clips de escritorio se catalogaban con el título de la
+ventana en primer plano (confirmado por el owner). Ahora el re-etiquetado ignora los clips de fuera de
+la carpeta actual y el juego de un clip guardado sale solo de la detección (sin ella, «Sin juego»).
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

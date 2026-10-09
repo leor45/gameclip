@@ -305,7 +305,6 @@ function setupLibrary(
     const repo = new ClipsRepository(db);
     const lib = new LibraryManager(repo, {
       thumbnailsDir: join(app.getPath('userData'), 'thumbnails'),
-      getForegroundTitle: getForegroundWindowTitle,
       gameNames,
     });
     const stor = new StorageManager(lib, { trashItem: (path) => shell.trashItem(path) });

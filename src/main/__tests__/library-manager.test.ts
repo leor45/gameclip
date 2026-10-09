@@ -22,13 +22,9 @@ beforeEach(() => {
   mkdirSync(outputDir, { recursive: true });
 });
 
-function crearManager(
-  foreground: string | null = null,
-  extra: Partial<ConstructorParameters<typeof LibraryManager>[1]> = {},
-) {
+function crearManager(extra: Partial<ConstructorParameters<typeof LibraryManager>[1]> = {}) {
   return new LibraryManager(repo, {
     thumbnailsDir: join(dir, 'thumbs'),
-    getForegroundTitle: () => Promise.resolve(foreground),
     ...extra,
   });
 }
@@ -122,13 +118,40 @@ describe('LibraryManager — re-etiquetado de juegos', () => {
   });
 });
 
+describe('LibraryManager — re-etiquetado con clips fuera de la carpeta de salida (regresión)', () => {
+  // Al cambiar la carpeta de clips, los antiguos quedan fuera: relative() empieza por '..' (misma
+  // unidad) o es la ruta absoluta (otra unidad), y su primer segmento acababa como "juego".
+  function clipFuera(filePath: string, game: string) {
+    repo.insert({
+      filePath,
+      title: 'viejo',
+      game,
+      sizeBytes: 1,
+      createdAt: new Date().toISOString(),
+      source: 'replay',
+    });
+  }
+
+  it('un clip de la carpeta anterior (misma unidad) conserva su juego', () => {
+    clipFuera(join(dir, 'vieja', 'Fortnite', 'Fortnite 2026.mp4'), 'Fortnite');
+    expect(crearManager().relabelGames(outputDir)).toBe(0);
+    expect(repo.list()[0].game).toBe('Fortnite');
+  });
+
+  it('un clip de otra unidad conserva su juego', () => {
+    clipFuera('Z:\\Clips\\Fortnite\\Fortnite 2026.mp4', 'Fortnite');
+    expect(crearManager().relabelGames(outputDir)).toBe(0);
+    expect(repo.list()[0].game).toBe('Fortnite');
+  });
+});
+
 describe('LibraryManager — ingesta', () => {
   it('registra un clip guardado con juego detectado y emite changed', async () => {
-    const manager = crearManager('Valorant');
+    const manager = crearManager();
     const cambio = vi.fn();
     manager.on('changed', cambio);
 
-    const clip = await manager.registerSavedClip(video('Replay 2026.mp4'), 'replay');
+    const clip = await manager.registerSavedClip(video('Replay 2026.mp4'), 'replay', 'Valorant');
 
     expect(clip?.title).toBe('Replay 2026');
     expect(clip?.game).toBe('Valorant');
@@ -137,15 +160,14 @@ describe('LibraryManager — ingesta', () => {
     expect(cambio).toHaveBeenCalledOnce();
   });
 
-  it('el gameHint de la detección tiene prioridad sobre la ventana en primer plano', async () => {
-    const manager = crearManager('Terminal — pwsh');
-
+  it('regresión: sin juego detectado (escritorio) el clip queda sin juego, no con el título de una ventana', async () => {
+    // Antes se caía al título de la ventana en primer plano ("YouTube - Google Chrome") aunque el
+    // archivo estuviera en Desktop/; el re-etiquetado por carpeta lo deshacía en el siguiente arranque.
+    const manager = crearManager();
     const conHint = await manager.registerSavedClip(video('a.mp4'), 'replay', 'Valorant');
     expect(conHint?.game).toBe('Valorant');
-
-    // Sin hint (null) se cae al título de la ventana en primer plano.
     const sinHint = await manager.registerSavedClip(video('b.mp4'), 'replay', null);
-    expect(sinHint?.game).toBe('Terminal — pwsh');
+    expect(sinHint?.game).toBeNull();
   });
 
   it('ignora rutas inexistentes o ya registradas', async () => {
@@ -240,7 +262,7 @@ describe('LibraryManager — gestión', () => {
   // registro NO se borra y avisa en español.
   it('regresión: si el archivo está en uso, no borra el registro y avisa en español', async () => {
     const cambios = vi.fn();
-    const manager = crearManager(null, {
+    const manager = crearManager({
       removeFile: (p: string) => {
         throw ebusy(p);
       },
@@ -259,7 +281,7 @@ describe('LibraryManager — gestión', () => {
 
   it('regresión: un borrado bloqueado que a la siguiente funciona borra archivo y registro', async () => {
     let intentos = 0;
-    const manager = crearManager(null, {
+    const manager = crearManager({
       removeFile: (p: string) => {
         intentos++;
         if (intentos === 1) throw ebusy(p); // el primer intento encuentra el handle vivo
