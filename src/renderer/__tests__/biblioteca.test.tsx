@@ -136,6 +136,33 @@ describe('Biblioteca — búsqueda y filtros', () => {
     });
   });
 
+  it('si el juego filtrado desaparece del catálogo, el filtro vuelve a «Todos los juegos»', async () => {
+    // Regresión: borrar el último clip del juego filtrado dejaba el filtro aplicado («Sin
+    // resultados») con el select pintando «Todos los juegos», y elegirla no disparaba change.
+    const user = userEvent.setup();
+    let alCambiar: () => void = () => undefined;
+    mock().library.onChanged.mockImplementation((cb: () => void) => {
+      alCambiar = cb;
+      return () => undefined;
+    });
+    mock().library.games.mockResolvedValue(['CS2', 'Valorant']);
+    render(<Biblioteca />);
+    await screen.findByRole('option', { name: 'Valorant' });
+    await user.selectOptions(screen.getByLabelText('Filtrar por juego'), 'Valorant');
+    await waitFor(() =>
+      expect(mock().library.list).toHaveBeenLastCalledWith(expect.objectContaining({ game: 'Valorant' })),
+    );
+
+    // Se borra el último clip de Valorant: el catálogo ya no lo lista.
+    mock().library.games.mockResolvedValue(['CS2']);
+    await act(async () => alCambiar());
+
+    await waitFor(() =>
+      expect(mock().library.list).toHaveBeenLastCalledWith(expect.objectContaining({ game: undefined })),
+    );
+    expect(screen.getByLabelText('Filtrar por juego')).toHaveValue('');
+  });
+
   it('el filtro "Escritorio" pide los clips sin juego, no un juego llamado así', async () => {
     const user = userEvent.setup();
     mock().library.games.mockResolvedValue(['CS2']);
