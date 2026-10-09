@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
+import type { Dirent, Stats } from 'node:fs';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { gameFromFolderName } from '@shared/clip-naming';
 import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
 import { isTempMediaFile, normalizeClipPatch, titleFromFileName } from '@shared/library';
+import { createOfflineOutputVolumeCheck } from './clip-path';
 import type { ClipsRepository } from './clips-repository';
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
@@ -90,24 +92,40 @@ export class LibraryManager extends EventEmitter {
     return clip;
   }
 
-  /** Sincroniza el catálogo con la carpeta de salida: altas nuevas y bajas de borrados. */
+  /**
+   * Sincroniza el catálogo con la carpeta de salida: altas nuevas y bajas de borrados.
+   *
+   * Un clip cuyo archivo falta se da de baja, salvo que viva en la unidad de la carpeta de clips y esa
+   * unidad no esté montada (un USB, o una de red que aún no conectó al arrancar con Windows): ahí el
+   * archivo no se borró, solo no se ve, y dar de baja la fila perdía para siempre título, etiquetas,
+   * favorito y pistas muteadas. Las filas de **otra** unidad que no está (una carpeta de salida
+   * anterior) sí se dan de baja: si el owner copió esa carpeta a la nueva y quitó el USB, conservarlas
+   * duplicaba la biblioteca para siempre.
+   */
   reconcile(outputDir: string): { added: number; removed: number } {
     let added = 0;
     let removed = 0;
 
+    const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
     for (const { id, filePath } of this.repo.allPaths()) {
-      if (!existsSync(filePath)) {
-        this.removeThumbnail(this.repo.get(id));
-        this.repo.delete(id);
-        removed++;
-      }
+      // En la unidad de la salida se mira la unidad antes que el archivo: sin montar, sus clips se
+      // conservan sin preguntar por cada uno.
+      if (enSalidaSinMontar(filePath) || existsSync(filePath)) continue;
+      this.removeThumbnail(this.repo.get(id));
+      this.repo.delete(id);
+      removed++;
     }
 
     // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…` y las capturas en
     // `<Juego>/Capturas/`. La carpeta es la única pista del juego que tiene un archivo escaneado.
     for (const filePath of mediaFilesIn(outputDir)) {
       if (this.repo.getByPath(filePath)) continue;
-      const stats = statSync(filePath);
+      let stats: Stats;
+      try {
+        stats = statSync(filePath);
+      } catch {
+        continue; // borrado o ilegible entre el listado y el stat: lo verá el próximo escaneo
+      }
       this.repo.insert({
         filePath,
         title: titleFromFileName(fileName(filePath)),
@@ -253,13 +271,30 @@ function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
 
-/** Videos y capturas de la carpeta de clips, incluidas las subcarpetas por juego. */
+/**
+ * Carpetas de sistema que Windows crea en la raíz de cada volumen (y de cada volumen montado en una
+ * carpeta). Si la carpeta de clips es la raíz de una unidad, `System Volume Information` no se deja
+ * leer y la papelera sí — y catalogaba los videos borrados.
+ */
+const CARPETAS_DE_SISTEMA = new Set(['$recycle.bin', 'system volume information']);
+
+/**
+ * Videos y capturas de la carpeta de clips, incluidas las subcarpetas por juego. Una carpeta que no
+ * se deja leer (permisos, desaparecida a mitad) se salta sin cortar el resto del recorrido.
+ */
 function mediaFilesIn(dir: string): string[] {
   if (!existsSync(dir)) return [];
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
   const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (CARPETAS_DE_SISTEMA.has(entry.name.toLowerCase())) continue;
       out.push(...mediaFilesIn(full));
       continue;
     }

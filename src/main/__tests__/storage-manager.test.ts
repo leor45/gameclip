@@ -1,13 +1,25 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import type { ClipSource } from '@shared/library';
 import { ClipsRepository } from '../library/clips-repository';
 import { LibraryManager } from '../library/manager';
 import { StorageManager } from '../library/storage-manager';
+
+// Pass-through espiable: los tests de unidades ausentes cuentan a qué discos se pregunta.
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>();
+  return { ...real, existsSync: vi.fn(real.existsSync) };
+});
+
+const real = await vi.importActual<typeof import('node:fs')>('node:fs');
+
+afterEach(() => {
+  vi.mocked(existsSync).mockImplementation(real.existsSync);
+});
 
 const dir = mkdtempSync(join(tmpdir(), 'gameclip-storage-'));
 const outputDir = join(dir, 'salida');
@@ -49,6 +61,34 @@ async function clip(
 
 function settings(overrides: Partial<typeof DEFAULT_CAPTURE_SETTINGS> = {}) {
   return { ...DEFAULT_CAPTURE_SETTINGS, ...overrides };
+}
+
+/** Dos letras de unidad que no existen en esta máquina: USB quitados. */
+function unidadesAusentes(): [string, string] {
+  const libres = [...'ZYXWVUTSRQPONMLKJIH']
+    .map((letra) => `${letra}:\\`)
+    .filter((raiz) => !real.existsSync(raiz));
+  if (libres.length < 2) {
+    throw new Error('Faltan letras de unidad libres para simular USB quitados.');
+  }
+  return [libres[0], libres[1]];
+}
+
+/** Fila de un clip en `raiz`, una unidad que no está (no hay archivo que crear). */
+function filaEn(
+  raiz: string,
+  nombre: string,
+  bytes: number,
+  opts: { source?: ClipSource; createdAt?: string } = {},
+) {
+  return repo.insert({
+    filePath: `${raiz}Clips\\${nombre}`,
+    title: nombre,
+    game: null,
+    sizeBytes: bytes,
+    createdAt: opts.createdAt ?? '2026-01-01T00:00:00.000Z',
+    source: opts.source ?? 'replay',
+  });
 }
 
 describe('StorageManager — getStats', () => {
@@ -245,5 +285,131 @@ describe('StorageManager — enforceLimit', () => {
     expect(trashItem).toHaveBeenCalledWith(viejo.filePath);
     expect(borrados).toEqual([viejo.filePath]);
     expect(manager.list().map((c) => c.title)).not.toContain('viejo');
+  });
+});
+
+describe('StorageManager — clips de una unidad que no está (regresiones B1-1, 1.1 y 1.2)', () => {
+  // Las únicas filas sin archivo que el escaneo conserva son las de la unidad de la carpeta de clips
+  // sin montar (D5-BUG-3): no ocupan espacio que se pueda medir ni liberar, y «borrarlas» destruye las
+  // ediciones que guardan. Las de cualquier otra unidad se cuentan como siempre, sin preguntarle nada
+  // al disco: una unidad de red caída bloquearía el hilo principal.
+  const [unidadSalida, otraUnidad] = unidadesAusentes();
+  /** La carpeta de clips vive en el USB desenchufado. */
+  const salidaEnUsb = `${unidadSalida}Clips`;
+  const consultas = () =>
+    vi.mocked(existsSync).mock.calls.map(([p]) => String(p).replace(/\//g, '\\').toLowerCase());
+
+  it('getStats no cuenta los clips de la unidad de la carpeta de clips sin montar', async () => {
+    await clip('real.mp4', 100, { source: 'replay' }); // carpeta anterior, en una unidad que está
+    filaEn(unidadSalida, 'muerto.mp4', 500);
+    filaEn(unidadSalida, 'grabacion.mp4', 300, { source: 'recording' });
+    filaEn(unidadSalida, 'captura.png', 40, { source: 'scan' });
+
+    const stats = new StorageManager(manager).getStats(salidaEnUsb);
+
+    expect(stats.clipsBytes).toBe(100);
+    expect(stats.recordingsBytes).toBe(0);
+    expect(stats.screenshotsBytes).toBe(0);
+  });
+
+  it('regresión 1.2: getStats solo consulta la raíz de la carpeta de clips; lo demás cuenta como siempre', async () => {
+    await clip('real.mp4', 100);
+    filaEn(unidadSalida, 'muerto.mp4', 500);
+    filaEn(otraUnidad, 'de-antes.mp4', 70); // otra unidad caída: cuenta, y no se le pregunta nada
+    vi.mocked(existsSync).mockClear();
+
+    const stats = new StorageManager(manager).getStats(salidaEnUsb);
+
+    expect(stats.clipsBytes).toBe(170);
+    expect(consultas().filter((p) => p === unidadSalida.toLowerCase())).toHaveLength(1);
+    expect(consultas().some((p) => p.startsWith(otraUnidad.toLowerCase()))).toBe(false);
+    expect(consultas().some((p) => p.endsWith('.mp4'))).toBe(false);
+  });
+
+  it('regresión 1.2: el límite deja fuera solo la unidad de la carpeta de clips sin montar', async () => {
+    const unidad = 1000;
+    const muerto = filaEn(unidadSalida, 'muerto.mp4', unidad, {
+      createdAt: '2025-12-31T00:00:00.000Z', // el más viejo de todos
+    });
+    const a = await clip('a.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
+    await clip('b.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+    filaEn(otraUnidad, 'de-antes.mp4', unidad, { createdAt: '2026-01-03T00:00:00.000Z' });
+    vi.mocked(existsSync).mockClear();
+    const sm = new StorageManager(manager);
+
+    // Uso: a + b + de-antes = 3 (el muerto de la salida no cuenta); límite: 2 → cae `a`. Contando el
+    // muerto caía él primero sin liberar nada; sin contar `de-antes`, no caía nada.
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir: salidaEnUsb },
+    );
+
+    expect(borrados).toEqual([a.filePath]);
+    expect(manager.getClip(muerto.id)).not.toBeNull();
+    expect(consultas().filter((p) => p === unidadSalida.toLowerCase())).toHaveLength(1);
+    expect(consultas().some((p) => p.startsWith(otraUnidad.toLowerCase()))).toBe(false);
+  });
+
+  it('regresión 1.1: carpeta en la raíz de un recurso de red caído, sin barra final', async () => {
+    // Así la devuelve el selector de carpetas; las filas llevan la raíz con barra final.
+    const recurso = '\\\\gameclip-nas-test\\clips';
+    vi.mocked(existsSync).mockImplementation((p) =>
+      String(p).toLowerCase().startsWith(recurso.toLowerCase()) ? false : real.existsSync(p),
+    );
+    const unidad = 1000;
+    const muerto = repo.insert({
+      filePath: `${recurso}\\Fortnite\\muerto.mp4`,
+      title: 'muerto',
+      game: null,
+      sizeBytes: unidad,
+      createdAt: '2025-12-31T00:00:00.000Z',
+      source: 'replay',
+    });
+    await clip('a.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
+    await clip('b.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+
+    const borrados = await new StorageManager(manager).enforceLimit(
+      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir: recurso },
+    );
+
+    expect(borrados).toEqual([]);
+    expect(manager.getClip(muerto.id)).not.toBeNull();
+  });
+
+  it('B1-1 de punta a punta: el escaneo da de baja las copias muertas y el límite no borra nada', async () => {
+    // Copia del USB hecha con el Explorador (mismo mtime) y USB quitado: al arrancar, el escaneo corre
+    // antes del primer auto-borrado y da de baja las filas del USB (no es la unidad de la salida).
+    const unidad = 1000;
+    for (const [i, dia] of ['01', '02', '03'].entries()) {
+      const createdAt = `2026-01-${dia}T00:00:00.000Z`;
+      await clip(`clip ${i}.mp4`, unidad, { createdAt });
+      filaEn(otraUnidad, `clip ${i}.mp4`, unidad, { createdAt });
+    }
+    manager.reconcile(outputDir);
+
+    // Uso real: 3 unidades; límite: 4.
+    const borrados = await new StorageManager(manager).enforceLimit(
+      settings({ storageLimitGb: (unidad * 4) / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir },
+    );
+
+    expect(borrados).toEqual([]);
+    expect(manager.list()).toHaveLength(3);
+  });
+
+  it('una ruta con prefijo \\\\?\\ (Node no ve su raíz) cuenta como siempre', () => {
+    const ruta = join(outputDir, 'largo.mp4');
+    writeFileSync(ruta, Buffer.alloc(100, 'x'));
+    repo.insert({
+      filePath: `\\\\?\\${ruta}`,
+      title: 'largo',
+      game: null,
+      sizeBytes: 100,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      source: 'replay',
+    });
+
+    expect(new StorageManager(manager).getStats(outputDir).clipsBytes).toBe(100);
   });
 });

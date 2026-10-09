@@ -46,6 +46,7 @@ import { openLibraryDatabase } from './library/database';
 import { getForegroundWindowTitle } from './library/foreground';
 import { LibraryManager } from './library/manager';
 import { migrateClipLayout } from './library/migrate-layout';
+import { syncLibraryAfterSettings } from './library/settings-sync';
 import { StorageManager } from './library/storage-manager';
 import { MEDIA_SCHEME, MEDIA_SCHEME_PRIVILEGES } from './media-protocol';
 import { OverlayController } from './overlay';
@@ -356,7 +357,7 @@ function setupLibrary(
 
     const aplicarLimite = (protectPath?: string): void => {
       void stor
-        .enforceLimit(manager.getSettings(), { protectPath })
+        .enforceLimit(manager.getSettings(), { protectPath, outputDir: manager.outputDir() })
         .catch((err) => console.error('[storage] auto-borrado falló:', err));
     };
 
@@ -369,20 +370,28 @@ function setupLibrary(
     });
     // Bajar el límite o activar el auto-borrado desde Ajustes limpia de inmediato. Y si el owner
     // acaba de renombrar un juego, sus clips ya grabados se re-etiquetan con el nombre nuevo.
-    manager.on('settings', () => {
-      lib.reconcile(manager.outputDir());
-      lib.relabelGames(manager.outputDir());
-      aplicarLimite();
-    });
+    manager.on('settings', () =>
+      syncLibraryAfterSettings({ library: lib, capture: manager, aplicarLimite }),
+    );
     lib.on('changed', () => mainWindow?.webContents.send(IpcEvent.LibraryChanged));
 
     // Antes del primer escaneo: lo que quedó suelto en la raíz pasa al layout por juego. Después
     // de migrar, el reconcile ve los archivos ya en su sitio y no los da de alta por duplicado.
-    const migracion = migrateClipLayout(repo, manager.outputDir());
-    if (migracion.movedClips || migracion.movedScreenshots) {
-      console.log('[library] layout migrado:', JSON.stringify(migracion));
+    // Ni la migración ni el escaneo pueden dejar la app sin catálogo (antes, una carpeta ilegible
+    // devolvía null aquí con los listeners de arriba ya colgados del manager): se registra y sigue.
+    try {
+      const migracion = migrateClipLayout(repo, manager.outputDir());
+      if (migracion.movedClips || migracion.movedScreenshots) {
+        console.log('[library] layout migrado:', JSON.stringify(migracion));
+      }
+    } catch (err) {
+      console.error('[library] migrar el layout de la carpeta falló:', err);
     }
-    lib.reconcile(manager.outputDir());
+    try {
+      lib.reconcile(manager.outputDir());
+    } catch (err) {
+      console.error('[library] el escaneo inicial de la carpeta falló:', err);
+    }
     // Diferido: un backlog sobre el límite no debe bloquear el arranque de la ventana.
     setTimeout(() => aplicarLimite(), 5000);
     return { lib, storage: stor };
