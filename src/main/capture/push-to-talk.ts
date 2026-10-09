@@ -1,17 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { createRequire } from 'node:module';
 import { PTT_HOTKEY_OPTIONS } from '@shared/capture';
-
-// Superficie mínima de uiohook-napi (require falible: sin el prebuilt, PTT se desactiva).
-interface UiohookEmitter {
-  on(event: string, cb: (e: { keycode?: number; button?: unknown }) => void): void;
-  start(): void;
-  stop(): void;
-}
-interface UiohookModule {
-  uIOhook: UiohookEmitter;
-  UiohookKey: Record<string, number>;
-}
+import type { GlobalHook } from './global-hook';
 
 export type PttTarget = { kind: 'key'; keycode: number } | { kind: 'mouse'; button: number };
 
@@ -33,82 +22,45 @@ export function resolvePttHotkey(
 
 /**
  * Push-to-talk global: emite 'held' (boolean) mientras el hotkey configurado está pulsado.
- * El hook de teclado/mouse es de bajo nivel (uiohook-napi); solo se compara el keycode
+ * Corre sobre el hook global compartido (`GlobalHook`, uiohook-napi); solo se compara el keycode
  * configurado, no se registra nada más.
  */
 export class PushToTalk extends EventEmitter {
-  private module: UiohookModule | null = null;
-  private loadFailed = false;
-  private started = false;
   private listening = false;
   private target: PttTarget | null = null;
   private held = false;
 
-  constructor(moduleOverride?: UiohookModule) {
+  constructor(private readonly hook: GlobalHook) {
     super();
-    if (moduleOverride) this.module = moduleOverride;
   }
 
   /** false solo si el módulo nativo no cargó (la UI muestra el aviso). */
   get available(): boolean {
-    this.load();
-    return this.module !== null;
+    return this.hook.available;
   }
 
-  /** Aplica los ajustes: arranca o detiene el hook según haga falta. */
+  /** Aplica los ajustes: pide o suelta el hook según haga falta. */
   configure(enabled: boolean, hotkey: string): void {
-    this.load();
-    const mod = this.module;
-    if (!mod) return;
-    this.target = enabled ? resolvePttHotkey(hotkey, mod.UiohookKey) : null;
-
-    if (this.target) {
-      this.attachListeners(mod);
-      if (!this.started) {
-        mod.uIOhook.start();
-        this.started = true;
-      }
-    } else if (this.started) {
-      mod.uIOhook.stop();
-      this.started = false;
-    }
+    if (!this.hook.available) return;
+    this.target = enabled ? resolvePttHotkey(hotkey, this.hook.keyMap) : null;
+    if (this.target) this.attachListeners();
+    this.hook.setNeeded('push-to-talk', this.target !== null);
     this.setHeld(false); // al (re)configurar, el mic parte cerrado hasta pulsar de nuevo
   }
 
-  stop(): void {
-    if (this.module && this.started) {
-      try {
-        this.module.uIOhook.stop();
-      } catch {
-        // el proceso termina igual
-      }
-      this.started = false;
-    }
-  }
-
-  private load(): void {
-    if (this.module || this.loadFailed) return;
-    try {
-      const require = createRequire(__filename);
-      this.module = require('uiohook-napi') as UiohookModule;
-    } catch {
-      this.loadFailed = true;
-    }
-  }
-
-  private attachListeners(mod: UiohookModule): void {
+  private attachListeners(): void {
     if (this.listening) return;
     this.listening = true;
-    mod.uIOhook.on('keydown', (e) => {
+    this.hook.on('keydown', (e) => {
       if (this.target?.kind === 'key' && e.keycode === this.target.keycode) this.setHeld(true);
     });
-    mod.uIOhook.on('keyup', (e) => {
+    this.hook.on('keyup', (e) => {
       if (this.target?.kind === 'key' && e.keycode === this.target.keycode) this.setHeld(false);
     });
-    mod.uIOhook.on('mousedown', (e) => {
+    this.hook.on('mousedown', (e) => {
       if (this.target?.kind === 'mouse' && e.button === this.target.button) this.setHeld(true);
     });
-    mod.uIOhook.on('mouseup', (e) => {
+    this.hook.on('mouseup', (e) => {
       if (this.target?.kind === 'mouse' && e.button === this.target.button) this.setHeld(false);
     });
   }

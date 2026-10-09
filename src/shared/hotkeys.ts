@@ -1,4 +1,4 @@
-// Dominio de los atajos de teclado: catálogo de acciones, captura de la pulsación, validación y
+// Dominio de los atajos (teclado y botones laterales del ratón): catálogo de acciones, captura de la pulsación, validación y
 // colisiones. Puro (sin Electron ni DOM): lo comparten el registro global del main y la UI de
 // Ajustes, que antes tenían cada uno su propia lista de acciones escrita a mano.
 
@@ -87,7 +87,18 @@ export function hotkeySettingsChanged(before: CaptureSettings, after: CaptureSet
 // Modificadores en el orden canónico de Electron.
 const MODIFIERS = ['Ctrl', 'Alt', 'Shift', 'Super'] as const;
 
-/** Teclas base aceptadas (las que Electron registra de forma fiable en Windows). */
+/**
+ * Botones laterales del ratón como «tecla base». Windows solo conoce cinco botones (izquierdo,
+ * derecho, central, XBUTTON1 y XBUTTON2): los laterales extra de algunos ratones los emite el
+ * software del fabricante como teclas, que ya sirven como atajo de teclado.
+ */
+export const MOUSE_BASE_KEYS = ['Mouse4', 'Mouse5'] as const;
+export type MouseBaseKey = (typeof MOUSE_BASE_KEYS)[number];
+
+/**
+ * Teclas base aceptadas: las que Electron registra de forma fiable en Windows, más los botones
+ * laterales del ratón (esos los registra el hook global, no `globalShortcut`).
+ */
 const BASE_KEYS = new Set<string>([
   ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`),
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
@@ -107,6 +118,7 @@ const BASE_KEYS = new Set<string>([
   'Right',
   'Plus',
   'Minus',
+  ...MOUSE_BASE_KEYS,
 ]);
 
 /** Pulsación del teclado, ya despiezada (el DOM se queda en el renderer). */
@@ -163,6 +175,14 @@ function baseKeyOf(press: KeyPress): string | null {
 export function accelFromKeyPress(press: KeyPress): string | null {
   const base = baseKeyOf(press);
   if (!base) return null;
+  return accelFromParts(press, base);
+}
+
+/** Modificadores en orden canónico + tecla base. */
+function accelFromParts(
+  press: Pick<KeyPress, 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>,
+  base: string,
+): string {
   const partes: string[] = [];
   if (press.ctrlKey) partes.push('Ctrl');
   if (press.altKey) partes.push('Alt');
@@ -170,6 +190,64 @@ export function accelFromKeyPress(press: KeyPress): string | null {
   if (press.metaKey) partes.push('Super');
   partes.push(base);
   return partes.join('+');
+}
+
+/** Pulsación de un botón del ratón, ya despiezada (`MouseEvent` del DOM). */
+export interface MousePress {
+  /** `MouseEvent.button`: 0 izq · 1 central · 2 der · 3 atrás · 4 adelante. */
+  button: number;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}
+
+/** Botón lateral del DOM (3 = atrás, 4 = adelante) → tecla base; el resto no son atajos. */
+const MOUSE_BUTTON_DOM: Record<number, MouseBaseKey> = { 3: 'Mouse4', 4: 'Mouse5' };
+
+/** ¿El botón del DOM es uno de los laterales que pueden ser atajo? */
+export function isSideMouseButton(button: number): boolean {
+  return button in MOUSE_BUTTON_DOM;
+}
+
+/** Acelerador a partir de un botón del ratón; null con izquierdo, derecho o central. */
+export function accelFromMousePress(press: MousePress): string | null {
+  const base = MOUSE_BUTTON_DOM[press.button];
+  if (!base) return null;
+  return accelFromParts(press, base);
+}
+
+/** Acelerador de ratón ya despiezado, para compararlo con los eventos del hook global. */
+export interface MouseAccelerator {
+  /** Numeración de libuiohook (la del push-to-talk): 4 = atrás, 5 = adelante. */
+  button: 4 | 5;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
+}
+
+/**
+ * Despieza un acelerador de ratón (`Mouse4`, `Ctrl+Mouse5`…); null si no es válido o si su tecla
+ * base no es un botón del ratón (esos van por `globalShortcut`).
+ */
+export function parseMouseAccelerator(accel: string): MouseAccelerator | null {
+  if (!isValidAccelerator(accel)) return null;
+  const partes = accel.split('+').map((p) => p.trim());
+  const base = partes.pop();
+  if (base !== 'Mouse4' && base !== 'Mouse5') return null;
+  return {
+    button: base === 'Mouse4' ? 4 : 5,
+    ctrl: partes.includes('Ctrl'),
+    alt: partes.includes('Alt'),
+    shift: partes.includes('Shift'),
+    meta: partes.includes('Super'),
+  };
+}
+
+/** ¿El acelerador es de ratón? (decide si lo registra el hook global o `globalShortcut`) */
+export function isMouseAccelerator(accel: string): boolean {
+  return parseMouseAccelerator(accel) !== null;
 }
 
 /** ¿Es un acelerador que Electron acepta? (modificadores válidos + una tecla base soportada) */
@@ -208,10 +286,11 @@ export function hotkeyCollisions(settings: CaptureSettings): HotkeyKey[][] {
  * ¿El acelerador choca con la tecla del push-to-talk? El PTT corre sobre otro motor (uiohook), pero
  * es la MISMA tecla física: con `F9` de PTT, un atajo `F9` dispararía las dos cosas a la vez.
  * Reservada aunque el PTT esté apagado, para que encenderlo luego no rompa un atajo ya guardado.
- * Solo choca la tecla suelta: `Ctrl+F9` es otra pulsación, y `Mouse4/5` no son aceleradores.
+ * Solo choca la tecla suelta: `Ctrl+F9` es otra pulsación. Vale igual para los botones del ratón:
+ * con el PTT en `Mouse4`, un atajo `Mouse4` choca y `Ctrl+Mouse4` no.
  */
 export function isPttReserved(accel: string, pttHotkey: string): boolean {
   const ptt = pttHotkey.trim();
-  if (!ptt || ptt.startsWith('Mouse')) return false;
+  if (!ptt) return false;
   return accel.trim().toLowerCase() === ptt.toLowerCase();
 }

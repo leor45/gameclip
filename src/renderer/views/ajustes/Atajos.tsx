@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import type { HotkeyKey } from '@shared/hotkeys';
-import { HOTKEY_ACTIONS, accelFromKeyPress, hotkeyCollisions, isPttReserved } from '@shared/hotkeys';
+import {
+  HOTKEY_ACTIONS,
+  accelFromKeyPress,
+  accelFromMousePress,
+  hotkeyCollisions,
+  isPttReserved,
+} from '@shared/hotkeys';
+import { RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -14,6 +21,21 @@ export default function AjustesAtajos() {
   const [rechazo, setRechazo] = useState<string | null>(null);
 
   const pttHotkey = settings?.pttHotkey ?? '';
+
+  /** Asigna el acelerador capturado (tecla o botón del ratón) si no choca con el PTT. */
+  const asignar = useCallback(
+    (accel: string) => {
+      if (!capturando) return;
+      if (isPttReserved(accel, pttHotkey)) {
+        setRechazo(`${accel} está reservada para el push to talk. Elige otra tecla.`);
+        return; // seguimos a la escucha
+      }
+      set(capturando, accel);
+      setCapturando(null);
+      setRechazo(null);
+    },
+    [capturando, pttHotkey, set],
+  );
 
   const alPulsar = useCallback(
     (e: KeyboardEvent) => {
@@ -27,23 +49,40 @@ export default function AjustesAtajos() {
       }
       const accel = accelFromKeyPress(e);
       if (!accel) return; // solo modificadores (o tecla no soportada): seguimos escuchando
-      if (isPttReserved(accel, pttHotkey)) {
-        setRechazo(`${accel} está reservada para el push to talk. Elige otra tecla.`);
-        return; // seguimos a la escucha
-      }
-      set(capturando, accel);
-      setCapturando(null);
-      setRechazo(null);
+      asignar(accel);
     },
-    [capturando, pttHotkey, set],
+    [capturando, asignar],
+  );
+
+  const alPulsarRaton = useCallback(
+    (e: MouseEvent) => {
+      if (!capturando) return;
+      // El izquierdo sigue siendo para usar la página (p. ej. el botón «Cancelar»).
+      if (e.button === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const accel = accelFromMousePress(e);
+      if (!accel) {
+        setRechazo(RECHAZO_BOTON_RATON);
+        return;
+      }
+      asignar(accel);
+    },
+    [capturando, asignar],
   );
 
   useEffect(() => {
     if (!capturando) return;
     // `capture: true`: la pulsación es nuestra antes de que ningún control del formulario la vea.
     window.addEventListener('keydown', alPulsar, true);
-    return () => window.removeEventListener('keydown', alPulsar, true);
-  }, [capturando, alPulsar]);
+    window.addEventListener('mousedown', alPulsarRaton, true);
+    window.addEventListener('contextmenu', evitarMenu, true);
+    return () => {
+      window.removeEventListener('keydown', alPulsar, true);
+      window.removeEventListener('mousedown', alPulsarRaton, true);
+      window.removeEventListener('contextmenu', evitarMenu, true);
+    };
+  }, [capturando, alPulsar, alPulsarRaton]);
 
   if (!settings) return <p className="placeholder">Cargando…</p>;
 
@@ -64,10 +103,10 @@ export default function AjustesAtajos() {
   return (
     <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()} bloqueo={bloqueo}>
       <fieldset>
-        <legend>Atajos de teclado</legend>
+        <legend>Atajos de teclado y ratón</legend>
         <p className="settings-hint">
-          Pulsa «Editar atajo» y teclea la combinación que quieras (Esc cancela). Funcionan también
-          dentro del juego.
+          Pulsa «Editar atajo» y teclea la combinación que quieras, o pulsa un botón lateral del
+          ratón (Esc cancela). Funcionan también dentro del juego.
         </p>
         <ul className="hotkey-list">
           {HOTKEY_ACTIONS.map((action) => {
@@ -106,6 +145,7 @@ export default function AjustesAtajos() {
         {rechazo && <p className="settings-warning">{rechazo}</p>}
         <p className="settings-hint">
           La tecla del push to talk ({pttHotkey}) está reservada y no se puede usar como atajo.
+          Mouse4 y Mouse5 son los botones laterales del ratón (atrás y adelante).
           Se cambia en <Link to="/ajustes/audio">Audio</Link>.
         </p>
         <div className="hotkey-actions">

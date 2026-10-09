@@ -32,7 +32,7 @@ function capturaFalsa(alApagarse: () => void) {
 function partes(over: Partial<PartesDelCierre> = {}): PartesDelCierre {
   return {
     unregisterHotkeys: vi.fn(),
-    pushToTalk: { stop: vi.fn() },
+    globalHook: { stop: vi.fn() },
     clearTimers: vi.fn(),
     detector: { stop: vi.fn() },
     capture: { shutdown: vi.fn() },
@@ -75,7 +75,7 @@ describe('teardown', () => {
     const orden: string[] = [];
     const p = partes({
       unregisterHotkeys: vi.fn(() => orden.push('hotkeys')),
-      pushToTalk: { stop: vi.fn(() => orden.push('ptt')) },
+      globalHook: { stop: vi.fn(() => orden.push('hook')) },
       clearTimers: vi.fn(() => orden.push('timers')),
       detector: { stop: vi.fn(() => orden.push('detector')) },
       capture: { shutdown: vi.fn(() => orden.push('captura')) },
@@ -83,7 +83,7 @@ describe('teardown', () => {
 
     teardown(p);
 
-    expect(orden).toEqual(['hotkeys', 'ptt', 'timers', 'detector', 'captura']);
+    expect(orden).toEqual(['hotkeys', 'hook', 'timers', 'detector', 'captura']);
   });
 
   // Si un paso revienta, el cierre tiene que TERMINAR igual: si no, libobs y el puerto de la API

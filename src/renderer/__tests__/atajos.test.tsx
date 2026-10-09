@@ -1,5 +1,6 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import { beforeEach, describe, expect, it } from 'vitest';
 import App from '../App';
 import { sesionFalsa } from './helpers';
@@ -22,7 +23,7 @@ async function irAAtajos() {
   render(<App />);
   await user.click(screen.getByRole('link', { name: 'Ajustes' }));
   await user.click(await screen.findByRole('link', { name: 'Atajos' }));
-  await screen.findByText('Atajos de teclado');
+  await screen.findByText('Atajos de teclado y ratón');
   return user;
 }
 
@@ -114,6 +115,69 @@ describe('Ajustes — Atajos', () => {
     expect(mock().capture.setSettings).toHaveBeenCalledWith(
       expect.objectContaining({ controllerCaptureEnabled: true }),
     );
+  });
+
+  it('un botón lateral del ratón se asigna como atajo (con modificadores) y se guarda', async () => {
+    const user = await irAAtajos();
+
+    await user.click(botonEditar('replayHotkey'));
+    // DOM: 3 = atrás → Mouse4. La pulsación queda consumida (no navega ni llega a la página).
+    expect(fireEvent.mouseDown(window, { button: 3 })).toBe(false);
+    expect(lista().getByText('Mouse4')).toBeInTheDocument();
+
+    await user.click(botonEditar('recordingHotkey'));
+    fireEvent.mouseDown(window, { button: 4, ctrlKey: true });
+    expect(lista().getByText('Ctrl+Mouse5')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+    expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
+    expect(mock().capture.setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ replayHotkey: 'Mouse4', recordingHotkey: 'Ctrl+Mouse5' }),
+    );
+  });
+
+  it('el botón derecho o el central avisan y no asignan nada; el izquierdo cancela como siempre', async () => {
+    const user = await irAAtajos();
+
+    await user.click(botonEditar('replayHotkey'));
+    expect(fireEvent.mouseDown(window, { button: 2 })).toBe(false);
+    expect(fireEvent.contextMenu(window)).toBe(false); // sin menú contextual mientras escucha
+    expect(screen.getByText(/solo sirven los botones laterales/)).toBeInTheDocument();
+    fireEvent.mouseDown(window, { button: 1 });
+    expect(lista().getByText('Pulsa una combinación…')).toBeInTheDocument(); // sigue escuchando
+
+    await user.click(lista().getByRole('button', { name: 'Cancelar' }));
+    expect(lista().queryByText('Pulsa una combinación…')).not.toBeInTheDocument();
+    expect(lista().getByText('F8')).toBeInTheDocument();
+    expect(screen.queryByText(/solo sirven los botones laterales/)).not.toBeInTheDocument();
+  });
+
+  it('con el push to talk en un botón del ratón, ese botón queda reservado', async () => {
+    mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, pttHotkey: 'Mouse4' });
+    const user = await irAAtajos();
+
+    await user.click(botonEditar('replayHotkey'));
+    fireEvent.mouseDown(window, { button: 3 });
+    expect(screen.getByText(/Mouse4 está reservada para el push to talk/)).toBeInTheDocument();
+    expect(lista().getByText('Pulsa una combinación…')).toBeInTheDocument();
+  });
+
+  it('sin capturar, los botones del ratón no tocan los atajos', async () => {
+    await irAAtajos();
+    fireEvent.mouseDown(window, { button: 3 });
+    expect(lista().queryByText('Mouse4')).not.toBeInTheDocument();
+    expect(lista().getByText('F8')).toBeInTheDocument();
+  });
+
+  it('los botones atrás/adelante del ratón no cambian de pantalla', async () => {
+    await irAAtajos();
+    const ruta = window.location.hash;
+
+    expect(fireEvent.mouseUp(window, { button: 3 })).toBe(false); // preventDefault: Chromium no navega
+    expect(fireEvent.mouseUp(window, { button: 4 })).toBe(false);
+    expect(fireEvent.mouseUp(window, { button: 0 })).toBe(true); // el resto de clics, intactos
+    expect(window.location.hash).toBe(ruta);
+    expect(screen.getByText('Atajos de teclado y ratón')).toBeInTheDocument();
   });
 
   it('restablecer devuelve los atajos a sus valores por defecto', async () => {
