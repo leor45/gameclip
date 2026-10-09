@@ -28,8 +28,8 @@ capturan pulsándolos en «Editar atajo», funcionan dentro del juego y respetan
 - Renderer: en Ajustes → Atajos y en el atajo del overlay (Avanzado), «Editar atajo» acepta también una
   pulsación de los botones laterales (los botones izquierdo/derecho/central se ignoran con aviso).
 - **Desactivar la navegación atrás/adelante del ratón en la app.** Hoy los botones laterales
-  navegan el historial de pantallas como en un navegador (Windows los manda como
-  `APPCOMMAND_BROWSER_BACKWARD/FORWARD` y Electron los ejecuta); con un atajo en `Mouse4`, pulsarlo
+  navegan el historial de pantallas como en un navegador (Chromium lo hace al soltar el botón si
+  nadie hizo `preventDefault` del `mouseup`); con un atajo en `Mouse4`, pulsarlo
   con la app delante guardaría el clip **y** cambiaría de pantalla. Se anula siempre (no solo con un
   atajo asignado): la app no está pensada para navegarse con el ratón y así el comportamiento es
   predecible.

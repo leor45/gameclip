@@ -216,13 +216,6 @@ function createMainWindow(options: { hidden?: boolean } = {}): void {
     mainWindow = null;
   });
 
-  // Los botones laterales del ratón llegan como APPCOMMAND_BROWSER_BACKWARD/FORWARD y Chromium
-  // navegaría el historial de pantallas como un navegador. Se anulan siempre: pueden ser atajos
-  // (pulsar «Guardar clip» no debe cambiar además de pantalla) y la app no se navega así.
-  win.on('app-command', (event, command) => {
-    if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
-  });
-
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: 'deny' };

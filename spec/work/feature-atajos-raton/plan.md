@@ -28,12 +28,13 @@ nuevas.
    del ratón»; 3/4 → `accelFromMousePress` y misma validación que una tecla (PTT reservado,
    duplicados). También `contextmenu` prevenido durante la captura para que el botón derecho no abra
    el menú.
-6. **Sin navegación atrás/adelante con el ratón.** En `createWindow` (`src/main/index.ts`):
-   `win.on('app-command', (e, cmd) => { if (cmd === 'browser-backward' || cmd === 'browser-forward')
-   e.preventDefault(); })`. Es el único camino por el que Windows/Electron navegan el historial con
-   los botones laterales (`WM_APPCOMMAND`), así que basta con eso; por si acaso, el renderer también
-   hace `preventDefault` de `mouseup` para los botones 3/4 en `window` (en `App.tsx`), que es lo
-   que Chromium usa en otras plataformas. El resto de la navegación de la app no se toca.
+6. **Sin navegación atrás/adelante con el ratón.** En `App.tsx`, oyente global de `mouseup` (fase
+   de captura) que hace `preventDefault` con los botones 3/4: Blink solo navega el historial al
+   soltar un botón lateral si nadie lo previno. El resto de la navegación de la app no se toca.
+   - *Ajuste durante la implementación:* el plan aprobado ponía además (como vía principal) un
+     `preventDefault` del evento `app-command` de la ventana. Comprobado con la app real y
+     `SendInput` XBUTTON1: con solo ese handler **la app navegaba igual**; la vía es Blink, y
+     Electron no navega por sí solo con `app-command`. Se quitó para no dejar código muerto.
 
 ## Archivos / módulos afectados
 
@@ -41,7 +42,7 @@ nuevas.
 - `src/main/capture/global-hook.ts` (nuevo), `src/main/capture/mouse-hotkeys.ts` (nuevo),
   `src/main/capture/push-to-talk.ts` (usa el hook compartido)
 - `src/main/__tests__/mouse-hotkeys.test.ts` (nuevo), `src/main/__tests__/push-to-talk.test.ts`
-- `src/main/index.ts` (`registerHotkeys` + `app-command` en `createWindow`), `src/main/shutdown.ts`
+- `src/main/index.ts` (`registerHotkeys`), `src/main/shutdown.ts`
   (si el teardown necesita el `unregisterAll` del ratón)
 - `src/renderer/App.tsx` (`mouseup` de los botones 3/4 prevenido)
 - `src/renderer/views/ajustes/Atajos.tsx`, `src/renderer/views/ajustes/Avanzado.tsx`

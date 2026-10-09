@@ -68,9 +68,11 @@ function Root() {
 }
 
 /**
- * Botones laterales del ratón: Chromium navega el historial (atrás/adelante) al soltarlos, como un
- * navegador. Se anula siempre porque pueden ser atajos de GameClip (pulsar «Guardar clip» no debe
- * cambiar además de pantalla) y la app no se navega así.
+ * Botones laterales del ratón: Chromium (Blink) navega el historial atrás/adelante al soltarlos si
+ * nadie hizo `preventDefault` del `mouseup`, como un navegador. Es la única vía: el `app-command`
+ * de la ventana no navega por sí solo (comprobado con la app real). Se anula siempre porque pueden
+ * ser atajos de GameClip (pulsar «Guardar clip» no debe cambiar además de pantalla) y la app no se
+ * navega así.
  */
 function bloquearNavegacionRaton(e: MouseEvent): void {
   if (isSideMouseButton(e.button)) e.preventDefault();
