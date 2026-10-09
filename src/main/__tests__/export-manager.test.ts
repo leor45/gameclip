@@ -102,4 +102,42 @@ describe('ExportManager', () => {
     const resultado = await manager.run(job());
     expect(resultado.status).toBe('error');
   });
+
+  describe('exportar encima del propio clip (regresión: borraba el original)', () => {
+    it('rechaza el destino igual a la entrada sin lanzar ffmpeg y el clip sigue en disco', async () => {
+      const { spawnFn, manager } = crear();
+      const clip = join(dir, 'entrada.mp4');
+      writeFileSync(clip, 'clip-original');
+
+      const resultado = await manager.run({ ...job(clip), inputPath: clip });
+
+      expect(resultado.status).toBe('error');
+      expect(resultado.message).toMatch(/encima del clip original/);
+      expect(spawnFn).not.toHaveBeenCalled();
+      expect(existsSync(clip)).toBe(true);
+    });
+
+    it('lo reconoce aunque cambien las mayúsculas o los separadores', async () => {
+      const { spawnFn, manager } = crear();
+      const clip = join(dir, 'Entrada.mp4');
+      writeFileSync(clip, 'clip-original');
+      const otraForma = clip.toUpperCase().replace(/\\/g, '/');
+
+      const resultado = await manager.run({ ...job(otraForma), inputPath: clip });
+
+      expect(resultado.status).toBe('error');
+      expect(spawnFn).not.toHaveBeenCalled();
+      expect(existsSync(clip)).toBe(true);
+    });
+
+    it('un fallo de ffmpeg hacia un destino distinto sigue borrando su parcial', async () => {
+      const { fake, manager } = crear();
+      const parcial = join(dir, 'parcial-fallo.mp4');
+      writeFileSync(parcial, 'a-medias');
+      const promesa = manager.run(job(parcial));
+      fake.emit('close', 1);
+      expect((await promesa).status).toBe('error');
+      expect(existsSync(parcial)).toBe(false);
+    });
+  });
 });

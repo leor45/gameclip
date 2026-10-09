@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { rmSync } from 'node:fs';
 import type { ExportResult } from '@shared/export';
 import { keptDuration } from '@shared/timeline';
+import { clipPathKey } from '../library/clip-path';
 import type { ClipAudioTrack, TrackWaveform } from '@shared/tracks';
 import { selectableTracks, trackKey } from '@shared/tracks';
 import { runAudioEdit } from './audio-edit';
@@ -87,6 +88,14 @@ export class ExportManager extends EventEmitter {
     if (this.current) {
       return Promise.resolve({ status: 'error', message: 'Ya hay una exportación en curso.' });
     }
+    // Destino = el propio clip: ffmpeg aborta (o trunca la entrada) y el borrado del parcial se
+    // llevaba por delante el ORIGINAL. Se rechaza antes de lanzar nada.
+    if (mismoArchivo(job.inputPath, job.outputPath)) {
+      return Promise.resolve({
+        status: 'error',
+        message: 'No se puede guardar el recorte encima del clip original. Elige otro nombre.',
+      });
+    }
     this.canceled = false;
 
     let child: FfmpegProcess;
@@ -124,13 +133,13 @@ export class ExportManager extends EventEmitter {
         const fueCancelado = this.canceled;
         this.current = null;
         if (fueCancelado) {
-          this.removePartial(job.outputPath);
+          this.removePartial(job.outputPath, job.inputPath);
           resolve({ status: 'canceled' });
         } else if (code === 0) {
           this.emit('progress', { ratio: 1 });
           resolve({ status: 'done', outputPath: job.outputPath });
         } else {
-          this.removePartial(job.outputPath);
+          this.removePartial(job.outputPath, job.inputPath);
           resolve({
             status: 'error',
             message: lastLine(stderrTail) || `ffmpeg terminó con código ${code}.`,
@@ -146,13 +155,20 @@ export class ExportManager extends EventEmitter {
     this.current.kill('SIGKILL');
   }
 
-  private removePartial(path: string): void {
+  /** Borra el parcial de un export fallido; nunca si el destino es la propia entrada. */
+  private removePartial(path: string, inputPath: string): void {
+    if (mismoArchivo(path, inputPath)) return;
     try {
       rmSync(path, { force: true });
     } catch {
       // best-effort: un parcial huérfano no rompe nada
     }
   }
+}
+
+/** ¿Las dos rutas son el mismo archivo? (canónica: sin barra final, separadores y mayúsculas). */
+export function mismoArchivo(a: string, b: string): boolean {
+  return clipPathKey(a) === clipPathKey(b);
 }
 
 // ffmpeg emite bloques key=value; out_time_ms está en microsegundos (quirk conocido).

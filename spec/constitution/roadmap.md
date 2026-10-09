@@ -1261,6 +1261,12 @@ la sincronización salta lo que ya está en la lista, respeta las automáticas d
 automáticas desinstaladas. Los excluidos activos no entran al índice. La lista se guarda por su propio
 IPC: no reconstruye la captura ni la pisa el «Guardar ajustes» de otra sección.
 
+### 🐞 Exportar encima del propio clip lo borraba — ✅ entregado (`fix/borrado-clip-al-exportar`, 2026-10-08)
+
+Elegir el mismo `.mp4` como destino del recorte hacía que ffmpeg abortara y que el borrado del parcial
+eliminara el clip original (sin papelera). `ExportManager` rechaza ahora ese destino antes de lanzar
+ffmpeg y nunca borra un parcial que sea la propia entrada.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
