@@ -1617,7 +1617,9 @@ v0.9.7. Se trabajan desde `main` (que ya integra las tandas C y D), cada uno en 
    sintaxis y el ajuste se revierte. Arreglo: pasar la ruta por variable de entorno, como «Copiar»
    (`src/main/export/clipboard.ts`).
 8. **Rechazo no capturado improbable en el auto-switcher** (Muy bajo): `getForegroundWindowTitle().then(...)`
-   sin `.catch` en `src/main/index.ts`; solo si `execFile` lanzara en síncrono.
+   sin `.catch` en `src/main/index.ts`; solo si `execFile` lanzara en síncrono. ✅ Arreglado en
+   `hotfix/auto-switcher-rechazo`: `try/catch` en `foreground.ts` (devuelve `null`) y `.catch` en el
+   intervalo.
 
 ## Futuro (fuera de alcance por ahora)
 

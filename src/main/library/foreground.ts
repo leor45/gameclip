@@ -35,21 +35,27 @@ export function foregroundWindowArgs(): string[] {
  */
 export function getForegroundWindowTitle(timeoutMs = 3000): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = execFile(
-      'powershell.exe',
-      foregroundWindowArgs(),
-      { timeout: timeoutMs, windowsHide: true, encoding: 'utf8' },
-      (err, stdout) => {
-        if (err) return resolve(null);
-        const line = stdout.trim().split(/\r?\n/)[0] ?? '';
-        const sep = line.indexOf('|');
-        if (sep < 0) return resolve(null);
-        const pid = Number(line.slice(0, sep));
-        const title = line.slice(sep + 1).trim();
-        if (!title || pid === process.pid) return resolve(null);
-        resolve(title);
-      },
-    );
-    child.on('error', () => resolve(null));
+    // `execFile` también puede LANZAR en síncrono (fallo de spawn): dentro del executor eso rechazaría
+    // la promesa, y los llamadores (el intervalo del auto-cambio) esperan null, no una excepción.
+    try {
+      const child = execFile(
+        'powershell.exe',
+        foregroundWindowArgs(),
+        { timeout: timeoutMs, windowsHide: true, encoding: 'utf8' },
+        (err, stdout) => {
+          if (err) return resolve(null);
+          const line = stdout.trim().split(/\r?\n/)[0] ?? '';
+          const sep = line.indexOf('|');
+          if (sep < 0) return resolve(null);
+          const pid = Number(line.slice(0, sep));
+          const title = line.slice(sep + 1).trim();
+          if (!title || pid === process.pid) return resolve(null);
+          resolve(title);
+        },
+      );
+      child.on('error', () => resolve(null));
+    } catch {
+      resolve(null);
+    }
   });
 }
