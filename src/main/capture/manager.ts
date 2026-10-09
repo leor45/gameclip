@@ -319,16 +319,13 @@ export class CaptureManager extends EventEmitter {
       // mitad de partida) no puede costarle al usuario los últimos segundos grabados.
       if (settingsChanged(prev, next, PIPELINE_SETTING_KEYS)) {
         // Grabando no se toca el pipeline (cortaría el clip), pero el cambio no puede perderse: se
-        // deja pendiente y settleAfterRecording lo aplica al parar.
-        if (this.status.state === 'recording') this.pendingRebuild = true;
-        else await this.queueRebuild();
-      } else if (
-        settingsChanged(prev, next, BUFFER_SETTING_KEYS) &&
-        this.status.state !== 'recording'
-      ) {
+        // deja pendiente y settleAfterRecording lo aplica al parar. Lo decide la tarea al correr.
+        await this.queueRebuild();
+      } else if (settingsChanged(prev, next, BUFFER_SETTING_KEYS)) {
         // Solo cambió si el búfer debe correr (modo de grabación, bufferMode): se alinea sin
         // reconstruir. Grabando no se toca; al parar, settleAfterRecording reconcilia igual.
         await this.queueTask(async () => {
+          if (this.status.state === 'recording') return;
           await this.reconcileBuffer();
           this.setStatus({ state: this.bufferRunning ? 'buffering' : 'idle', error: null });
         });
@@ -355,11 +352,7 @@ export class CaptureManager extends EventEmitter {
   async displaysChanged(): Promise<void> {
     if (!this.obs.isInitialized || this.builtDisplay === null) return;
     if (sameDisplay(this.resolveTargetDisplay(this.store.load()), this.builtDisplay)) return;
-    if (this.status.state === 'recording') {
-      this.pendingRebuild = true;
-      return;
-    }
-    await this.queueRebuild();
+    await this.queueRebuild(); // grabando, queda pendiente para el final (lo decide la tarea)
   }
 
   /**
@@ -378,8 +371,20 @@ export class CaptureManager extends EventEmitter {
     return this.applying;
   }
 
+  /**
+   * Rebuild encolado que respeta una grabación en curso. El estado se mira **cuando la tarea corre**,
+   * no al encolar: si se encola mientras otra tarea está arrancando la grabación (estado aún
+   * 'buffering'), al correr ya hay grabación, y reconstruir destruiría su salida con el clip dentro.
+   * En ese caso queda pendiente y `settleAfterRecording` lo aplica al parar.
+   */
   private queueRebuild(): Promise<void> {
-    return this.queueTask(() => this.rebuildPipeline());
+    return this.queueTask(async () => {
+      if (this.status.state === 'recording') {
+        this.pendingRebuild = true;
+        return;
+      }
+      await this.rebuildPipeline();
+    });
   }
 
   /**
