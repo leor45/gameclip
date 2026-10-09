@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Clip } from '@shared/library';
 import { formatDuration, formatFileSize } from '@shared/library';
 import { clipMediaUrl, thumbMediaUrl } from '../lib/media';
+import ClipActions from './library/ClipActions';
+import ClipEditForm from './library/ClipEditForm';
+import GameLine from './library/GameLine';
+import { useClipAcciones } from './library/useClipAcciones';
 
 /** Segundos de clip que muestra la preview antes de volver al principio. */
 const PREVIEW_SECONDS = 10;
@@ -11,6 +15,8 @@ const PREVIEW_DELAY_MS = 250;
 interface Props {
   clip: Clip;
   onPlay: (clip: Clip) => void;
+  /** Pide confirmar el borrado (el modal lo pone la Biblioteca). */
+  onEliminar: (clip: Clip) => void;
   /** ¿Esta tarjeta es la que previsualiza? Lo decide la grilla (solo una a la vez). */
   previewActiva?: boolean;
   /** Avisa a la grilla de que el cursor entró (true) o salió (false). */
@@ -22,23 +28,22 @@ function prefiereMenosMovimiento(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
-export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange }: Props) {
+/** Duración del clip, o «Captura» si es una imagen. */
+export function selloDe(clip: Clip): string {
+  return clip.kind === 'image' ? 'Captura' : formatDuration(clip.durationSeconds);
+}
+
+export default function ClipCard({
+  clip,
+  onPlay,
+  onEliminar,
+  previewActiva,
+  onPreviewChange,
+}: Props) {
   const esImagen = clip.kind === 'image';
   const [editando, setEditando] = useState(false);
-  const [titulo, setTitulo] = useState(clip.title);
-  const [tags, setTags] = useState(clip.tags.join(', '));
-  const [ocupado, setOcupado] = useState(false);
+  const { ocupado, alternarFavorito, guardar } = useClipAcciones(clip);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Si el clip cambia desde fuera (push del main), el borrador se realinea. Por VALOR y nunca mientras
-  // se edita: la biblioteca recarga la lista en cada cambio del catálogo (miniaturas, replays) y cada
-  // recarga trae un array de tags nuevo; depender de él pisaba lo que el usuario estaba escribiendo.
-  const tagsTexto = clip.tags.join(', ');
-  useEffect(() => {
-    if (editando) return;
-    setTitulo(clip.title);
-    setTags(tagsTexto);
-  }, [clip.title, tagsTexto, editando]);
 
   // Al desmontar (filtro, borrado, navegación) no puede quedar un arranque pendiente.
   useEffect(() => cancelarPreview, []);
@@ -60,46 +65,9 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
     onPreviewChange?.(false);
   }
 
-  async function accion(fn: () => Promise<unknown>) {
-    setOcupado(true);
-    try {
-      await fn();
-    } finally {
-      setOcupado(false);
-    }
-  }
-
-  async function guardarEdicion(e: FormEvent) {
-    e.preventDefault();
-    await accion(() =>
-      window.gameclip.library.update(clip.id, {
-        title: titulo,
-        tags: tags.split(',').map((t) => t.trim()),
-      }),
-    );
-    setEditando(false);
-  }
-
-  function eliminar() {
-    const seguro = window.confirm(
-      `¿Eliminar "${clip.title}"? El archivo de video también se borra del disco.`,
-    );
-    if (!seguro) return;
-    // Soltar la preview desmonta el <video>, que es lo que en Windows tiene el archivo abierto e
-    // impide borrarlo. Cerrar el handle es asíncrono; el main además reintenta el borrado.
-    onPreviewChange?.(false);
-    void accion(async () => {
-      try {
-        await window.gameclip.library.remove(clip.id);
-      } catch (err) {
-        window.alert(err instanceof Error ? err.message : 'No se pudo borrar el clip.');
-      }
-    });
-  }
-
   const fecha = new Date(clip.createdAt).toLocaleDateString();
-
   const poster = clip.thumbnailPath ? thumbMediaUrl(clip.id, clip.thumbnailPath) : undefined;
+  const sonando = Boolean(previewActiva && !esImagen);
 
   return (
     <article
@@ -117,7 +85,7 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
       >
         {/* La preview se MONTA al apuntar y se DESMONTA al salir: pausarla dejaría vivos el búfer
             y el decodificador, y la app corre mientras el usuario juega. */}
-        {previewActiva && !esImagen ? (
+        {sonando ? (
           <video
             className="clip-preview"
             data-testid={`preview-${clip.id}`}
@@ -140,41 +108,37 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         ) : (
           <span className="clip-thumb-placeholder">{esImagen ? '🖼' : '▶'}</span>
         )}
-        <span className="clip-duration">
-          {esImagen ? 'Captura' : formatDuration(clip.durationSeconds)}
-        </span>
+        {/* El sello (duración) se aparta mientras suena la vista previa. */}
+        {sonando ? (
+          <span className="clip-preview-tag">vista previa</span>
+        ) : (
+          <span className="clip-duration">{selloDe(clip)}</span>
+        )}
       </button>
 
       {editando ? (
-        <form className="clip-edit" onSubmit={(e) => void guardarEdicion(e)}>
-          <input
-            aria-label="Título"
-            value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
-            maxLength={120}
-          />
-          <input
-            aria-label="Etiquetas (separadas por coma)"
-            placeholder="etiquetas, separadas, por coma"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-          />
-          <div className="clip-edit-actions">
-            <button type="submit" disabled={ocupado || !titulo.trim()}>
-              Guardar
-            </button>
-            <button type="button" className="secondary" onClick={() => setEditando(false)}>
-              Cancelar
-            </button>
-          </div>
-        </form>
+        <ClipEditForm
+          clip={clip}
+          ocupado={ocupado}
+          onGuardar={guardar}
+          onCancelar={() => setEditando(false)}
+        />
       ) : (
         <div className="clip-info">
-          <h3 title={clip.title}>{clip.title}</h3>
+          <h3 title={clip.title}>
+            {clip.favorite && (
+              <span className="clip-star" aria-label="Favorito">
+                ★{' '}
+              </span>
+            )}
+            {clip.title}
+          </h3>
+          <GameLine game={clip.game} />
           <p className="clip-meta">
-            {clip.game ?? 'Sin juego'} · {fecha}
+            <span>{fecha}</span>
+            <span aria-hidden="true"> · </span>
+            <span className="clip-size">{formatFileSize(clip.sizeBytes)}</span>
           </p>
-          <p className="clip-size">{formatFileSize(clip.sizeBytes)}</p>
           {clip.tags.length > 0 && (
             <div className="clip-tags">
               {clip.tags.map((t) => (
@@ -187,70 +151,14 @@ export default function ClipCard({ clip, onPlay, previewActiva, onPreviewChange 
         </div>
       )}
 
-      <div className="clip-actions">
-        <button
-          type="button"
-          className={clip.favorite ? 'clip-fav on' : 'clip-fav'}
-          aria-label={clip.favorite ? 'Quitar de favoritos' : 'Marcar favorito'}
-          title={clip.favorite ? 'Quitar de favoritos' : 'Marcar favorito'}
-          disabled={ocupado}
-          onClick={() =>
-            void accion(() =>
-              window.gameclip.library.update(clip.id, { favorite: !clip.favorite }),
-            )
-          }
-        >
-          ★
-        </button>
-        <button
-          type="button"
-          aria-label="Renombrar y etiquetar"
-          title="Renombrar y etiquetar"
-          disabled={ocupado}
-          onClick={() => setEditando(true)}
-        >
-          ✎
-        </button>
-        {/* El editor recorta y mezcla pistas de audio: no hay nada que hacer con una captura. */}
-        {!esImagen && (
-          <button
-            type="button"
-            aria-label="Editar"
-            title="Editar (recortar y mezclar audio)"
-            disabled={ocupado}
-            onClick={() => {
-              // Navegación por hash: la tarjeta no se acopla al router (HashRouter la resuelve).
-              window.location.hash = `#/editor/${clip.id}`;
-            }}
-          >
-            ✂
-          </button>
-        )}
-        <button
-          type="button"
-          aria-label="Abrir carpeta"
-          title="Abrir carpeta"
-          disabled={ocupado}
-          onClick={() => void window.gameclip.library.openFolder(clip.id)}
-        >
-          ⌂
-        </button>
-        <button
-          type="button"
-          className="clip-trash"
-          aria-label="Eliminar"
-          title="Eliminar"
-          disabled={ocupado}
-          onClick={eliminar}
-        >
-          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M6 1h4l.5 1H14v2H2V2h3.5L6 1zm-2.5 4h9L12 15H4L3.5 5zm3 2v6h1V7h-1zm2.5 0v6h1V7h-1z"
-            />
-          </svg>
-        </button>
-      </div>
+      <ClipActions
+        clip={clip}
+        variant="card"
+        ocupado={ocupado}
+        onFavorito={alternarFavorito}
+        onRenombrar={() => setEditando(true)}
+        onEliminar={() => onEliminar(clip)}
+      />
     </article>
   );
 }
