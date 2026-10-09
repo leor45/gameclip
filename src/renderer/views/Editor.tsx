@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { ExportFormat, ExportQuality } from '@shared/export';
+import type { ExportFormat, ExportQuality, ExportResult } from '@shared/export';
 import type { Clip } from '@shared/library';
 import { formatDuration } from '@shared/library';
 import type { ClipAudioTrack } from '@shared/tracks';
@@ -128,14 +128,21 @@ export default function Editor() {
     setProgreso(0);
     setMensaje(null);
     setCopiado(false);
-    const resultado = await window.gameclip.exporter.run({
-      clipId: clip!.id,
-      startSeconds: inicio,
-      endSeconds: fin,
-      format: formato,
-      quality: calidad,
-      mutedTracks: muteadas,
-    });
+    let resultado: ExportResult;
+    try {
+      resultado = await window.gameclip.exporter.run({
+        clipId: clip!.id,
+        startSeconds: inicio,
+        endSeconds: fin,
+        format: formato,
+        quality: calidad,
+        mutedTracks: muteadas,
+      });
+    } catch (err) {
+      // Si el IPC rechaza (pedido inválido, canal caído), se trata como un error más: sin esto el
+      // botón desaparecía y la barra se quedaba al 0 % para siempre.
+      resultado = { status: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
     if (resultado.status === 'done') {
       setEstado('hecho');
     } else if (resultado.status === 'canceled') {

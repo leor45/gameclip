@@ -113,6 +113,20 @@ describe('EditorAvanzado — render', () => {
     expect(mock().library.remove).not.toHaveBeenCalled();
   });
 
+  it('regresión: si el IPC de render rechaza, el modal muestra el error y vuelve a ofrecer renderizar', async () => {
+    await prepararClip();
+    mock().exporter.run.mockRejectedValue(new Error('El recorte debe durar al menos 0.5 s.'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renderizar vídeo' }));
+    const botones = screen.getAllByRole('button', { name: 'Renderizar vídeo' });
+    fireEvent.click(botones[botones.length - 1]);
+
+    // Antes: `rendering` quedaba en true para siempre (barra al 0 % y un Cancelar que no cancela nada).
+    expect(await screen.findByText('El recorte debe durar al menos 0.5 s.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Progreso del render')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Renderizar vídeo' }).length).toBeGreaterThanOrEqual(2);
+  });
+
   it('salir vuelve a la biblioteca', async () => {
     await prepararClip();
     fireEvent.click(screen.getByRole('button', { name: 'Salir' }));

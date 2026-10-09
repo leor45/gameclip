@@ -124,6 +124,20 @@ describe('Editor — exportación', () => {
     expect(await screen.findByRole('button', { name: 'Exportar…' })).toBeInTheDocument();
   });
 
+  it('regresión: si el IPC de exportar rechaza, muestra el motivo y vuelve el botón (no se queda colgado)', async () => {
+    const user = userEvent.setup();
+    await prepararEditor();
+    // El handler lanzaba al validar el pedido (p. ej. recorte < 0,5 s) y el invoke rechazaba: el
+    // editor se quedaba en «exportando» con la barra al 0 % para siempre.
+    mock().exporter.run.mockRejectedValue(new Error('El recorte debe durar al menos 0.5 s.'));
+
+    await user.click(screen.getByRole('button', { name: 'Exportar…' }));
+
+    expect(await screen.findByText('El recorte debe durar al menos 0.5 s.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exportar…' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Progreso de exportación')).not.toBeInTheDocument();
+  });
+
   it('un error muestra el mensaje de ffmpeg', async () => {
     const user = userEvent.setup();
     await prepararEditor();
