@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   KNOWN_GAME_PROCESSES,
+  customExeMatches,
+  findCustomGame,
   findRunningGame,
   findRunningGamesMatch,
   isManualGame,
@@ -174,5 +176,80 @@ describe('isManualGame', () => {
 
   it('sin juego activo no hay nada que marcar', () => {
     expect(isManualGame(null, { customGames: [{ executable: 'MiJuego.exe' }] })).toBe(false);
+  });
+});
+
+describe('juegos manuales guardados con el nombre corrupto (regresión B3-1)', () => {
+  // Antes de la 0.9.8 el selector de Ajustes → Grabación guardaba el `${ProcessName}.exe` que daba
+  // PowerShell en la codepage OEM, y tasklist corrompía el proceso en marcha de la MISMA forma: el
+  // `pokémonñゲ.exe` real se guardaba y se veía como `pok·mon·?.exe` (· = U+FFFD) y casaba. Con los
+  // nombres ya intactos, esa entrada no volvía a casar nunca. `?` no es válido en un nombre de archivo
+  // de Windows y U+FFFD no aparece en un exe real: una entrada con ellos es, sin ambigüedad, de antes.
+  const R = String.fromCharCode(0xfffd);
+  const corrupto = `pok${R}mon${R}?.exe`;
+  const real = 'pokémonñゲ.exe';
+
+  it('la entrada corrupta de antes del arreglo detecta al proceso real, con el nombre del owner', () => {
+    const customGames = [{ executable: corrupto, name: 'Pokémon' }];
+    expect(findRunningGamesMatch(['explorer.exe', real], { customGames })).toEqual([
+      { name: 'Pokémon', executable: real },
+    ]);
+    // El nombre sigue saliendo de SU entrada: resolveGameName e isManualGame no cambian.
+    expect(resolveGameName(corrupto, { customGames })).toBe('Pokémon');
+    expect(isManualGame('Pokémon', { customGames })).toBe(true);
+  });
+
+  it('sin nombre propio, el juego se sigue llamando como antes del arreglo (misma carpeta de clips)', () => {
+    const customGames = [{ executable: corrupto }];
+    expect(findRunningGamesMatch([real], { customGames })).toEqual([
+      { name: `pok${R}mon${R}?`, executable: real },
+    ]);
+  });
+
+  it('las letras ASCII se comparan sin mayúsculas, como exeKey', () => {
+    const customGames = [{ executable: `POK${R}MON${R}?.EXE`, name: 'Pokémon' }];
+    expect(findRunningGamesMatch(['PokÉmonÑゲ.exe'], { customGames })).toEqual([
+      { name: 'Pokémon', executable: 'pokémonñゲ.exe' },
+    ]);
+  });
+
+  it('no casa con un nombre ASCII de la misma longitud ni con otro número de caracteres no ASCII', () => {
+    const customGames = [{ executable: corrupto, name: 'Pokémon' }];
+    for (const otro of [
+      'pokxmonxx.exe', // misma longitud, todo ASCII
+      'pokemonñゲ.exe', // ASCII donde la entrada exige un no ASCII
+      'pokémonñ.exe', // uno menos
+      'pokémonñゲゲ.exe', // uno más
+      'pokémonñゲx.exe', // sobra un ASCII
+      'pakémonñゲ.exe', // difiere una letra ASCII
+    ]) {
+      expect(findRunningGamesMatch([otro], { customGames }), otro).toEqual([]);
+    }
+  });
+
+  it('las entradas exactas no cambian y tienen prioridad sobre una corrupta', () => {
+    const customGames = [
+      { executable: corrupto, name: 'Viejo' },
+      { executable: real, name: 'Nuevo' },
+    ];
+    expect(findRunningGamesMatch([real], { customGames })).toEqual([
+      { name: 'Nuevo', executable: real },
+    ]);
+    expect(findCustomGame(customGames, 'pokémonñゲ')?.name).toBe('Nuevo');
+    // Una entrada sin `?` ni U+FFFD nunca es comodín: `pokemon.exe` no es `pokémon.exe`.
+    expect(
+      findRunningGamesMatch(['pokémon.exe'], { customGames: [{ executable: 'pokemon.exe' }] }),
+    ).toEqual([]);
+  });
+
+  it('customExeMatches: cada comodín vale por exactamente UN carácter no ASCII (también fuera del BMP)', () => {
+    expect(customExeMatches('a?b', 'aéb')).toBe(true);
+    expect(customExeMatches(`a${R}b`, 'aゲb')).toBe(true);
+    expect(customExeMatches('a?b', `a${String.fromCodePoint(0x1f3ae)}b`)).toBe(true);
+    expect(customExeMatches('a?b', 'ab')).toBe(false);
+    expect(customExeMatches('a?b', 'axb')).toBe(false);
+    expect(customExeMatches('a?b', 'aééb')).toBe(false);
+    expect(customExeMatches('ab', 'ab')).toBe(true);
+    expect(customExeMatches('ab', 'aB')).toBe(false); // recibe claves ya normalizadas por exeKey
   });
 });

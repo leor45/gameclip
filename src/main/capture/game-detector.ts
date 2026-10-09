@@ -5,6 +5,7 @@ import {
   KNOWN_GAME_PROCESSES,
   UNKNOWN_EXE_REFRESH_COOLDOWN_MS,
   exeKey,
+  findCustomGame,
   findRunningGamesMatch,
 } from '@shared/games';
 import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
@@ -56,7 +57,7 @@ export class GameDetector extends EventEmitter {
 
   constructor(options: GameDetectorOptions = {}) {
     super();
-    this.list = options.listProcessNames ?? listProcessNamesWindows;
+    this.list = options.listProcessNames ?? createTasklistLister();
     this.intervalMs = options.intervalMs ?? GAME_POLL_INTERVAL_MS;
     this.missesBeforeStop = options.missesBeforeStop ?? 2;
     this.customGames = options.customGames ?? [];
@@ -191,27 +192,174 @@ export class GameDetector extends EventEmitter {
     return (
       key in this.index ||
       key in KNOWN_GAME_PROCESSES ||
-      this.customGames.some((g) => exeKey(g.executable) === key)
+      findCustomGame(this.customGames, key) !== undefined
     );
   }
 }
 
-/** Nombres de proceso vía tasklist (más liviano que arrancar PowerShell cada sondeo). */
-function listProcessNamesWindows(): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'tasklist',
-      ['/fo', 'csv', '/nh'],
-      { windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err) return reject(err);
-        // Cada línea: "nombre.exe","pid",... — solo interesa la primera columna.
-        const names = stdout
-          .split(/\r?\n/)
-          .map((line) => /^"([^"]+)"/.exec(line)?.[1] ?? '')
-          .filter(Boolean);
-        resolve(names);
-      },
-    );
-  });
+/**
+ * Ejecutable y argumentos del sondeo de procesos (puros, para testearlos). `tasklist` escribe en la
+ * codepage OEM de la consola (850 en español): en `pingñé.exe` la ñ y la é llegaban como U+FFFD y
+ * `ゲーム.exe` como `???.exe`, así que esos juegos nunca se detectaban. Se corre dentro de un `cmd`
+ * que antes pasa su consola (propia y oculta, no la de la app) a UTF-8 con `chcp 65001`:
+ *  - `/d`: sin AutoRun del registro, que podría ensuciar stdout.
+ *  - `>nul`: el «Página de códigos activa» de chcp no llega a stdout.
+ *  - `&` (no `&&`): si chcp fallara, tasklist corre igual con la codepage de antes (acentos rotos,
+ *    pero la lista completa), nunca una lista vacía que el detector leería como «se cerraron todos».
+ *    El exit code es el de tasklist, así que un fallo suyo sigue siendo un error del sondeo.
+ */
+export function tasklistCommand(): { file: string; args: string[] } {
+  return { file: 'cmd.exe', args: ['/d', '/s', '/c', 'chcp 65001>nul & tasklist /fo csv /nh'] };
+}
+
+/** Nombres de proceso de la salida CSV de tasklist (`"nombre.exe","pid",...`): la primera columna. */
+export function parseTasklistCsv(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => /^"([^"]+)"/.exec(line)?.[1] ?? '')
+    .filter(Boolean);
+}
+
+/** Lo que la válvula necesita del proceso lanzado: su pid y si ya terminó (un `ChildProcess` vale). */
+export interface ProcesoLanzado {
+  readonly pid?: number;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+}
+
+/** Corre un comando, entrega su stdout y devuelve el proceso lanzado; inyectable para tests. */
+export type RunCommand = (
+  file: string,
+  args: string[],
+  done: (err: Error | null, stdout: string) => void,
+) => ProcesoLanzado;
+
+/** Mata el árbol de procesos de `pid`; inyectable para tests. */
+export type KillTree = (pid: number, done: (err: Error | null) => void) => void;
+
+const execFileUtf8: RunCommand = (file, args, done) =>
+  execFile(
+    file,
+    args,
+    { windowsHide: true, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' },
+    (err, stdout) => done(err, stdout),
+  );
+
+/**
+ * `taskkill /F /T` sobre el `cmd`: se lleva también al tasklist (su hijo) y a su conhost. taskkill es
+ * hijo directo, así que su propio timeout sí lo mata a él si también se cuelga (usa WMI).
+ */
+const taskkillTree: KillTree = (pid, done) => {
+  execFile(
+    'taskkill',
+    ['/F', '/T', '/PID', String(pid)],
+    { windowsHide: true, timeout: 10000 },
+    (err) => done(err),
+  );
+};
+
+export interface TasklistListerOptions {
+  run?: RunCommand;
+  killTree?: KillTree;
+  /** El sondeo falla pasado este tiempo sin respuesta (el detector conserva su estado). */
+  timeoutMs?: number;
+  /** Válvula: con el sondeo vivo tanto tiempo, se mata el árbol del `cmd` (y se reintenta). */
+  valveMs?: number;
+}
+
+/**
+ * Listador de nombres de proceso vía tasklist (más liviano que arrancar PowerShell cada sondeo).
+ *
+ * A los `timeoutMs` el sondeo falla, como siempre, pero el `cmd` NO se mata: tasklist es su hijo (nieto
+ * de la app) y matar el `cmd` lo dejaría huérfano y vivo (medido). tasklist consulta WMI; si WMI se
+ * cuelga, cada sondeo dejaría un tasklist más. En su lugar, mientras el anterior siga vivo los sondeos
+ * fallan sin lanzar otro (nunca hay más de uno a la vez) y el detector conserva su estado, igual que
+ * ante un timeout.
+ *
+ * Válvula: si el sondeo sigue vivo a los `valveMs`, se mata el árbol del `cmd` (`taskkill /F /T`), y
+ * el sondeo sigue «en curso» hasta que el `cmd` vuelve de verdad. Si taskkill falla o se cuelga (WMI
+ * colgado del todo), se reintenta `valveMs` después de que responda. Sin ella, un tasklist que no
+ * volviera nunca congelaba la detección hasta reiniciar (con un juego en marcha, la grabación de
+ * sesión no paraba).
+ */
+export function createTasklistLister(options: TasklistListerOptions = {}): () => Promise<string[]> {
+  const run = options.run ?? execFileUtf8;
+  const killTree = options.killTree ?? taskkillTree;
+  const timeoutMs = options.timeoutMs ?? 10000;
+  const valveMs = options.valveMs ?? 60000;
+  let enCurso = false;
+  return () => {
+    if (enCurso) return Promise.reject(new Error('tasklist: el sondeo anterior sigue en curso'));
+    const { file, args } = tasklistCommand();
+    return new Promise<string[]>((resolve, reject) => {
+      enCurso = true;
+      const inicio = Date.now();
+      // Estado de ESTE sondeo: un callback tardío de uno ya liberado no puede liberar al siguiente.
+      let terminado = false;
+      let valvula: ReturnType<typeof setTimeout> | undefined;
+      const timer = setTimeout(
+        () => reject(new Error(`tasklist: sin respuesta en ${timeoutMs} ms`)),
+        timeoutMs,
+      );
+      const terminar = (err: Error | null, stdout: string): void => {
+        if (terminado) return;
+        terminado = true;
+        clearTimeout(timer);
+        clearTimeout(valvula);
+        enCurso = false;
+        if (err) reject(err);
+        else resolve(parseTasklistCsv(stdout));
+      };
+
+      const armarValvula = (proceso: ProcesoLanzado, intento: number, previo: string): void => {
+        valvula = setTimeout(() => {
+          if (terminado) return;
+          const segundos = Math.round((Date.now() - inicio) / 1000);
+          const pid = proceso.pid;
+          if (pid === undefined || proceso.exitCode !== null || proceso.signalCode !== null) {
+            // El cmd ya salió (su pid podría ser ya de otro proceso): no hay árbol que matar. Algo
+            // ajeno retiene su salida; se libera el sondeo para que la detección no quede congelada.
+            console.warn(
+              `[games] tasklist lleva ${segundos} s sin cerrar y su cmd ya salió: se libera`,
+            );
+            terminar(new Error('tasklist: el cmd salió sin cerrar su salida'), '');
+            return;
+          }
+          console.warn(
+            `[games] tasklist lleva ${segundos} s sin responder: se mata el árbol del cmd ` +
+              `(pid ${pid}, intento ${intento}${previo ? `; el anterior falló: ${previo}` : ''})`,
+          );
+          // Si el cmd sigue sin volver, otro intento `valveMs` después de que responda ESTE taskkill:
+          // nunca dos a la vez y nada se acumula. Una sola vez por intento (un solo temporizador vivo).
+          let rearmado = false;
+          const rearmar = (motivo: string): void => {
+            if (rearmado || terminado) return;
+            rearmado = true;
+            armarValvula(proceso, intento + 1, motivo);
+          };
+          try {
+            killTree(pid, (err) => rearmar(err ? err.message.split(/\r?\n/)[0] : ''));
+          } catch (err) {
+            // spawn/execFile lanzan en síncrono ante errores como ENOMEM: sin esto sería una excepción
+            // no capturada en un temporizador del main y la válvula no volvería a armarse.
+            const motivo = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0];
+            console.warn(
+              `[games] no se pudo lanzar taskkill (pid ${pid}, intento ${intento}): ${motivo}; ` +
+                `se reintenta en ${Math.round(valveMs / 1000)} s`,
+            );
+            rearmar(motivo);
+          }
+        }, valveMs);
+      };
+
+      try {
+        const proceso = run(file, args, terminar);
+        if (!terminado) armarValvula(proceso, 1, '');
+      } catch (err) {
+        // execFile puede lanzar en síncrono (fallo de spawn no recuperable): sin esto quedaría
+        // «en curso» para siempre y la detección no volvería a sondear.
+        terminar(err instanceof Error ? err : new Error(String(err)), '');
+      }
+    });
+  };
 }

@@ -106,6 +106,42 @@ export function exeKey(executable: string): string {
   return base.toLowerCase().replace(/\.exe$/, '');
 }
 
+/** `?` o U+FFFD: lo que dejaba un carácter no ASCII al pasar por la codepage OEM antes de la 0.9.8. */
+const COMODIN_CORRUPTO = /[?\uFFFD]/;
+
+/**
+ * ¿La clave (`exeKey`) de un juego manual designa a este proceso en ejecución (también `exeKey`)?
+ *
+ * Igualdad exacta o, solo para entradas guardadas antes de la 0.9.8 con el nombre corrupto, comodines:
+ * el selector de juegos manuales guardaba el `${ProcessName}.exe` de PowerShell en la codepage OEM y
+ * tasklist corrompía el proceso igual (`pokémonñゲ.exe` → `pok·mon·?.exe`, · = U+FFFD), así que
+ * casaban; con los nombres ya intactos no volverían a casar nunca. `?` no es válido en un nombre de
+ * archivo de Windows y U+FFFD no aparece en un exe real: una entrada con ellos es corrupta sin
+ * ambigüedad. Cada comodín vale por exactamente UN carácter no ASCII del proceso; el resto, igual
+ * (las claves ya vienen en minúsculas de `exeKey`).
+ */
+export function customExeMatches(customKey: string, processKey: string): boolean {
+  if (customKey === processKey) return true;
+  if (!COMODIN_CORRUPTO.test(customKey)) return false;
+  const patron = Array.from(customKey);
+  const proceso = Array.from(processKey);
+  if (patron.length !== proceso.length) return false;
+  return patron.every((c, i) =>
+    COMODIN_CORRUPTO.test(c) ? (proceso[i].codePointAt(0) ?? 0) > 0x7f : c === proceso[i],
+  );
+}
+
+/** Juego manual que designa a este proceso (clave `exeKey`): el exacto si lo hay; si no, uno corrupto. */
+export function findCustomGame(
+  customGames: CustomGame[],
+  processKey: string,
+): CustomGame | undefined {
+  return (
+    customGames.find((g) => exeKey(g.executable) === processKey) ??
+    customGames.find((g) => customExeMatches(exeKey(g.executable), processKey))
+  );
+}
+
 /** El ejecutable sin carpeta ni extensión, conservando la capitalización: `D:\X\CS2.exe` → `CS2`. */
 function exeBaseName(executable: string): string {
   const base = executable.trim().split(/[\\/]/).pop() ?? '';
@@ -146,9 +182,13 @@ export function findRunningGamesMatch(
   ctx: GameNameContext = {},
 ): RunningGameMatch[] {
   const custom = new Map<string, CustomGame>();
+  // Entradas guardadas con el nombre corrupto (ver customExeMatches); casi siempre, ninguna.
+  const corruptos: [string, CustomGame][] = [];
   for (const juego of ctx.customGames ?? []) {
     const key = exeKey(juego.executable);
-    if (key) custom.set(key, juego);
+    if (!key) continue;
+    custom.set(key, juego);
+    if (COMODIN_CORRUPTO.test(key)) corruptos.push([key, juego]);
   }
 
   const out: RunningGameMatch[] = [];
@@ -156,7 +196,8 @@ export function findRunningGamesMatch(
   for (const raw of processNames) {
     const key = exeKey(raw);
     if (!key) continue;
-    const manual = custom.get(key);
+    // Exacto primero; si no, una entrada manual corrupta que lo designe.
+    const manual = custom.get(key) ?? corruptos.find(([k]) => customExeMatches(k, key))?.[1];
     const esJuego = manual !== undefined || key in (ctx.index ?? {}) || key in KNOWN_GAME_PROCESSES;
     if (!esJuego) continue;
     // El nombre de un juego manual se resuelve desde SU entrada, que conserva la capitalización
