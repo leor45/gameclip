@@ -1312,7 +1312,7 @@ de todos los que iban detrás (se reintentaba siempre el primero); y abrir en el
 aún sin duración catalogada creaba una «edición sin terminar» fantasma, dejaba «Restablecer» en 0 s y
 pisaba los cortes de un borrador restaurado.
 
-## Fix de grabación (2026-10-08) — ⏳ pendiente de release (0.9.6)
+## Fix de grabación y auditoría bug-hunter B (2026-10-08) — ✅ publicado en v0.9.6 (portable)
 
 ### 🐞 La grabación manual empezaba tarde (hasta un MP4 de un solo frame) — ✅ entregado (`fix/grabacion-espera-keyframe`, 2026-10-08)
 
@@ -1350,6 +1350,37 @@ recortar luego una grabación larga. Limitación inherente: justo después de pa
 replay dispone de menos de los segundos configurados hasta que el buffer se llena.
 Verificado con el selftest (`GAMECLIP_SELFTEST_CLIP=1`): buffer parado 0,15 s antes de la grabación,
 replay saltado durante, rearranque 0,2 s después de parar y clip guardado.
+
+### 🔍 Auditoría bug-hunter B (2026-10-08) — 10 hallazgos, 10 confirmados, 10 arreglados
+
+> Segunda pasada completa de `src/` (127 archivos de producción, 5 chunks) tras los dos cambios de
+> captura del día. Ninguno de los 10 repite los 16 de la tanda A. Siete ramas `fix/` con test de
+> regresión primero, probadas juntas en una rama de integración temporal (1010 tests) y con un selftest
+> real sobre el build integrado antes de mergear una a una a `main`.
+
+- 🐞 **BUG-1/2/3 · caminos de error de la grabación** (`fix/grabacion-caminos-de-error`): si libobs
+  fallaba al arrancar o parar la grabación manual, el buffer (pausado por la propia grabación) se
+  quedaba parado y el estado mentía; y un `buildPipeline` que lanzaba dejaba `bufferRunning` en true
+  sin salidas. Ahora los `catch` reconcilian el buffer y un build fallido deja `pendingRebuild` para que
+  el siguiente evento recupere. BUG-1 y BUG-2 eran regresiones de `feature/buffer-pausado-al-grabar`.
+- 🐞 **BUG-7/4 · guardar ajustes vaciaba el buffer** (`fix/ajustes-sin-rebuild`): `setSettings`
+  reconstruía el pipeline con cualquier ajuste (el atajo del overlay de rendimiento a mitad de partida
+  costaba los últimos segundos). Catálogo `PIPELINE_SETTING_KEYS`: solo reconstruye si cambió algo que
+  el pipeline lee; `recordingMode`/`bufferMode` reconcilian sin rebuild; el mute del micro se aplica en
+  caliente también grabando. Un test cruza el catálogo con las claves que `obs.ts` lee de verdad.
+- 🐞 **BUG-9 · micrófono guardado que ya no existe** (`fix/mic-desconectado`): el id de un auricular
+  desconectado se pasaba tal cual a libobs (pista de micrófono muda) y Ajustes lo enmascaraba como
+  «Por defecto del sistema». `resolveMicDevice` cae al predeterminado y la UI muestra «Micrófono
+  guardado (no conectado)» con aviso. Reproducido en la máquina del owner.
+- 🐞 **BUG-10 · editores colgados** (`fix/editor-export-colgado`): si el IPC de exportar rechazaba
+  (recorte < 0,5 s con la duración aún a 0) los dos editores se quedaban en «exportando» para siempre.
+  El handler devuelve `{status:'error'}` y los editores capturan el rechazo.
+- 🐞 **BUG-5 · ajustes sin escritura atómica** (`fix/ajustes-escritura-atomica`): temporal + rename y
+  `.bak` del último JSON válido; `load()` recupera del `.bak` antes de caer a defaults.
+- 🐞 **BUG-6 · render con cortes de un clip sin audio** (`fix/export-concat-sin-audio`): la ruta concat
+  referenciaba `[0:a:0]` y ffmpeg abortaba. `exportAudioSelection`: sin pistas → sin audio.
+- 🐞 **BUG-8 · temporales de ffmpeg en la biblioteca** (`fix/temporales-en-biblioteca`): el escaneo
+  salta los `.gameclip-*` (prefijo compartido por el remux y «Guardar edit»).
 
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
