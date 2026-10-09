@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { gameFromFolderName } from '@shared/clip-naming';
 import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
-import { normalizeClipPatch, titleFromFileName } from '@shared/library';
+import { isTempMediaFile, normalizeClipPatch, titleFromFileName } from '@shared/library';
 import type { ClipsRepository } from './clips-repository';
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
@@ -263,6 +263,9 @@ function mediaFilesIn(dir: string): string[] {
       out.push(...mediaFilesIn(full));
       continue;
     }
+    // Los temporales de ffmpeg (remux de nombres, «Guardar edit») viven junto al clip mientras dura
+    // la operación: catalogarlos dejaba una tarjeta fantasma al renombrarse.
+    if (isTempMediaFile(entry.name)) continue;
     const ext = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase();
     if (VIDEO_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext)) out.push(full);
   }

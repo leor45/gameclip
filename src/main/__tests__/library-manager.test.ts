@@ -218,6 +218,21 @@ describe('LibraryManager — reconciliación', () => {
   });
 });
 
+describe('LibraryManager — reconciliación ignora los temporales de ffmpeg (auditoría B: BUG-8)', () => {
+  it('regresión: un remux en vuelo no deja una tarjeta fantasma', () => {
+    const manager = crearManager();
+    video('clip real.mp4');
+    // Lo que el remux de nombres y «Guardar edit» escriben junto al clip mientras trabajan.
+    video('.gameclip-names-1234-1700000000000.mp4');
+    video('.gameclip-edit-1234-1700000000001.mp4');
+
+    const resultado = manager.reconcile(outputDir);
+
+    expect(resultado).toEqual({ added: 1, removed: 0 });
+    expect(manager.list().map((c) => c.title)).toEqual(['clip real']);
+  });
+});
+
 describe('LibraryManager — gestión', () => {
   it('setClipMedia escribe el thumbnail y guarda la duración', async () => {
     const manager = crearManager();
