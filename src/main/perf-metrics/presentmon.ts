@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -89,10 +89,22 @@ export function presentMonArgs(excludeExe: string[]): string[] {
     '--output_stdout',
     '--no_console_stats',
     '--stop_existing_session',
-    '--session_name', 'GameClipPerf',
+    '--session_name', PRESENTMON_SESSION,
   ];
   for (const exe of excludeExe) args.push('--exclude', exe);
   return args;
+}
+
+/** Nombre de la sesión ETW propia: el mismo al abrirla y al cerrarla. */
+export const PRESENTMON_SESSION = 'GameClipPerf';
+
+/**
+ * Argumentos para cerrar la sesión ETW propia sin capturar nada. Hace falta porque parar PresentMon
+ * es matarlo (`TerminateProcess` en Windows): no llega a cerrar su sesión, que se queda «Activa»
+ * reteniendo cupo de los proveedores (DXGI, D3D9, DxgKrnl) hasta reiniciar Windows.
+ */
+export function presentMonTerminateArgs(): string[] {
+  return ['--terminate_existing_session', '--session_name', PRESENTMON_SESSION];
 }
 
 /** Índice de columnas de la cabecera CSV que nos interesan; null si falta alguna imprescindible. */
@@ -199,6 +211,8 @@ export function defaultPresentMonPath(): string | null {
 export interface PresentMonDeps {
   helperPath: () => string | null;
   spawn: (exePath: string, args: string[]) => LineProcess;
+  /** Corre PresentMon para cerrar la sesión ETW y espera a que termine (best-effort). */
+  closeSession?: (exePath: string, args: string[]) => void;
   /** Ejecutable de la propia GameClip a excluir; default el basename de process.execPath. */
   selfExe?: () => string;
   now?: () => number;
@@ -329,11 +343,15 @@ export class PresentMonReader {
   }
 
   stop(): void {
+    const teniaProceso = this.child !== null;
     // El kill dispara `exit`; sin esta marca se interpretaría como muerte por su cuenta.
     this.reiniciando = true;
     this.child?.kill();
     this.reiniciando = false;
     this.child = null;
+    // Matarlo deja su sesión ETW huérfana: se cierra aparte, después del kill y antes de que un
+    // `start()` posterior abra la nueva (por eso el cierre es síncrono).
+    if (teniaProceso) this.cerrarSesion();
     this.failed = false;
     this.muertoEn = null;
     this.cols = null;
@@ -341,6 +359,16 @@ export class PresentMonReader {
     this.reintentos = 0;
     this.trackers.clear();
     this.locked = null;
+  }
+
+  private cerrarSesion(): void {
+    const exePath = this.deps.helperPath();
+    if (!exePath || !this.deps.closeSession) return;
+    try {
+      this.deps.closeSession(exePath, presentMonTerminateArgs());
+    } catch {
+      // best-effort: el siguiente arranque la recupera igual con --stop_existing_session
+    }
   }
 
   private onLine(line: string): void {
@@ -449,6 +477,15 @@ export function realPresentMonSpawn(exePath: string, args: string[]): LineProces
   };
 }
 
+/** Cierre real de la sesión: ~35 ms medidos; el tope evita colgar el cierre de la app. */
+export function realPresentMonCloseSession(exePath: string, args: string[]): void {
+  spawnSync(exePath, args, { windowsHide: true, stdio: 'ignore', timeout: 3000 });
+}
+
 export function createPresentMonReader(): PresentMonReader {
-  return new PresentMonReader({ helperPath: defaultPresentMonPath, spawn: realPresentMonSpawn });
+  return new PresentMonReader({
+    helperPath: defaultPresentMonPath,
+    spawn: realPresentMonSpawn,
+    closeSession: realPresentMonCloseSession,
+  });
 }

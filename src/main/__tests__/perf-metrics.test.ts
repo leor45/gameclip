@@ -341,6 +341,59 @@ function readerFalso() {
   };
 }
 
+describe('presentmon — cierre de la sesión ETW (auditoría C: C3-BUG-1)', () => {
+  function readerConCierre() {
+    const fake = procesoFalso();
+    const orden: string[] = [];
+    (fake.proc.kill as ReturnType<typeof vi.fn>).mockImplementation(() => orden.push('kill'));
+    const closeSession = vi.fn((exe: string, args: string[]) => {
+      orden.push('closeSession');
+      return { exe, args };
+    });
+    const reader = new PresentMonReader({
+      helperPath: () => 'C:\\pm.exe',
+      spawn: () => fake.proc,
+      selfExe: () => 'GameClip.exe',
+      closeSession,
+    });
+    return { reader, closeSession, orden };
+  }
+
+  it('regresión: stop() cierra la sesión GameClipPerf después de matar el proceso', () => {
+    // kill() en Windows es TerminateProcess: PresentMon no llegaba a cerrar su sesión ETW y quedaba
+    // huérfana («Activo», reteniendo cupo del proveedor) hasta reiniciar Windows.
+    const { reader, closeSession, orden } = readerConCierre();
+    reader.start();
+    reader.stop();
+
+    expect(orden).toEqual(['kill', 'closeSession']);
+    expect(closeSession).toHaveBeenCalledWith('C:\\pm.exe', [
+      '--terminate_existing_session',
+      '--session_name',
+      'GameClipPerf',
+    ]);
+  });
+
+  it('sin proceso vivo, stop() no lanza nada', () => {
+    const { reader, closeSession } = readerConCierre();
+    reader.stop();
+    expect(closeSession).not.toHaveBeenCalled();
+  });
+
+  it('un fallo al cerrar la sesión no rompe stop()', () => {
+    const fake = procesoFalso();
+    const reader = new PresentMonReader({
+      helperPath: () => 'C:\\pm.exe',
+      spawn: () => fake.proc,
+      closeSession: () => {
+        throw new Error('spawn EPERM');
+      },
+    });
+    reader.start();
+    expect(() => reader.stop()).not.toThrow();
+  });
+});
+
 describe('presentmon — recuperación tras morir', () => {
   /** Como `readerFalso`, pero cada spawn devuelve un proceso nuevo (hace falta para relanzados). */
   function readerConRelanzado() {
