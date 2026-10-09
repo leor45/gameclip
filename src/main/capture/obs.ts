@@ -11,7 +11,12 @@ import type {
   OutputResolution,
   RecordingQuality,
 } from '@shared/capture';
-import { AUDIO_APPS_TRACK_MAX, captureProfile, orderedActiveAudioApps } from '@shared/capture';
+import {
+  AUDIO_APPS_TRACK_MAX,
+  captureProfile,
+  orderedActiveAudioApps,
+  resolveMicDevice,
+} from '@shared/capture';
 import { unpackedPath } from '../paths';
 
 // Valores espejo de los const enum de module.d.ts (esbuild no inlinea const enums de .d.ts).
@@ -759,7 +764,11 @@ export class ObsCapture extends EventEmitter {
    * propiedad `device_id` (lista) y mapea sus items. Siempre incluye 'default' primero.
    */
   getAudioDevices(): AudioDeviceInfo[] {
-    const osn = this.mustOsn();
+    return this.enumerateAudioDevices(this.mustOsn());
+  }
+
+  /** La enumeración en sí, parametrizada por el módulo osn (buildAudioSources la usa con el suyo). */
+  private enumerateAudioDevices(osn: OsnModule): AudioDeviceInfo[] {
     const devices: AudioDeviceInfo[] = [{ id: 'default', name: 'Micrófono por defecto' }];
     let source: OsnInput | null = null;
     try {
@@ -1010,8 +1019,16 @@ export class ObsCapture extends EventEmitter {
     }
 
     // Micrófono: siempre existe (silenciado si está desactivado) para poder religarlo sin rebuild.
+    // El dispositivo guardado se resuelve contra los que existen: con un id huérfano (auricular
+    // desconectado) libobs se quedaría esperando al dispositivo y la pista de micrófono saldría muda.
+    const micDevice = resolveMicDevice(settings.micDeviceId, this.enumerateAudioDevices(osn));
+    if (micDevice.missing) {
+      console.warn(
+        `[capture] el micrófono guardado (${settings.micDeviceId}) no está conectado: se usa el predeterminado`,
+      );
+    }
     const mic = osn.InputFactory.create('wasapi_input_capture', 'gameclip-mic', {
-      device_id: settings.micDeviceId || 'default',
+      device_id: micDevice.deviceId,
     });
     // Con push-to-talk el mic arranca cerrado hasta que el manager reporte la tecla pulsada.
     mic.muted = !settings.micEnabled || settings.pttEnabled;

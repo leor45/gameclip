@@ -150,6 +150,31 @@ describe('Ajustes — Audio', () => {
     return user;
   }
 
+  it('regresión: un micrófono guardado que ya no existe se muestra como desconectado, con aviso', async () => {
+    // El select controlado con un id sin opción pintaba «Por defecto del sistema» y el ajuste seguía
+    // apuntando al dispositivo fantasma (pista de micrófono muda en todos los clips).
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      micDeviceId: '{0.0.1.00000000}.{c125ff3b-fantasma}',
+    });
+    await irAAudio();
+
+    const select = (await screen.findByLabelText('Dispositivo')) as HTMLSelectElement;
+    expect(select.value).toBe('{0.0.1.00000000}.{c125ff3b-fantasma}');
+    expect(select.selectedOptions[0]?.textContent).toContain('no conectado');
+    expect(screen.getByTestId('aviso-mic-desconectado')).toBeInTheDocument();
+  });
+
+  it('con el micrófono guardado presente no hay aviso de desconexión', async () => {
+    mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, micDeviceId: 'device-2' });
+    await irAAudio();
+
+    const select = (await screen.findByLabelText('Dispositivo')) as HTMLSelectElement;
+    expect(select.value).toBe('device-2');
+    expect(screen.queryByTestId('aviso-mic-desconectado')).not.toBeInTheDocument();
+    expect(screen.queryByText('Micrófono guardado (no conectado)')).not.toBeInTheDocument();
+  });
+
   it('en modo apps muestra siempre las filas fijas: juego, micrófono y Discord', async () => {
     const user = await irAAudio();
     await user.click(screen.getByLabelText('Apps específicas'));

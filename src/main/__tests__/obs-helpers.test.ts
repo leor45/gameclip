@@ -112,10 +112,17 @@ describe('DESKTOP_AUDIO_SETTINGS', () => {
 });
 
 // Fake mínimo de osn para auditar cómo buildAudioSources configura las fuentes de audio.
-function fakeOsnAudio() {
+function fakeOsnAudio(micDevices: { name: string; value: string }[] = []) {
   const volumeSets: { name: string; value: number }[] = [];
   const faders: { attachedTo: string | null; deflection: number }[] = [];
+  /** Fuentes creadas, con los settings que recibió InputFactory.create (p. ej. el device_id del mic). */
+  const creados: { name: string; settings: Record<string, unknown> | undefined }[] = [];
   const makeInput = (name: string) => {
+    // La fuente temporal de enumeración expone la propiedad-lista `device_id` con los micros dados.
+    const deviceList =
+      name === 'gameclip-enum-mic' && micDevices.length > 0
+        ? { name: 'device_id', details: { items: micDevices }, next: () => null }
+        : null;
     const input = {
       name,
       muted: false,
@@ -124,7 +131,11 @@ function fakeOsnAudio() {
       update() {},
       addFilter() {},
       removeFilter() {},
-      properties: { first: () => null, get: () => null, count: () => 0 },
+      properties: {
+        first: () => null,
+        get: (prop: string) => (prop === 'device_id' ? deviceList : null),
+        count: () => 0,
+      },
     };
     // El setter volume de osn está roto (silencia la fuente): el fake lo registra para
     // poder afirmar que NADIE lo llama.
@@ -137,7 +148,12 @@ function fakeOsnAudio() {
     return input;
   };
   const osn = {
-    InputFactory: { create: (_id: string, name: string) => makeInput(name) },
+    InputFactory: {
+      create: (_id: string, name: string, settings?: Record<string, unknown>) => {
+        creados.push({ name, settings });
+        return makeInput(name);
+      },
+    },
     FilterFactory: { create: () => ({ release() {} }) },
     AudioTrackFactory: {
       create: () => ({ bitrate: 160, name: '' }),
@@ -159,8 +175,48 @@ function fakeOsnAudio() {
       },
     },
   };
-  return { osn, volumeSets, faders };
+  return { osn, volumeSets, faders, creados };
 }
+
+describe('micrófono guardado que ya no existe (auditoría B: BUG-9)', () => {
+  const micDe = (creados: { name: string; settings: Record<string, unknown> | undefined }[]) =>
+    creados.find((c) => c.name === 'gameclip-mic')?.settings?.device_id;
+
+  it('regresión: con un id huérfano y dispositivos enumerados, libobs recibe el micro por defecto', () => {
+    const { osn, creados } = fakeOsnAudio([
+      { name: 'NVIDIA Broadcast', value: '{0.0.1}.{aaa}' },
+      { name: 'MC20', value: '{0.0.1}.{bbb}' },
+    ]);
+    const capture = new ObsCapture() as unknown as BuildAudioSources;
+    const settings = { ...DEFAULT_CAPTURE_SETTINGS, micDeviceId: '{0.0.1}.{c125ff3b-fantasma}' };
+
+    capture.buildAudioSources(osn, settings, effectiveCapture(settings, false), null, () => {});
+
+    // Antes: device_id = el id fantasma → wasapi_input_capture esperando a un dispositivo que no
+    // existe → pista de micrófono muda en todos los clips (reproducido en la máquina del owner).
+    expect(micDe(creados)).toBe('default');
+  });
+
+  it('con el id presente en la enumeración se respeta', () => {
+    const { osn, creados } = fakeOsnAudio([{ name: 'MC20', value: '{0.0.1}.{bbb}' }]);
+    const capture = new ObsCapture() as unknown as BuildAudioSources;
+    const settings = { ...DEFAULT_CAPTURE_SETTINGS, micDeviceId: '{0.0.1}.{bbb}' };
+
+    capture.buildAudioSources(osn, settings, effectiveCapture(settings, false), null, () => {});
+
+    expect(micDe(creados)).toBe('{0.0.1}.{bbb}');
+  });
+
+  it('si osn no enumera ningún dispositivo real, el id guardado no se degrada a ciegas', () => {
+    const { osn, creados } = fakeOsnAudio();
+    const capture = new ObsCapture() as unknown as BuildAudioSources;
+    const settings = { ...DEFAULT_CAPTURE_SETTINGS, micDeviceId: '{0.0.1}.{bbb}' };
+
+    capture.buildAudioSources(osn, settings, effectiveCapture(settings, false), null, () => {});
+
+    expect(micDe(creados)).toBe('{0.0.1}.{bbb}');
+  });
+});
 
 type BuildAudioSources = {
   buildAudioSources(

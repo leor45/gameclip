@@ -10,6 +10,7 @@ import {
   needsContentProtection,
   normalizeCaptureSettings,
   orderedActiveAudioApps,
+  resolveMicDevice,
 } from '../capture';
 
 describe('needsContentProtection', () => {
@@ -233,6 +234,45 @@ describe('normalizeCaptureSettings — juegos manuales', () => {
       ],
     });
     expect(customGames).toEqual([{ executable: 'MiJuego.exe', name: 'Bueno' }]);
+  });
+});
+
+describe('resolveMicDevice (micrófono guardado que ya no existe)', () => {
+  const dispositivos = [
+    { id: 'default', name: 'Micrófono por defecto' },
+    { id: '{0.0.1}.{aaa}', name: 'NVIDIA Broadcast' },
+    { id: '{0.0.1}.{bbb}', name: 'MC20' },
+  ];
+
+  it('vacío o default → default, sin aviso', () => {
+    expect(resolveMicDevice('', dispositivos)).toEqual({ deviceId: 'default', missing: false });
+    expect(resolveMicDevice('default', dispositivos)).toEqual({ deviceId: 'default', missing: false });
+  });
+
+  it('presente en la enumeración → se respeta', () => {
+    expect(resolveMicDevice('{0.0.1}.{bbb}', dispositivos)).toEqual({
+      deviceId: '{0.0.1}.{bbb}',
+      missing: false,
+    });
+  });
+
+  it('regresión: ausente de la enumeración → default y marcado como desconectado', () => {
+    // El caso real del owner: el id de un micro que ya no está dejaba la pista de micrófono muda.
+    expect(resolveMicDevice('{0.0.1}.{c125ff3b}', dispositivos)).toEqual({
+      deviceId: 'default',
+      missing: true,
+    });
+  });
+
+  it('sin dispositivos reales enumerados no se degrada a ciegas', () => {
+    expect(resolveMicDevice('{0.0.1}.{c125ff3b}', [])).toEqual({
+      deviceId: '{0.0.1}.{c125ff3b}',
+      missing: false,
+    });
+    expect(resolveMicDevice('{0.0.1}.{c125ff3b}', [dispositivos[0]])).toEqual({
+      deviceId: '{0.0.1}.{c125ff3b}',
+      missing: false,
+    });
   });
 });
 
