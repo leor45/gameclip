@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, app, desktopCapturer, dialog, ipcMain, screen, shell } from 'electron';
@@ -23,6 +22,7 @@ import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { pickScreenshotSource } from './capture/screenshot-target';
 import { checkForUpdates } from './updates';
 import { exportAudioSelection } from './export/ffmpeg-args';
+import { copyFileToClipboard } from './export/clipboard';
 import type { CaptureManager } from './capture/manager';
 import type { ExportManager } from './export/manager';
 import type { LibraryManager } from './library/manager';
@@ -334,21 +334,6 @@ export function registerIpcHandlers(
     if (lastExportPath && existsSync(lastExportPath)) shell.showItemInFolder(lastExportPath);
   });
   ipcMain.handle(IpcChannel.ExportCopyLast, () => copyFileToClipboard(lastExportPath));
-}
-
-// Electron no expone CF_HDROP (archivos) en su API de portapapeles: se delega en
-// PowerShell, que sí arma la lista de archivos pegable en Explorer/Discord.
-function copyFileToClipboard(path: string | null): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (!path || !existsSync(path)) return resolve(false);
-    const escaped = path.replace(/'/g, "''");
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', `Set-Clipboard -LiteralPath '${escaped}'`],
-      { timeout: 5000, windowsHide: true },
-      (err) => resolve(!err),
-    );
-  });
 }
 
 function sanitizeFileName(name: string): string {

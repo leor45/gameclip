@@ -55,7 +55,7 @@ export class GameDetector extends EventEmitter {
 
   constructor(options: GameDetectorOptions = {}) {
     super();
-    this.list = options.listProcessNames ?? listProcessNamesWindows;
+    this.list = options.listProcessNames ?? createTasklistLister();
     this.intervalMs = options.intervalMs ?? GAME_POLL_INTERVAL_MS;
     this.missesBeforeStop = options.missesBeforeStop ?? 2;
     this.customGames = options.customGames ?? [];
@@ -169,22 +169,81 @@ export class GameDetector extends EventEmitter {
   }
 }
 
-/** Nombres de proceso vía tasklist (más liviano que arrancar PowerShell cada sondeo). */
-function listProcessNamesWindows(): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'tasklist',
-      ['/fo', 'csv', '/nh'],
-      { windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err) return reject(err);
-        // Cada línea: "nombre.exe","pid",... — solo interesa la primera columna.
-        const names = stdout
-          .split(/\r?\n/)
-          .map((line) => /^"([^"]+)"/.exec(line)?.[1] ?? '')
-          .filter(Boolean);
-        resolve(names);
-      },
-    );
-  });
+/**
+ * Ejecutable y argumentos del sondeo de procesos (puros, para testearlos). `tasklist` escribe en la
+ * codepage OEM de la consola (850 en español): en `pingñé.exe` la ñ y la é llegaban como U+FFFD y
+ * `ゲーム.exe` como `???.exe`, así que esos juegos nunca se detectaban. Se corre dentro de un `cmd`
+ * que antes pasa su consola (propia y oculta, no la de la app) a UTF-8 con `chcp 65001`:
+ *  - `/d`: sin AutoRun del registro, que podría ensuciar stdout.
+ *  - `>nul`: el «Página de códigos activa» de chcp no llega a stdout.
+ *  - `&` (no `&&`): si chcp fallara, tasklist corre igual con la codepage de antes (acentos rotos,
+ *    pero la lista completa), nunca una lista vacía que el detector leería como «se cerraron todos».
+ *    El exit code es el de tasklist, así que un fallo suyo sigue siendo un error del sondeo.
+ */
+export function tasklistCommand(): { file: string; args: string[] } {
+  return { file: 'cmd.exe', args: ['/d', '/s', '/c', 'chcp 65001>nul & tasklist /fo csv /nh'] };
+}
+
+/** Nombres de proceso de la salida CSV de tasklist (`"nombre.exe","pid",...`): la primera columna. */
+export function parseTasklistCsv(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => /^"([^"]+)"/.exec(line)?.[1] ?? '')
+    .filter(Boolean);
+}
+
+/** Corre un comando y entrega su stdout; inyectable para tests. */
+export type RunCommand = (
+  file: string,
+  args: string[],
+  done: (err: Error | null, stdout: string) => void,
+) => void;
+
+const execFileUtf8: RunCommand = (file, args, done) => {
+  execFile(
+    file,
+    args,
+    { windowsHide: true, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' },
+    (err, stdout) => done(err, stdout),
+  );
+};
+
+/**
+ * Listador de nombres de proceso vía tasklist (más liviano que arrancar PowerShell cada sondeo).
+ *
+ * A los `timeoutMs` el sondeo falla, como siempre, pero el `cmd` NO se mata: tasklist es su hijo (nieto
+ * de la app) y matar el `cmd` lo dejaría huérfano y vivo (medido). tasklist consulta WMI; si WMI se
+ * cuelga, cada sondeo dejaría un tasklist más. En su lugar, mientras el anterior siga vivo los sondeos
+ * fallan sin lanzar otro (nunca hay más de uno a la vez) y el detector conserva su estado, igual que
+ * ante un timeout.
+ */
+export function createTasklistLister(
+  run: RunCommand = execFileUtf8,
+  timeoutMs = 10000,
+): () => Promise<string[]> {
+  let enCurso = false;
+  return () => {
+    if (enCurso) return Promise.reject(new Error('tasklist: el sondeo anterior sigue en curso'));
+    const { file, args } = tasklistCommand();
+    return new Promise<string[]>((resolve, reject) => {
+      enCurso = true;
+      const timer = setTimeout(
+        () => reject(new Error(`tasklist: sin respuesta en ${timeoutMs} ms`)),
+        timeoutMs,
+      );
+      const terminar = (err: Error | null, stdout: string): void => {
+        clearTimeout(timer);
+        enCurso = false;
+        if (err) reject(err);
+        else resolve(parseTasklistCsv(stdout));
+      };
+      try {
+        run(file, args, terminar);
+      } catch (err) {
+        // execFile puede lanzar en síncrono (fallo de spawn no recuperable): sin esto quedaría
+        // «en curso» para siempre y la detección no volvería a sondear.
+        terminar(err instanceof Error ? err : new Error(String(err)), '');
+      }
+    });
+  };
 }

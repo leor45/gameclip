@@ -4,7 +4,10 @@ import type { AudioAppInfo } from '@shared/capture';
 // Procesos que no tiene sentido ofrecer como fuente de audio por app.
 const EXCLUDED = new Set(['electron', 'gameclip', 'explorer', 'textinputhost', 'systemsettings']);
 
+// Salida forzada a UTF-8 (como en games/powershell.ts): sin ello PowerShell escribe en la codepage
+// OEM de la consola (850 en español) y los nombres/títulos con acentos, ñ o CJK llegaban corruptos.
 const PS_COMMAND =
+  '[Console]::OutputEncoding = [Text.Encoding]::UTF8; ' +
   'Get-Process | Where-Object { $_.MainWindowTitle } | ' +
   'Select-Object ProcessName, MainWindowTitle | ConvertTo-Json -Compress';
 
@@ -12,6 +15,11 @@ const PS_COMMAND =
 // navegación de Ajustes spawnearía un powershell.exe nuevo.
 const CACHE_TTL_MS = 5000;
 let cache: { at: number; apps: AudioAppInfo[] } | null = null;
+
+/** Argumentos de powershell.exe para listar los procesos con ventana (puros, para testearlos). */
+export function audioAppsArgs(): string[] {
+  return ['-NoProfile', '-NonInteractive', '-Command', PS_COMMAND];
+}
 
 /**
  * Candidatos a captura de audio por app: procesos con ventana principal.
@@ -22,8 +30,8 @@ export function listAudioApps(): Promise<AudioAppInfo[]> {
   return new Promise((resolve) => {
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', PS_COMMAND],
-      { timeout: 10000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+      audioAppsArgs(),
+      { timeout: 10000, windowsHide: true, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' },
       (err, stdout) => {
         const apps = err ? [] : parseAudioApps(stdout);
         if (!err) cache = { at: Date.now(), apps };
@@ -37,7 +45,9 @@ export function listAudioApps(): Promise<AudioAppInfo[]> {
 export function parseAudioApps(stdout: string): AudioAppInfo[] {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stdout);
+    // trim(): JSON.parse no acepta un BOM inicial (PowerShell no lo escribe hoy, pero sería un
+    // selector vacío por un solo carácter invisible).
+    parsed = JSON.parse(stdout.trim());
   } catch {
     return [];
   }

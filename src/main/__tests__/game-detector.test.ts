@@ -1,6 +1,13 @@
+import { basename } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
-import { GameDetector } from '../capture/game-detector';
+import {
+  GameDetector,
+  createTasklistLister,
+  parseTasklistCsv,
+  tasklistCommand,
+  type RunCommand,
+} from '../capture/game-detector';
 
 // El sondeo es async: tras avanzar el timer hay que drenar las microtareas pendientes.
 async function avanzar(ms: number) {
@@ -261,5 +268,154 @@ describe('GameDetector — re-índice por novedad (unknown-executable)', () => {
     await avanzar(3000); // t=6000 cooldown cumplido (desde t=1000) y pendiente → emit (2)
     expect(contar()).toBe(2);
     detector.stop();
+  });
+});
+
+describe('sondeo de procesos con tasklist (regresión D4-BUG-3: ejecutables con acentos, ñ o CJK)', () => {
+  it('pone la consola en UTF-8 (chcp 65001) antes de tasklist', () => {
+    // tasklist escribe en la codepage OEM de la consola (850 en un Windows en español) y Node decodifica
+    // UTF-8: en `pingñé.exe` la ñ y la é llegaban como U+FFFD y `ゲーム.exe` como `???.exe` (medido), así
+    // que un juego con un ejecutable no ASCII nunca se detectaba. `/d`, `>nul` y `&` (no `&&`): ver el
+    // comentario de `tasklistCommand`.
+    expect(tasklistCommand()).toEqual({
+      file: 'cmd.exe',
+      args: ['/d', '/s', '/c', 'chcp 65001>nul & tasklist /fo csv /nh'],
+    });
+  });
+
+  it('parsea la primera columna del CSV, con CRLF y nombres no ASCII intactos', () => {
+    const stdout =
+      '"System Idle Process","0","Services","0","8 KB"\r\n' +
+      '"pingñé.exe","1234","Console","1","5.120 KB"\r\n' +
+      '"ゲーム.exe","5678","Console","1","9.000 KB"\r\n' +
+      '"Marvel’s Spider-Man 2.exe","9012","Console","1","1 KB"\r\n' +
+      '\r\n';
+    expect(parseTasklistCsv(stdout)).toEqual([
+      'System Idle Process',
+      'pingñé.exe',
+      'ゲーム.exe',
+      'Marvel’s Spider-Man 2.exe',
+    ]);
+  });
+
+  it('ignora líneas que no son filas del CSV', () => {
+    expect(parseTasklistCsv('')).toEqual([]);
+    expect(parseTasklistCsv('Página de códigos activa: 65001\r\n"cs2.exe","1"\r\n')).toEqual([
+      'cs2.exe',
+    ]);
+  });
+
+  it('un juego manual con ejecutable no ASCII se detecta si el nombre llega intacto', async () => {
+    vi.useFakeTimers();
+    try {
+      const detector = new GameDetector({
+        listProcessNames: () => Promise.resolve(parseTasklistCsv('"Pokémon ゲーム.exe","1"\r\n')),
+        intervalMs: 1000,
+        customGames: [{ executable: 'D:\\Juegos\\Pokémon ゲーム.exe', name: 'Pokémon' }],
+      });
+      const emisiones: RunningGameMatch[][] = [];
+      detector.on('games-changed', (lista: RunningGameMatch[]) => emisiones.push(lista));
+      detector.start();
+      await avanzar(0);
+      expect(nombres(emisiones)).toEqual([['Pokémon']]);
+      detector.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.skipIf(process.platform !== 'win32')(
+    'en Windows lista los procesos reales (incluido este proceso de node)',
+    async () => {
+      const names = (await createTasklistLister()()).map((n) => n.toLowerCase());
+      expect(names).toContain(basename(process.execPath).toLowerCase());
+      expect(names).toContain('tasklist.exe');
+    },
+    15000,
+  );
+});
+
+describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runner falso: guarda cada llamada para terminarla cuando el test quiera. */
+  function runnerFalso() {
+    const llamadas: {
+      file: string;
+      args: string[];
+      done: (err: Error | null, stdout: string) => void;
+    }[] = [];
+    const run: RunCommand = (file, args, done) => {
+      llamadas.push({ file, args, done });
+    };
+    return { run, llamadas };
+  }
+
+  it('lanza el comando de tasklistCommand y parsea su salida', async () => {
+    const { run, llamadas } = runnerFalso();
+    const listar = createTasklistLister(run, 10000);
+    const p = listar();
+    expect(llamadas).toHaveLength(1);
+    expect({ file: llamadas[0].file, args: llamadas[0].args }).toEqual(tasklistCommand());
+    llamadas[0].done(null, '"System","4"\r\n"cs2.exe","99"\r\n');
+    await expect(p).resolves.toEqual(['System', 'cs2.exe']);
+  });
+
+  it('un error del comando rechaza y el siguiente sondeo vuelve a lanzarlo', async () => {
+    const { run, llamadas } = runnerFalso();
+    const listar = createTasklistLister(run, 10000);
+    const p = listar();
+    llamadas[0].done(new Error('exit 1'), '');
+    await expect(p).rejects.toThrow('exit 1');
+    void listar().catch(() => {});
+    expect(llamadas).toHaveLength(2);
+  });
+
+  it('a los timeoutMs rechaza, y no lanza otro mientras el anterior siga vivo (regresión: huérfanos)', async () => {
+    // Matar el cmd al vencer el timeout dejaba a tasklist (su hijo) vivo; con WMI colgado, cada sondeo
+    // sumaba uno. Ahora el sondeo falla igual a los 10 s, pero el siguiente no lanza otro proceso.
+    const { run, llamadas } = runnerFalso();
+    const listar = createTasklistLister(run, 10000);
+    const p1 = listar();
+    const r1 = expect(p1).rejects.toThrow('sin respuesta en 10000 ms');
+    await vi.advanceTimersByTimeAsync(10000);
+    await r1;
+
+    const p2 = listar();
+    expect(llamadas).toHaveLength(1); // no se lanzó un segundo cmd/tasklist
+    await expect(p2).rejects.toThrow('sigue en curso');
+
+    // El colgado termina por fin (su resultado se descarta): el siguiente sondeo ya lanza uno nuevo.
+    llamadas[0].done(null, '"tarde.exe","1"\r\n');
+    const p3 = listar();
+    expect(llamadas).toHaveLength(2);
+    llamadas[1].done(null, '"cs2.exe","1"\r\n');
+    await expect(p3).resolves.toEqual(['cs2.exe']);
+  });
+
+  it('una respuesta a tiempo cancela el timeout (sin rechazo tardío)', async () => {
+    const { run, llamadas } = runnerFalso();
+    const listar = createTasklistLister(run, 10000);
+    const p = listar();
+    llamadas[0].done(null, '"a.exe","1"\r\n');
+    await expect(p).resolves.toEqual(['a.exe']);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('si lanzar el comando falla en síncrono, rechaza y no se queda «en curso» para siempre', async () => {
+    let intentos = 0;
+    const listar = createTasklistLister(() => {
+      intentos++;
+      throw new Error('spawn EINVAL');
+    }, 10000);
+    await expect(listar()).rejects.toThrow('spawn EINVAL');
+    await expect(listar()).rejects.toThrow('spawn EINVAL');
+    expect(intentos).toBe(2);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
