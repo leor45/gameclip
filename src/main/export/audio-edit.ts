@@ -1,5 +1,6 @@
 import { renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { TEMP_FILE_PREFIX } from '@shared/library';
 import type { ClipAudioTrack } from '@shared/tracks';
 import { DEFAULT_TRACK_NAME, trackLabel } from '@shared/tracks';
 import { AUDIO_BITRATE, amixFilter } from './ffmpeg-args';
@@ -91,7 +92,8 @@ export async function runAudioEdit(
   activeTracks: number[],
   deps: AudioEditDeps = {},
 ): Promise<void> {
-  const tmp = join(dirname(file), `.gameclip-edit-${process.pid}-${Date.now()}.mp4`);
+  // Con el prefijo compartido: el escaneo de la biblioteca sabe que no es un clip del usuario.
+  const tmp = join(dirname(file), `${TEMP_FILE_PREFIX}edit-${process.pid}-${Date.now()}.mp4`);
   try {
     const { code, stderr } = await runFfmpeg(
       spawnFn,

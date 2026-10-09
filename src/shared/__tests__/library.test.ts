@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLIP_TAGS_LIMIT,
+  TEMP_FILE_PREFIX,
   formatDuration,
   formatFileSize,
+  isTempMediaFile,
   normalizeClipPatch,
   normalizeTags,
   titleFromFileName,
@@ -45,6 +47,19 @@ describe('normalizeTags', () => {
   it('respeta el tope de etiquetas', () => {
     const muchas = Array.from({ length: CLIP_TAGS_LIMIT + 5 }, (_, i) => `tag${i}`);
     expect(normalizeTags(muchas)).toHaveLength(CLIP_TAGS_LIMIT);
+  });
+});
+
+describe('isTempMediaFile', () => {
+  it('reconoce los temporales propios y no un clip normal', () => {
+    expect(isTempMediaFile('.gameclip-names-1234-1700000000000.mp4')).toBe(true);
+    expect(isTempMediaFile('D:\\clips\\Terraria\\.gameclip-edit-1-2.mp4')).toBe(true);
+    expect(isTempMediaFile('Terraria 2026.07.02 - 10.02.01.01.mp4')).toBe(false);
+    expect(isTempMediaFile('.gameclip.mp4')).toBe(false); // sin el guion no es nuestro
+  });
+
+  it('el prefijo es el que usan los temporales reales', () => {
+    expect(`${TEMP_FILE_PREFIX}names-1-2.mp4`.startsWith('.gameclip-')).toBe(true);
   });
 });
 

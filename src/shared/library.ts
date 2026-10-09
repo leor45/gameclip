@@ -10,6 +10,19 @@ export type MediaKind = 'video' | 'image';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
+/**
+ * Prefijo de los temporales que la app escribe junto al clip mientras lo reescribe (remux de nombres
+ * de pista, «Guardar edit»). Único sitio donde se define: el escaneo de la carpeta lo usa para no
+ * catalogarlos como clips.
+ */
+export const TEMP_FILE_PREFIX = '.gameclip-';
+
+/** ¿Es un temporal propio (`.gameclip-names-…mp4`, `.gameclip-edit-…mp4`)? Mira solo el nombre base. */
+export function isTempMediaFile(fileName: string): boolean {
+  const base = fileName.split(/[\\/]/).pop() ?? fileName;
+  return base.startsWith(TEMP_FILE_PREFIX);
+}
+
 /** `…/Terraria Screenshot 2026.png` → `image`; cualquier otra cosa → `video`. */
 export function mediaKindForFile(filePath: string): MediaKind {
   const punto = filePath.lastIndexOf('.');

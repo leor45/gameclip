@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { TEMP_FILE_PREFIX } from '@shared/library';
 
 /** Pista de audio a nombrar en el MP4: `index` es el índice de pista de libobs (1-based). */
 export interface NamedTrack {
@@ -55,7 +56,8 @@ export async function remuxAudioTrackNames(
   spawnFn: SpawnFfmpeg = defaultSpawn,
 ): Promise<boolean> {
   if (tracks.length === 0) return false;
-  const tmp = join(dirname(file), `.gameclip-names-${process.pid}-${Date.now()}.mp4`);
+  // Con el prefijo compartido: el escaneo de la biblioteca sabe que no es un clip del usuario.
+  const tmp = join(dirname(file), `${TEMP_FILE_PREFIX}names-${process.pid}-${Date.now()}.mp4`);
   try {
     const code = await runFfmpeg(spawnFn, ffmpegPath, buildTrackNameArgs(file, tmp, tracks));
     if (code !== 0) {
