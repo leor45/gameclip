@@ -66,7 +66,9 @@ export function NoSonJuegos() {
   async function sincronizar() {
     setSincronizando(true);
     try {
-      await window.gameclip.games.rescan();
+      // Para sincronizar la lista basta releer los launchers: si cambia, cambia la huella y re-indexa.
+      // Forzar re-escanearía las carpetas de todos los juegos en cada clic.
+      await window.gameclip.games.rescan({ force: false });
       await cargarInstalados();
       setLista((await window.gameclip.capture.getSettings()).excludedGames);
     } finally {

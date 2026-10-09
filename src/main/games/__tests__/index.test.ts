@@ -192,6 +192,208 @@ describe('GameIndexService', () => {
     const service = crear([fuente([])]);
     expect(await service.refresh()).toEqual({});
   });
+
+  it('un caché de antes de las reglas de escaneo actuales se re-indexa aunque los juegos no cambien (regresión)', async () => {
+    // Quien actualizaba sin cambios en sus juegos conservaba el índice viejo: la huella solo miraba
+    // nombres y carpetas, así que el fix que filtra QtWebEngineProcess no le llegaba nunca.
+    exe('W3', 'witcher3.exe');
+    exe('W3', 'QtWebEngineProcess.exe');
+    const juego = { name: 'The Witcher 3', installDir: join(raiz, 'W3'), source: 'gog' as const };
+    const cachePath = join(raiz, 'cache.json');
+    // Huella tal cual la escribían las versiones anteriores (sin la versión de las reglas).
+    const huellaVieja = [`${juego.name}\u0000${juego.installDir}`].sort().join('\u0001');
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        huella: huellaVieja,
+        index: { witcher3: 'The Witcher 3', qtwebengineprocess: 'The Witcher 3' },
+      }),
+    );
+
+    const service = new GameIndexService({ cachePath, sources: [fuente([juego], 'gog')] });
+    expect(await service.refresh()).toEqual({ witcher3: 'The Witcher 3' });
+  });
+
+  it('volver a escanear (force) ignora el caché aunque la huella coincida', async () => {
+    exe('MM', 'MilesMorales.exe');
+    const service = crear([
+      fuente([{ name: 'Miles', installDir: join(raiz, 'MM'), source: 'steam' }]),
+    ]);
+    await service.refresh();
+    exe('MM', 'MilesMoralesDX12.exe'); // cambia el contenido de la carpeta, no la lista de juegos
+
+    expect(await service.refresh()).toEqual({ milesmorales: 'Miles' }); // arranque normal: caché
+    expect(await service.refresh({ force: true })).toEqual({
+      milesmorales: 'Miles',
+      milesmoralesdx12: 'Miles',
+    });
+  });
+
+  it('un rescan forzado durante un refresco en curso no se pierde', async () => {
+    exe('MM', 'MilesMorales.exe');
+    const service = crear([
+      fuente([{ name: 'Miles', installDir: join(raiz, 'MM'), source: 'steam' }]),
+    ]);
+    await service.refresh();
+    exe('MM', 'MilesMoralesDX12.exe');
+
+    const normal = service.refresh();
+    const forzado = service.refresh({ force: true });
+    await normal;
+    expect(await forzado).toHaveProperty('milesmoralesdx12', 'Miles');
+  });
+});
+
+describe('GameIndexService · peticiones durante un refresco en curso (regresión D1-BUG-1)', () => {
+  /** Promesa que el test suelta a mano: mantiene un refresco «en curso» el tiempo que haga falta. */
+  function diferido<T>() {
+    let soltar!: (valor: T) => void;
+    const promesa = new Promise<T>((resolve) => {
+      soltar = resolve;
+    });
+    return { promesa, soltar };
+  }
+
+  const miles = (): InstalledGame[] => [
+    { name: 'Miles', installDir: join(raiz, 'MM'), source: 'steam' },
+  ];
+  const conDX12 = { milesmorales: 'Miles', milesmoralesdx12: 'Miles' };
+
+  /**
+   * Servicio con el caché ya escrito (solo `MilesMorales.exe`) y un `MilesMoralesDX12.exe` que
+   * aparece después: un refresco normal sale del caché y solo uno forzado lo ve. Devuelve un refresco
+   * normal en curso, con la lectura de los launchers colgada hasta `soltar()`.
+   */
+  async function conRefrescoEnCurso() {
+    exe('MM', 'MilesMorales.exe');
+    const listar = vi
+      .fn<GameSource['listInstalledGames']>()
+      .mockImplementation(() => Promise.resolve(miles()));
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [{ id: 'steam', listInstalledGames: listar }],
+    });
+    await service.refresh();
+    exe('MM', 'MilesMoralesDX12.exe');
+    listar.mockClear();
+    const colgada = diferido<InstalledGame[]>();
+    listar.mockReturnValueOnce(colgada.promesa);
+    const enCurso = service.refresh();
+    return { service, listar, enCurso, soltar: () => colgada.soltar(miles()) };
+  }
+
+  it('una exclusión guardada durante un rescan forzado se aplica al terminar', async () => {
+    // `setExcluded` pide un refresco normal; si «Volver a escanear» estaba corriendo, se devolvía ese
+    // refresco, que ya había leído la lista vieja: la app recién excluida seguía en el índice (se
+    // detectaba como juego y en modo auto grababa) hasta el siguiente refresco o reinicio.
+    exe('WE', 'wallpaper64.exe');
+    exe('H', 'Hades.exe');
+    let excluidos: string[] = [];
+    const leida = diferido<void>();
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [
+        fuente([
+          { name: 'Wallpaper Engine', installDir: join(raiz, 'WE'), source: 'steam' },
+          { name: 'Hades', installDir: join(raiz, 'H'), source: 'steam' },
+        ]),
+      ],
+      exclusions: () => {
+        leida.soltar();
+        return excluidos;
+      },
+    });
+
+    const forzado = service.refresh({ force: true });
+    await leida.promesa; // el forzado ya leyó la lista (vacía) y está escaneando las carpetas
+    excluidos = ['Wallpaper Engine']; // el usuario la marca en «No son juegos»…
+    const trasExcluir = service.refresh(); // …y `setExcluded` pide el refresco
+
+    expect(await forzado).toEqual({ wallpaper64: 'Wallpaper Engine', hades: 'Hades' });
+    expect(await trasExcluir).toEqual({ hades: 'Hades' });
+    expect(service.current()).toEqual({ hades: 'Hades' });
+  });
+
+  it('un forzado que llega con un refresco normal en cola lo vuelve forzado (no se degrada)', async () => {
+    const { service, listar, enCurso, soltar } = await conRefrescoEnCurso();
+    const normal = service.refresh(); // queda en cola detrás del que está en curso
+    const forzado = service.refresh({ force: true }); // se suma a esa cola y la vuelve forzada
+    soltar();
+
+    expect(await enCurso).toEqual({ milesmorales: 'Miles' }); // el de antes sale del caché
+    expect(await forzado).toEqual(conDX12);
+    expect(await normal).toEqual(conDX12); // comparte el refresco de la cola
+    expect(listar).toHaveBeenCalledTimes(2);
+  });
+
+  it('varias peticiones durante un refresco en curso se agrupan en UN solo refresco más', async () => {
+    const { service, listar, enCurso, soltar } = await conRefrescoEnCurso();
+    const peticiones = [
+      service.refresh(),
+      service.refresh({ force: true }),
+      service.refresh(),
+      service.refresh({ force: true }),
+    ];
+    soltar();
+    await enCurso;
+    const resultados = await Promise.all(peticiones);
+
+    expect(listar).toHaveBeenCalledTimes(2); // el que estaba en curso + uno solo para las cuatro
+    for (const resultado of resultados) expect(resultado).toEqual(conDX12);
+  });
+
+  it('una petición que llega mientras corre el refresco de la cola programa otro', async () => {
+    const { service, listar, enCurso, soltar } = await conRefrescoEnCurso();
+    const segunda = diferido<InstalledGame[]>();
+    listar.mockReturnValueOnce(segunda.promesa); // el refresco de la cola también se queda colgado
+    const cola = service.refresh();
+    soltar();
+    await enCurso;
+    await vi.waitFor(() => expect(listar).toHaveBeenCalledTimes(2)); // la cola ya está corriendo
+
+    const otra = service.refresh({ force: true });
+    segunda.soltar(miles());
+
+    expect(await cola).toEqual({ milesmorales: 'Miles' });
+    expect(await otra).toEqual(conDX12);
+    expect(listar).toHaveBeenCalledTimes(3);
+  });
+
+  it('una petición justo al terminar el refresco en curso se suma a la cola: nunca corren dos a la vez', async () => {
+    const { service, listar, enCurso, soltar } = await conRefrescoEnCurso();
+    let alTerminar: ReturnType<GameIndexService['refresh']> | undefined;
+    // Registrado antes que la cola: corre entre el fin del refresco en curso y el arranque de la cola.
+    const visto = enCurso.then(() => {
+      alTerminar = service.refresh({ force: true });
+    });
+    const cola = service.refresh();
+    soltar();
+    await visto;
+
+    expect(await cola).toEqual(conDX12);
+    expect(await alTerminar).toEqual(conDX12);
+    expect(listar).toHaveBeenCalledTimes(2);
+  });
+
+  it('si el refresco en curso falla, el que se pidió durante él corre igual', async () => {
+    exe('MM', 'MilesMorales.exe');
+    let lecturas = 0;
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [fuente(miles())],
+      exclusions: () => {
+        lecturas += 1;
+        if (lecturas === 1) throw new Error('ajustes ilegibles');
+        return [];
+      },
+    });
+    const enCurso = service.refresh();
+    const despues = service.refresh();
+
+    await expect(enCurso).rejects.toThrow('ajustes ilegibles');
+    expect(await despues).toEqual({ milesmorales: 'Miles' });
+    expect(await service.refresh()).toEqual({ milesmorales: 'Miles' }); // y el servicio sigue sano
+  });
 });
 
 describe('GameIndexService · exclusiones («no son juegos»)', () => {

@@ -4,6 +4,7 @@ import {
   activeExcludedNames,
   autoExclusions,
   normalizeExcludedGames,
+  normalizeRescanForce,
   syncExcludedGames,
   type ExcludedGame,
 } from '../games';
@@ -94,5 +95,27 @@ describe('normalizeExcludedGames', () => {
       normalizeCaptureSettings({ excludedGames: [{ name: 'SteamVR', source: 'auto' }] })
         .excludedGames,
     ).toEqual([{ name: 'SteamVR', source: 'auto', enabled: true }]);
+  });
+});
+
+describe('normalizeRescanForce (opciones del rescan que manda el renderer)', () => {
+  it('solo un `force: false` explícito pide un refresco normal («Sincronizar»)', () => {
+    expect(normalizeRescanForce({ force: false })).toBe(false);
+  });
+
+  it('sin opciones o con cualquier otra cosa fuerza el re-escaneo («Volver a escanear»)', () => {
+    const otros: unknown[] = [
+      undefined,
+      null,
+      {},
+      { force: true },
+      { force: 'false' },
+      { force: 0 },
+      { force: null },
+      false,
+      'force',
+      [],
+    ];
+    for (const opciones of otros) expect(normalizeRescanForce(opciones)).toBe(true);
   });
 });

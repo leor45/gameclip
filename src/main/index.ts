@@ -415,8 +415,8 @@ function setupGameDetection(manager: CaptureManager): GameDetector {
  * instalados, y la biblioteca re-etiqueta sus clips (una carpeta `acblackflag/` que ahora se sabe
  * que es `Assassin's Creed Black Flag Resynced`). No mueve ficheros: solo la columna `game`.
  */
-async function refreshGameIndex(): Promise<Record<string, string>> {
-  const index = await gamesIndex.refresh();
+async function refreshGameIndex(force = false): Promise<Record<string, string>> {
+  const index = await gamesIndex.refresh({ force });
   detector?.setIndex(index);
   if (library && capture) {
     const reetiquetados = library.relabelGames(capture.outputDir());
@@ -665,7 +665,9 @@ app.whenReady().then(async () => {
     () => pushToTalk.available,
     {
       index: () => gamesIndex.current(),
-      rescan: () => refreshGameIndex(),
+      // «Volver a escanear» fuerza (re-escanea aunque la caché diga que no cambió nada); «Sincronizar»
+      // de «no son juegos» pide un refresco normal.
+      rescan: (force) => refreshGameIndex(force),
       suggestName: (executable) => suggestGameName(executable, gameNames()),
       installed: () => {
         const vistos = new Set<string>();

@@ -10,6 +10,14 @@ import { join } from 'node:path';
 /** Tope de profundidad: `Juego/Binaries/Win64/x.exe` cabe de sobra, y no nos comemos el árbol entero. */
 export const MAX_SCAN_DEPTH = 4;
 
+/**
+ * Versión de las reglas de escaneo. Entra en la huella del caché del índice: **súbela cada vez que
+ * cambien `MAX_SCAN_DEPTH`, `CARPETAS_IGNORADAS` o `EXES_IGNORADOS`**, o quien ya tenga caché seguirá
+ * con el índice de las reglas viejas hasta que cambie su lista de juegos.
+ * 2: runtimes compartidos fuera (QtWebEngineProcess, 7z/7za, createdump, crs-*), v0.9.5.
+ */
+export const SCAN_RULES_VERSION = 2;
+
 /** Carpetas que solo traen ruido: redistribuibles, anti-cheats y demás fauna. */
 const CARPETAS_IGNORADAS = [
   /^_?commonredist$/i,
