@@ -8,6 +8,8 @@
 - [ ] 3. `MouseHotkeys` (`register`/`unregisterAll`, modificadores exactos).
 - [ ] 4. `registerHotkeys` reparte teclado/ratón; `teardown` suelta los dos.
 - [ ] 5. Captura de botones del ratón en Atajos y Avanzado (con aviso para izq/der/central).
+- [ ] 6. Sin navegación atrás/adelante con el ratón: `app-command` prevenido en `createWindow` y
+      `mouseup` de los botones 3/4 prevenido en `App.tsx`.
 
 ## Tests unitarios (obligatorios)
 
@@ -17,6 +19,7 @@
       suelta el hook.
 - [ ] `GlobalHook`: dos usuarios → un `start`; `stop` solo al soltar el último. PTT sigue pasando.
 - [ ] Renderer: «Editar atajo» + botón lateral asigna `Mouse4`; botón derecho avisa y no asigna.
+- [ ] Renderer: `mouseup` del botón 3/4 en `App` queda `defaultPrevented` y la ruta no cambia.
 
 ## Verificación (gates)
 
@@ -25,6 +28,8 @@
 - [ ] Tests verdes (`npm run test`)
 - [ ] Comprobación manual: atajo «Guardar clip» en `Mouse4`, app en segundo plano, pulsación real
       (y sintética con `SendInput` XBUTTON1) → clip guardado; `Ctrl+Mouse4` solo con Ctrl.
+- [ ] Comprobación manual: con la app delante, Biblioteca → Ajustes y botón «atrás» del ratón → la
+      app sigue en Ajustes.
 
 ## Cierre
 

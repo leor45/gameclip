@@ -27,10 +27,19 @@ capturan pulsándolos en «Editar atajo», funcionan dentro del juego y respetan
   `globalShortcut` (teclas) o a `MouseHotkeys` (ratón).
 - Renderer: en Ajustes → Atajos y en el atajo del overlay (Avanzado), «Editar atajo» acepta también una
   pulsación de los botones laterales (los botones izquierdo/derecho/central se ignoran con aviso).
+- **Desactivar la navegación atrás/adelante del ratón en la app.** Hoy los botones laterales
+  navegan el historial de pantallas como en un navegador (Windows los manda como
+  `APPCOMMAND_BROWSER_BACKWARD/FORWARD` y Electron los ejecuta); con un atajo en `Mouse4`, pulsarlo
+  con la app delante guardaría el clip **y** cambiaría de pantalla. Se anula siempre (no solo con un
+  atajo asignado): la app no está pensada para navegarse con el ratón y así el comportamiento es
+  predecible.
 - Tests en shared, main (hook falso) y renderer.
 
 **Fuera (explícito):**
-- Botón central y botones 6+ (los ratones con más botones los mapean a teclas desde su software).
+- Botón central y botones 6+. Windows (y por tanto el hook) solo ve cinco botones de ratón: los
+  ratones con **cuatro laterales** entregan los dos primeros como `Mouse4`/`Mouse5` y los otros dos
+  solo existen a través del software del fabricante (G HUB, Synapse, SteelSeries GG…), que los emite
+  como **teclas**; esas teclas ya sirven hoy como atajo de teclado sin tocar nada.
 - Interceptar el botón para que no le llegue al juego (igual que con las teclas, no se intercepta).
 - Botones de mando (acordes): queda anotado en el roadmap como futuro.
 
@@ -46,4 +55,6 @@ capturan pulsándolos en «Editar atajo», funcionan dentro del juego y respetan
       solo lo que cambió.
 - [ ] El hook global se arranca una sola vez aunque PTT y atajos de ratón estén activos, y se para
       cuando ninguno lo necesita.
+- [ ] Con la app delante, los botones laterales del ratón **no cambian de pantalla** (ni con atajo
+      asignado ni sin él); el resto de la navegación (menú lateral, botones «Volver») sigue igual.
 - [ ] Suite verde; verificación real con el ratón del owner (y con `SendInput` para XBUTTON1/2).
