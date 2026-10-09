@@ -58,6 +58,19 @@ describe('executablesIn', () => {
     expect(await executablesIn(raiz)).toEqual(['fortniteclient-win64-shipping']);
   });
 
+  it('ignora los ejecutables de runtime que comparten muchas apps (regresión)', async () => {
+    // QtWebEngineProcess lo lanza GOG Galaxy (y cualquier app Qt); 7za, createdump y los crs-* son
+    // herramientas genéricas que el índice real asignaba a Witcher 3, Lossless Scaling y Stellar Blade.
+    exe('MiJuego.exe');
+    exe('QtWebEngineProcess.exe');
+    exe('bin', '7za.exe');
+    exe('7z.exe');
+    exe('createdump.exe');
+    exe('crs-handler.exe');
+    exe('crs-uploader.exe');
+    expect(await executablesIn(raiz)).toEqual(['mijuego']);
+  });
+
   it('respeta el tope de profundidad', async () => {
     exe('a', 'b', 'c', 'd', 'e', 'Hondo.exe');
     expect(await executablesIn(raiz, 2)).toEqual([]);
@@ -159,6 +172,20 @@ describe('GameIndexService', () => {
       fuente([{ ...juego, source: 'registry' }], 'registry'),
     ]);
     expect(await service.refresh()).toEqual({ acblackflag: 'AC Black Flag' });
+  });
+
+  it('el mismo juego por dos fuentes cuenta una vez aunque una ponga barra final (regresión)', async () => {
+    // GOG devuelve la carpeta sin barra y el registro de desinstalación con ella. Contados dos veces
+    // con nombres distintos, cada exe parecía de dos juegos (ambiguo) y el juego dejaba de detectarse.
+    exe('W3', 'witcher3.exe');
+    const service = crear([
+      fuente([{ name: 'The Witcher 3', installDir: join(raiz, 'W3'), source: 'gog' }], 'gog'),
+      fuente(
+        [{ name: 'The Witcher 3: GOTY', installDir: join(raiz, 'W3') + '\\', source: 'registry' }],
+        'registry',
+      ),
+    ]);
+    expect(await service.refresh()).toEqual({ witcher3: 'The Witcher 3' });
   });
 
   it('sin ningún juego instalado conserva el índice anterior en vez de vaciarlo', async () => {

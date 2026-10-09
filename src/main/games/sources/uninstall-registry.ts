@@ -41,6 +41,18 @@ const RAICES_DE_JUEGOS = /\\(ubisoft game launcher\\games|ea games|origin games|
 const NO_ES_JUEGO =
   /^(battle\.net|ubisoft connect|gog galaxy|epic games launcher|steam|rockstar games launcher|ea app|origin|uplay)$|redistributable|directx|\.net framework|visual c\+\+|driver|runtime/i;
 
+/**
+ * Launchers y actualizadores **por patrón**, mirados en el nombre y en la carpeta de instalación. La
+ * lista exacta de arriba no escala: REDlauncher (CD Projekt RED) se coló por ella, y como su carpeta
+ * trae el `QtWebEngineProcess.exe` que también lanza GOG Galaxy, la app daba GOG Galaxy por un juego.
+ */
+const ES_HERRAMIENTA = /launcher|updater|social club/i;
+
+/** Última carpeta de una ruta, tolerando la barra final que el registro suele dejar. */
+function ultimaCarpeta(ruta: string): string {
+  return ruta.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? '';
+}
+
 interface EntradaRegistro {
   name?: unknown;
   path?: unknown;
@@ -64,6 +76,7 @@ export function parseUninstallEntries(
     const publisher = typeof e.publisher === 'string' ? e.publisher : '';
     if (!name || !installDir) continue;
     if (NO_ES_JUEGO.test(name)) continue;
+    if (ES_HERRAMIENTA.test(name) || ES_HERRAMIENTA.test(ultimaCarpeta(installDir))) continue;
 
     const esJuego = RAICES_DE_JUEGOS.test(installDir) || EDITORAS_DE_JUEGOS.test(publisher);
     if (!esJuego || !existe(installDir)) continue;

@@ -1239,6 +1239,19 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
+## Auditoría bug-hunter (2026-10-08)
+
+> Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
+> 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
+> en una rama de integración temporal antes de mergear cada uno a `main`.
+
+### 🐞 GOG Galaxy detectado como «REDLauncher» — 🧪 en rama (`fix/deteccion-falsos-positivos`)
+
+La fuente del registro admitía a REDlauncher por ser de CD Projekt RED, y su carpeta aportaba al
+índice el `QtWebEngineProcess.exe` que también lanza GOG Galaxy. Ahora los launchers/actualizadores
+se excluyen por patrón (nombre y carpeta), los exes de runtime genéricos (`QtWebEngineProcess`, `7z`,
+`7za`, `createdump`, `crs-*`) no se indexan, y el dedupe entre fuentes usa la ruta canónica.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
