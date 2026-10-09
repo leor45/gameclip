@@ -10,7 +10,7 @@ import type {
   EncoderInfo,
 } from './capture';
 import type { ExportProgress, ExportRequest, ExportResult } from './export';
-import type { GameIndex } from './games';
+import type { ExcludedGame, GameIndex, InstalledGameInfo } from './games';
 import type { Clip, ClipPatch, ClipsQuery, StorageStats } from './library';
 import type { OverlayNotice } from './overlay';
 import type { PerfOverlayConfig, PerfSnapshot } from './perf';
@@ -37,6 +37,8 @@ export const IpcChannel = {
   GamesGetIndex: 'games:get-index',
   GamesRescan: 'games:rescan',
   GamesSuggestName: 'games:suggest-name',
+  GamesListInstalled: 'games:list-installed',
+  GamesSetExcluded: 'games:set-excluded',
   LibraryList: 'library:list',
   LibraryGet: 'library:get',
   LibraryGames: 'library:games',
@@ -133,6 +135,10 @@ export interface IpcContract {
   [IpcChannel.GamesRescan]: { request: void; response: GameIndex };
   /** Nombre propuesto para un ejecutable al darlo de alta a mano; null si no se deduce nada. */
   [IpcChannel.GamesSuggestName]: { request: { executable: string }; response: string | null };
+  /** Juegos que devolvieron los launchers (también los excluidos), para la lista «no son juegos». */
+  [IpcChannel.GamesListInstalled]: { request: void; response: InstalledGameInfo[] };
+  /** Guarda la lista «no son juegos» (sin reconstruir la captura) y re-indexa; devuelve la lista guardada. */
+  [IpcChannel.GamesSetExcluded]: { request: ExcludedGame[]; response: ExcludedGame[] };
   [IpcChannel.LibraryList]: { request: ClipsQuery; response: Clip[] };
   [IpcChannel.LibraryGet]: { request: { id: number }; response: Clip | null };
   [IpcChannel.LibraryGames]: { request: void; response: string[] };
@@ -214,6 +220,10 @@ export interface GamesApi {
    * lista curada o de los metadatos del propio `.exe`. Null si no logra deducir nada decente.
    */
   suggestName(executable: string): Promise<string | null>;
+  /** Juegos instalados según los launchers (también los excluidos). */
+  listInstalled(): Promise<InstalledGameInfo[]>;
+  /** Guarda la lista «no son juegos» al momento y re-indexa. */
+  setExcluded(list: ExcludedGame[]): Promise<ExcludedGame[]>;
 }
 
 export interface LibraryApi {

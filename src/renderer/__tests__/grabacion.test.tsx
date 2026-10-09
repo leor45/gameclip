@@ -279,3 +279,65 @@ describe('Ajustes — Grabación', () => {
     );
   });
 });
+
+describe('Ajustes — Grabación · No son juegos', () => {
+  it('muestra la lista con su origen y añade a mano al momento (sin «Guardar ajustes»)', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      excludedGames: [{ name: 'Wallpaper Engine', source: 'auto', enabled: true }],
+    });
+    mock().games.listInstalled.mockResolvedValue([
+      { name: 'Wallpaper Engine', source: 'steam' },
+      { name: 'Lossless Scaling', source: 'steam' },
+    ]);
+    const user = await irAGrabacion();
+
+    expect(await screen.findByLabelText('Excluir Wallpaper Engine')).toBeChecked();
+    expect(screen.getByText('auto', { selector: '.capture-tag' })).toBeInTheDocument();
+
+    // El desplegable solo ofrece lo que no está ya en la lista.
+    const select = screen.getByLabelText('Instalado');
+    expect(within(select).queryByRole('option', { name: 'Wallpaper Engine' })).toBeNull();
+    await user.selectOptions(select, 'Lossless Scaling');
+    await user.click(screen.getByRole('button', { name: 'Añadir' }));
+
+    expect(mock().games.setExcluded).toHaveBeenCalledWith([
+      { name: 'Wallpaper Engine', source: 'auto', enabled: true },
+      { name: 'Lossless Scaling', source: 'manual', enabled: true },
+    ]);
+    expect(await screen.findByLabelText('Excluir Lossless Scaling')).toBeChecked();
+    expect(mock().capture.setSettings).not.toHaveBeenCalled();
+  });
+
+  it('desmarcar una automática la desactiva en vez de borrarla', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      excludedGames: [{ name: 'SteamVR', source: 'auto', enabled: true }],
+    });
+    const user = await irAGrabacion();
+    await user.click(await screen.findByLabelText('Excluir SteamVR'));
+    expect(mock().games.setExcluded).toHaveBeenCalledWith([
+      { name: 'SteamVR', source: 'auto', enabled: false },
+    ]);
+    expect(screen.queryByRole('button', { name: 'Quitar SteamVR' })).toBeNull();
+  });
+
+  it('«Sincronizar» re-lee los launchers y muestra la lista resultante', async () => {
+    const user = await irAGrabacion();
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      excludedGames: [{ name: 'Wallpaper Engine', source: 'auto', enabled: true }],
+    });
+    await user.click(screen.getByRole('button', { name: 'Sincronizar' }));
+    expect(mock().games.rescan).toHaveBeenCalled();
+    expect(await screen.findByLabelText('Excluir Wallpaper Engine')).toBeChecked();
+  });
+
+  it('guardar la sección no toca la lista (solo cambia por su IPC)', async () => {
+    const user = await irAGrabacion();
+    await user.click(screen.getByLabelText(/Grabar automáticamente la sesión de juego completa/));
+    await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
+    await screen.findByText('Ajustes guardados ✓');
+    expect(mock().games.setExcluded).not.toHaveBeenCalled();
+  });
+});

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { BrowserWindow, app, desktopCapturer, dialog, ipcMain, screen, shell } from 'electron';
 import { IpcChannel } from '@shared/ipc';
 import type { CaptureFrameResult, IpcContract } from '@shared/ipc';
-import { normalizeCaptureSettings } from '@shared/capture';
+import { normalizeCaptureSettings, type CaptureSettings } from '@shared/capture';
 import { normalizePerfOverlay, type PerfOverlayConfig } from '@shared/perf';
 import { normalizeExportRequest, type ExportResult } from '@shared/export';
 import type { ClipsQuery } from '@shared/library';
@@ -16,7 +16,8 @@ import {
   type SaveAudioEditResult,
   type TrackGain,
 } from '@shared/tracks';
-import type { GameIndex } from '@shared/games';
+import type { ExcludedGame, GameIndex, InstalledGameInfo } from '@shared/games';
+import { normalizeExcludedGames } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
 import { isPawnIoInstalled } from './perf-metrics/pawnio';
 import { saveClipFrame } from './capture/frame-capture';
@@ -36,6 +37,8 @@ export interface GamesIpcDeps {
   index: () => GameIndex;
   rescan: () => Promise<GameIndex>;
   suggestName: (executable: string) => Promise<string | null>;
+  installed: () => InstalledGameInfo[];
+  setExcluded: (list: ExcludedGame[]) => Promise<ExcludedGame[]>;
 }
 
 export function registerIpcHandlers(
@@ -63,7 +66,13 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.CaptureSetSettings, (_event, partial: unknown) => {
     // El parcial viene del renderer: se normaliza contra los ajustes actuales.
     const current = capture.getSettings();
-    const next = normalizeCaptureSettings({ ...current, ...(partial as object) });
+    // `excludedGames` solo cambia por `games:set-excluded` (y la sincronización): una sección de
+    // Ajustes que guarda su copia de los ajustes no puede pisar lo que se sincronizó después.
+    const next = normalizeCaptureSettings({
+      ...current,
+      ...((partial ?? {}) as Partial<CaptureSettings>),
+      excludedGames: current.excludedGames,
+    });
     return capture.setSettings(next);
   });
   ipcMain.handle(IpcChannel.CaptureGetAudioDevices, () => capture.getAudioDevices());
@@ -139,6 +148,10 @@ export function registerIpcHandlers(
     ipcMain.handle(IpcChannel.GamesRescan, () => games.rescan());
     ipcMain.handle(IpcChannel.GamesSuggestName, (_event, req: { executable?: unknown }) =>
       typeof req?.executable === 'string' ? games.suggestName(req.executable) : null,
+    );
+    ipcMain.handle(IpcChannel.GamesListInstalled, () => games.installed());
+    ipcMain.handle(IpcChannel.GamesSetExcluded, (_event, list: unknown) =>
+      games.setExcluded(normalizeExcludedGames(list)),
     );
   }
 

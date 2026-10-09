@@ -57,10 +57,11 @@ function juegosDeBiblioteca(libraryPath: string): InstalledGame[] {
       const acf = readFileSync(join(steamapps, manifiesto), 'utf8');
       const name = leerPar(acf, 'name');
       const installdir = leerPar(acf, 'installdir');
+      const appid = leerPar(acf, 'appid');
       if (!name || !installdir) continue;
       const installDir = join(steamapps, 'common', installdir);
       if (!existsSync(installDir)) continue; // catalogado pero no descargado
-      out.push({ name, installDir, source: 'steam' });
+      out.push({ name, installDir, source: 'steam', ...(appid ? { steamAppId: appid } : {}) });
     } catch {
       // manifiesto corrupto: se salta, el resto sigue
     }

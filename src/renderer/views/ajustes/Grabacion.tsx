@@ -10,6 +10,7 @@ import {
 import { exeKey, resolveGameName, type CustomGame, type GameIndex } from '@shared/games';
 import DisplayPicker from '../../components/DisplayPicker';
 import { HotkeyInfo } from './HotkeyInfo';
+import { NoSonJuegos } from './NoSonJuegos';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -316,6 +317,8 @@ export default function AjustesGrabacion() {
             {rescaneando ? 'Escaneando…' : 'Volver a escanear los juegos instalados'}
           </button>
         </fieldset>
+
+        <NoSonJuegos />
 
         <fieldset>
           <legend>Grabación de escritorio</legend>

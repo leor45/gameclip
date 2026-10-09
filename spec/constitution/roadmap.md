@@ -1239,6 +1239,21 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > otro monitor; encendido → 2560x1440 con colores correctos; monitor fijo → 1080x1920 nativo. 918 tests
 > verdes (13 de ellos del helper, con el de regresión del monitor equivocado primero).
 
+## Auditoría bug-hunter (2026-10-08)
+
+> Auditoría completa de `src/` y `server/` (137 ficheros) con el skill bug-hunter: 16 hallazgos,
+> 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
+> en una rama de integración temporal antes de mergear cada uno a `main`.
+
+### ✨ Lista «no son juegos» (sincronizada y manual) — 🧪 en rama (`feature/exclusion-juegos`)
+
+Steam daba de alta como juego cualquier app (Wallpaper Engine, Lossless Scaling…): Wallpaper Engine,
+que corre de fondo, contaba como juego abierto permanente. Nueva sección en Ajustes → Grabación con un
+botón **Sincronizar** (lista curada por appid de Steam y nombre → entradas *auto*) y alta **manual**;
+la sincronización salta lo que ya está en la lista, respeta las automáticas desactivadas y quita las
+automáticas desinstaladas. Los excluidos activos no entran al índice. La lista se guarda por su propio
+IPC: no reconstruye la captura ni la pisa el «Guardar ajustes» de otra sección.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

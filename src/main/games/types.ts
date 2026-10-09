@@ -8,6 +8,8 @@ export interface InstalledGame {
   /** Carpeta de instalación; de ahí se sacan los ejecutables. */
   installDir: string;
   source: GameSourceId;
+  /** Appid de Steam (solo la fuente de Steam): identifica apps conocidas que no son juegos. */
+  steamAppId?: string;
 }
 
 /**

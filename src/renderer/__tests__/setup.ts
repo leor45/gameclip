@@ -87,6 +87,8 @@ export function crearGameclipMock() {
       getIndex: vi.fn().mockResolvedValue({}),
       rescan: vi.fn().mockResolvedValue({}),
       suggestName: vi.fn().mockResolvedValue(null),
+      listInstalled: vi.fn().mockResolvedValue([]),
+      setExcluded: vi.fn().mockImplementation((list) => Promise.resolve(list)),
     },
     library: {
       list: vi.fn().mockResolvedValue([]),
