@@ -16,6 +16,25 @@ describe('autenticación en la app', () => {
     expect(screen.queryByRole('link', { name: 'Biblioteca' })).not.toBeInTheDocument();
   });
 
+  it('la tarjeta lleva el logo y «GameClip» en tipografía de titulares, y campos con el estilo común', () => {
+    const { container } = render(<App />);
+
+    expect(container.querySelector('.auth-brand img')).not.toBeNull();
+    expect(container.querySelector('.auth-brand .gc-display')).toHaveTextContent('GameClip');
+    expect(screen.getByLabelText('Email')).toHaveClass('gc-field');
+    expect(screen.getByRole('button', { name: 'Entrar' })).toHaveClass('gc-btn');
+  });
+
+  it('se puede cambiar entre login y registro', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /Regístrate/ }));
+    expect(screen.getByRole('heading', { name: 'Crear cuenta' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Inicia sesión/ }));
+    expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+  });
+
   it('con sesión persistida entra directo al shell', () => {
     localStorage.setItem('gameclip.session', JSON.stringify(sesionFalsa));
     render(<App />);
@@ -25,10 +44,7 @@ describe('autenticación en la app', () => {
   });
 
   it('login exitoso guarda la sesión y entra al shell', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(200, sesionFalsa)),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, sesionFalsa)));
     const user = userEvent.setup();
     render(<App />);
 
