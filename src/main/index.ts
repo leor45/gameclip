@@ -811,9 +811,14 @@ async function runSelfTest(manager: CaptureManager): Promise<void> {
   const conClip = process.env['GAMECLIP_SELFTEST_CLIP'] === '1';
   manager.on('replay-skipped', () => console.log('[selftest] replay saltado: grabación manual en curso'));
   try {
+    // Solo un ajuste de pipeline reconstruye: se alterna el cursor y al final se deja como estaba.
+    const cursorOriginal = manager.getSettings().showMouseCursor;
     for (let i = 0; i < rebuilds; i++) {
-      await manager.setSettings({});
+      await manager.setSettings({ showMouseCursor: !manager.getSettings().showMouseCursor });
       console.log(`[selftest] rebuild ${i + 1}/${rebuilds}`);
+    }
+    if (manager.getSettings().showMouseCursor !== cursorOriginal) {
+      await manager.setSettings({ showMouseCursor: cursorOriginal });
     }
     if (retardo > 0) await espera(retardo);
     console.log(`[selftest] iniciando grabación manual (retardo ${retardo} ms)…`);

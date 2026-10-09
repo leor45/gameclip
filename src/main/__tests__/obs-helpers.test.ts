@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
+import {
+  DEFAULT_CAPTURE_SETTINGS,
+  HOT_SETTING_KEYS,
+  PIPELINE_SETTING_KEYS,
+  settingsChanged,
+} from '@shared/capture';
 import type { EffectiveCapture } from '../capture/obs';
 import {
   DESKTOP_AUDIO_SETTINGS,
@@ -572,6 +579,27 @@ const OUTPUTS_CFG = {
   replaySeconds: 40,
   onSignal: () => {},
 };
+
+describe('PIPELINE_SETTING_KEYS — catálogo de lo que reconstruye el pipeline', () => {
+  it('cubre toda clave `settings.x` que obs.ts lee al construir (o que se aplica en caliente)', () => {
+    // Guarda contra la desincronización: si alguien añade un ajuste nuevo al pipeline y olvida el
+    // catálogo, guardar ese ajuste NO reconstruiría y el cambio no se aplicaría.
+    const fuente = readFileSync(resolve(__dirname, '../capture/obs.ts'), 'utf8');
+    const leidas = new Set([...fuente.matchAll(/\bsettings\.([a-zA-Z]+)\b/g)].map((m) => m[1]));
+    const cubiertas = new Set<string>([...PIPELINE_SETTING_KEYS, ...HOT_SETTING_KEYS]);
+    const faltan = [...leidas].filter((k) => !cubiertas.has(k));
+    expect(faltan).toEqual([]);
+  });
+
+  it('settingsChanged compara por valor, arrays incluidos', () => {
+    const a = { ...DEFAULT_CAPTURE_SETTINGS, audioApps: [{ executable: 'Discord.exe', volume: 100, enabled: true }] };
+    const b = { ...a, audioApps: [{ executable: 'Discord.exe', volume: 100, enabled: true }] };
+    expect(settingsChanged(a, b, PIPELINE_SETTING_KEYS)).toBe(false);
+    expect(settingsChanged(a, { ...b, perfOverlayVisible: !a.perfOverlayVisible }, PIPELINE_SETTING_KEYS)).toBe(false);
+    expect(settingsChanged(a, { ...b, fps: 30 }, PIPELINE_SETTING_KEYS)).toBe(true);
+    expect(settingsChanged(a, { ...b, audioApps: [] }, PIPELINE_SETTING_KEYS)).toBe(true);
+  });
+});
 
 describe('buildOutputs — encoder de vídeo propio para la grabación', () => {
   it('regresión: la grabación y el replay buffer NO comparten encoder de vídeo', () => {

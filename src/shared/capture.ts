@@ -433,6 +433,55 @@ export function needsContentProtection(profile: CaptureProfile, capturing: boole
   return profile === 'desktop' && capturing;
 }
 
+/**
+ * Claves que `buildPipeline` (y `captureProfile`/`effectiveCapture`, que decide la escena) leen al
+ * construir el pipeline de libobs: cambiarlas exige reconstruirlo. Reconstruir **vacía el búfer de
+ * repetición**, así que la lista es explícita y cerrada: un ajuste que no esté aquí se guarda sin
+ * tocar la captura. Si se añade un ajuste nuevo al pipeline hay que añadirlo también aquí (hay un
+ * test que cruza esta lista con lo que `obs.ts` lee de verdad).
+ */
+export const PIPELINE_SETTING_KEYS: readonly (keyof CaptureSettings)[] = [
+  'resolution',
+  'fps',
+  'quality',
+  'bitrateMbps',
+  'encoderId',
+  'replaySeconds',
+  'micDeviceId',
+  'micVolume',
+  'noiseSuppressionEnabled',
+  'audioMode',
+  'desktopAudioVolume',
+  'gameAudioEnabled',
+  'gameAudioVolume',
+  'audioApps',
+  'separateAudioTracks',
+  'screenMonitorIndex',
+  'desktopRecordingEnabled',
+  'desktopAutoSwitchToGame',
+  'desktopAudioTracks',
+  'outputDir',
+  'experimentalCapture',
+  'hdrCompatibility',
+  'showMouseCursor',
+  'aspectRatio',
+];
+
+/** Claves que se aplican en caliente sobre el pipeline vivo (mute del micrófono), sin reconstruir. */
+export const HOT_SETTING_KEYS: readonly (keyof CaptureSettings)[] = ['micEnabled', 'pttEnabled'];
+
+/** Claves que solo deciden si el búfer debe correr: basta reconciliarlo, sin reconstruir. */
+export const BUFFER_SETTING_KEYS: readonly (keyof CaptureSettings)[] = ['recordingMode', 'bufferMode'];
+
+/** ¿Cambió alguna de `keys` entre dos ajustes? Compara por valor (arrays y objetos incluidos). */
+export function settingsChanged(
+  prev: CaptureSettings,
+  next: CaptureSettings,
+  keys: readonly (keyof CaptureSettings)[],
+): boolean {
+  return keys.some((key) => JSON.stringify(prev[key]) !== JSON.stringify(next[key]));
+}
+
 // Acepta un parcial de origen no confiable (disco/IPC) y devuelve settings válidos,
 // cayendo al default campo a campo.
 export function normalizeCaptureSettings(input: unknown): CaptureSettings {

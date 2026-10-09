@@ -7,7 +7,13 @@ import type {
   CaptureStatus,
   EncoderInfo,
 } from '@shared/capture';
-import { captureProfile, needsContentProtection } from '@shared/capture';
+import {
+  BUFFER_SETTING_KEYS,
+  PIPELINE_SETTING_KEYS,
+  captureProfile,
+  needsContentProtection,
+  settingsChanged,
+} from '@shared/capture';
 import { KNOWN_GAME_PROCESSES } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
@@ -302,15 +308,34 @@ export class CaptureManager extends EventEmitter {
   }
 
   async setSettings(partial: Partial<CaptureSettings>): Promise<CaptureSettings> {
+    const prev = this.store.load();
     const next = this.store.save(partial);
     this.emit('settings', next);
     this.applyHapticListener(); // arranca/para/reinicia el listener si cambió la opción o el patrón
     this.applyControllerListener(); // arranca/para el helper del botón de mandos según la opción
     if (this.obs.isInitialized) {
-      // Grabando no se toca el pipeline (cortaría el clip), pero el cambio no puede perderse: se
-      // deja pendiente y settleAfterRecording lo aplica al parar.
-      if (this.status.state === 'recording') this.pendingRebuild = true;
-      else await this.queueRebuild();
+      // Reconstruir vacía el búfer de repetición: solo si cambió algo que el pipeline lee de verdad.
+      // Guardar atajos, el overlay o el almacenamiento (o el toggle del overlay de rendimiento a
+      // mitad de partida) no puede costarle al usuario los últimos segundos grabados.
+      if (settingsChanged(prev, next, PIPELINE_SETTING_KEYS)) {
+        // Grabando no se toca el pipeline (cortaría el clip), pero el cambio no puede perderse: se
+        // deja pendiente y settleAfterRecording lo aplica al parar.
+        if (this.status.state === 'recording') this.pendingRebuild = true;
+        else await this.queueRebuild();
+      } else if (
+        settingsChanged(prev, next, BUFFER_SETTING_KEYS) &&
+        this.status.state !== 'recording'
+      ) {
+        // Solo cambió si el búfer debe correr (modo de grabación, bufferMode): se alinea sin
+        // reconstruir. Grabando no se toca; al parar, settleAfterRecording reconcilia igual.
+        await this.queueTask(async () => {
+          await this.reconcileBuffer();
+          this.setStatus({ state: this.bufferRunning ? 'buffering' : 'idle', error: null });
+        });
+      }
+      // El mute del micrófono es una operación en caliente: se aplica también durante una grabación
+      // (antes, apagar el micro grabando no surtía efecto hasta parar).
+      this.applyMicMute();
     }
     return next;
   }
