@@ -17,10 +17,10 @@
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: Ajustes → General abierto, cambiar «Clip» en la barra superior, guardar la sección → la duración nueva queda.
+- [x] Comprobación manual: Ajustes → General abierto, cambiar «Clip» en la barra superior, guardar la sección → la duración nueva queda.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado

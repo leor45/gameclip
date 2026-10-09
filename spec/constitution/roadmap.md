@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🐞 Ajustes que se pierden o se pisan — 🧪 en rama (`fix/ajustes-se-pisan`)
+### 🐞 Ajustes que se pierden o se pisan — ✅ entregado (`fix/ajustes-se-pisan`, 2026-10-08)
 
 Dos fallos: los ajustes guardados durante una grabación no se aplicaban nunca (`setSettings` saltaba
 el rebuild sin dejarlo pendiente), y cada sección de Ajustes guardaba su copia entera cargada al
