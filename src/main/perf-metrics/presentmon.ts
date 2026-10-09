@@ -1,7 +1,8 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { safeSpawn } from '../safe-spawn';
 import type { LineProcess } from './sensors';
 
 // Wrapper de PresentMon 2.x (Intel, MIT): mide los FPS leyendo por ETW los eventos de presentación.
@@ -460,20 +461,24 @@ export class PresentMonReader {
   }
 }
 
-/** Spawn real con stdout por líneas (mismo contrato que el helper de sensores). */
+/**
+ * Spawn real con stdout por líneas (mismo contrato que el helper de sensores, también ante un fallo
+ * al lanzar: se avisa por `onExit` y el reader lo reintenta espaciado).
+ */
 export function realPresentMonSpawn(exePath: string, args: string[]): LineProcess {
-  const child: ChildProcess = spawn(exePath, args, {
+  const proc = safeSpawn(PRESENTMON_EXE, exePath, args, {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'ignore'],
   });
-  const rl = child.stdout ? createInterface({ input: child.stdout }) : null;
+  const stdout = proc.child?.stdout;
+  const rl = stdout ? createInterface({ input: stdout }) : null;
   return {
     kill: () => {
       rl?.close();
-      child.kill();
+      proc.kill();
     },
     onLine: (listener) => rl?.on('line', listener),
-    onExit: (listener) => child.on('exit', listener),
+    onExit: (listener) => proc.onEnd(listener),
   };
 }
 

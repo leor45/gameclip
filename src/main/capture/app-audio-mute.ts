@@ -1,6 +1,6 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { safeSpawn } from '../safe-spawn';
 
 // Gestión del helper nativo gc-app-audio-mute en modo `--watch`: un proceso persistente que escucha
 // eventos de Core Audio y mutea la sesión de obs64.exe en el dispositivo del mando (DualSense) EN
@@ -87,18 +87,20 @@ export class HapticMuteListener {
 }
 
 /** Spawn real, envuelto en el subconjunto SpawnedProcess. stdin 'pipe' para que el helper reciba
- *  EOF al matarlo o al cerrar GameClip (sin huérfano). */
+ *  EOF al matarlo o al cerrar GameClip (sin huérfano). Si no se puede lanzar (ver `safeSpawn`) no
+ *  lanza nada: avisa por `'exit'` y el listener lo olvida hasta el siguiente `apply`. */
 function realSpawn(exePath: string, args: string[]): SpawnedProcess {
-  const child: ChildProcess = spawn(exePath, args, {
+  const proc = safeSpawn(HAPTIC_MUTE_EXE, exePath, args, {
     windowsHide: true,
     stdio: ['pipe', 'ignore', 'ignore'],
   });
   return {
     kill: () => {
-      child.kill();
+      proc.kill();
     },
-    on: (event, listener) => {
-      child.on(event, listener);
+    // 'exit' es el único evento del subconjunto: aquí significa «terminó o no llegó a arrancar».
+    on: (_event, listener) => {
+      proc.onEnd(listener);
     },
   };
 }

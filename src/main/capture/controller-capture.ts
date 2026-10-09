@@ -1,6 +1,6 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { safeSpawn } from '../safe-spawn';
 
 // Gestión del helper nativo gc-controller-listen: un proceso persistente que escucha el botón de
 // captura de los mandos (Create del DualSense por HID, Compartir del Xbox por GameInput) y escribe
@@ -84,16 +84,18 @@ export class ControllerCaptureListener {
 }
 
 /** Spawn real: trocea stdout en líneas y las entrega a `onLine`. stdin 'pipe' para que el helper
- *  reciba EOF al matarlo o al cerrar GameClip (sin huérfano). */
+ *  reciba EOF al matarlo o al cerrar GameClip (sin huérfano). Si no se puede lanzar (ver
+ *  `safeSpawn`) no lanza nada: avisa por `'exit'` y el listener lo olvida hasta el siguiente `apply`. */
 function realSpawn(exePath: string): SpawnedProcess {
-  const child: ChildProcess = spawn(exePath, [], {
+  const proc = safeSpawn(CONTROLLER_LISTEN_EXE, exePath, [], {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'ignore'],
   });
   const lineListeners: ((line: string) => void)[] = [];
   let buffer = '';
-  child.stdout?.setEncoding('utf8');
-  child.stdout?.on('data', (chunk: string) => {
+  const stdout = proc.child?.stdout;
+  stdout?.setEncoding('utf8');
+  stdout?.on('data', (chunk: string) => {
     buffer += chunk;
     let nl: number;
     while ((nl = buffer.indexOf('\n')) >= 0) {
@@ -104,10 +106,11 @@ function realSpawn(exePath: string): SpawnedProcess {
   });
   return {
     kill: () => {
-      child.kill();
+      proc.kill();
     },
-    on: (event, listener) => {
-      child.on(event, listener);
+    // 'exit' es el único evento del subconjunto: aquí significa «terminó o no llegó a arrancar».
+    on: (_event, listener) => {
+      proc.onEnd(listener);
     },
     onLine: (listener) => {
       lineListeners.push(listener);

@@ -1,7 +1,7 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { safeSpawn } from '../safe-spawn';
 
 // Wrapper del helper de sensores (gc-perf-sensors.exe, LibreHardwareMonitor sobre .NET Framework
 // 4.8): un proceso persistente que emite UNA línea JSON por segundo con los sensores de GPU y la
@@ -215,20 +215,25 @@ export class SensorsReader {
   }
 }
 
-/** Spawn real con stdout por líneas. stdin 'pipe': el helper recibe EOF si GameClip muere. */
+/**
+ * Spawn real con stdout por líneas. stdin 'pipe': el helper recibe EOF si GameClip muere. Si no se
+ * puede lanzar (ver `safeSpawn`) no lanza nada: avisa por `onExit` y el reader lo trata como una
+ * muerte más, con su reintento espaciado.
+ */
 export function realSensorsSpawn(exePath: string, args: string[] = []): LineProcess {
-  const child: ChildProcess = spawn(exePath, args, {
+  const proc = safeSpawn(PERF_SENSORS_EXE, exePath, args, {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'ignore'],
   });
-  const rl = child.stdout ? createInterface({ input: child.stdout }) : null;
+  const stdout = proc.child?.stdout;
+  const rl = stdout ? createInterface({ input: stdout }) : null;
   return {
     kill: () => {
       rl?.close();
-      child.kill();
+      proc.kill();
     },
     onLine: (listener) => rl?.on('line', listener),
-    onExit: (listener) => child.on('exit', listener),
+    onExit: (listener) => proc.onEnd(listener),
   };
 }
 
