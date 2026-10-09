@@ -1488,6 +1488,15 @@ audio por app a «todo el PC junto» sin necesidad. Los dos ejes deben desacopla
 
 ## Futuro (fuera de alcance por ahora)
 
+- **Acordes de botones del mando como atajos (SCUF, Elite, DualSense Edge):** los paddles de estos
+  mandos no existen como botones para el PC —el mando los convierte en una copia de A/B/X/Y—, así que
+  un atajo «en el paddle» sería un atajo en ese botón y se dispararía jugando. La forma real de usar
+  cualquier botón del mando sin falsos disparos es una **combinación** que el juego no use (`L3+R3`,
+  `Share+X`…) por acción. Exige ampliar el helper nativo `gc-controller-listen` para leer todos los
+  botones (GameInput `IGameInputReading` para Xbox, informe HID para DualSense), un protocolo de
+  acordes hacia el main y la UI para capturar la combinación; y mandos reales para probarlo (hay que
+  saber el modelo del owner). Hoy ya funcionan: el botón Create/Share (clip) y los mandos cuyos botones
+  extra son teclas de teclado (SCUF Envision) con los atajos normales. Pedido el 2026-10-08.
 - **Overlay in-game por inyección (estilo Discord):** hoy el overlay es una BrowserWindow
   transparente siempre-encima, así que **no se ve en fullscreen exclusivo** — ni el indicador de
   grabación, ni el toast de clip guardado, ni el aviso al detectar el juego. La solución real es
