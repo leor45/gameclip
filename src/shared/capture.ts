@@ -433,6 +433,28 @@ export function needsContentProtection(profile: CaptureProfile, capturing: boole
   return profile === 'desktop' && capturing;
 }
 
+/** Dispositivo de micrófono resuelto contra los que existen ahora mismo. */
+export interface ResolvedMicDevice {
+  /** Id a pasar a libobs (`default` si el guardado está vacío, es `default` o ya no existe). */
+  deviceId: string;
+  /** El id guardado apunta a un dispositivo que la enumeración no trae (desconectado/eliminado). */
+  missing: boolean;
+}
+
+/**
+ * Resuelve el micrófono guardado contra la lista enumerada. Un auricular USB que se desconectó deja
+ * en los ajustes un id que libobs ya no encuentra: la fuente queda muda para siempre y, sin esto,
+ * nadie se enteraba. Si la enumeración no trajo ningún dispositivo real (osn no pudo enumerar) se
+ * respeta el id: degradar a ciegas podría cambiarle el micro a quien lo tiene bien.
+ */
+export function resolveMicDevice(micDeviceId: string, devices: AudioDeviceInfo[]): ResolvedMicDevice {
+  const id = micDeviceId.trim();
+  if (!id || id === 'default') return { deviceId: 'default', missing: false };
+  const reales = devices.filter((d) => d.id && d.id !== 'default');
+  if (reales.length === 0 || reales.some((d) => d.id === id)) return { deviceId: id, missing: false };
+  return { deviceId: 'default', missing: true };
+}
+
 // Acepta un parcial de origen no confiable (disco/IPC) y devuelve settings válidos,
 // cayendo al default campo a campo.
 export function normalizeCaptureSettings(input: unknown): CaptureSettings {

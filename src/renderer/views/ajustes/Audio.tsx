@@ -5,6 +5,7 @@ import {
   DEFAULT_AUDIO_APPS,
   PTT_HOTKEY_OPTIONS,
   orderedActiveAudioApps,
+  resolveMicDevice,
   type AudioAppCapture,
   type AudioAppInfo,
   type AudioDeviceInfo,
@@ -119,6 +120,10 @@ export default function AjustesAudio() {
     (a) => !yaAgregadas.has(a.executable.toLowerCase()) && !esDefault(a.executable),
   );
   const limiteAlcanzado = audioApps.length >= AUDIO_APPS_MAX;
+  // El micro guardado puede ya no existir (auricular desconectado): sin esto el <select> pintaba
+  // «Por defecto del sistema» mientras el ajuste seguía apuntando a un dispositivo fantasma y la
+  // pista de micrófono salía muda en todos los clips.
+  const micDesconectado = resolveMicDevice(settings.micDeviceId, dispositivos).missing;
   // Cada app activa ocupa una pista propia (T4+); solo hay 3 pistas de app.
   const appsConAudio = orderedActiveAudioApps(audioApps).length;
   const topeAudioAlcanzado = appsConAudio >= AUDIO_APPS_TRACK_MAX;
@@ -158,6 +163,11 @@ export default function AjustesAudio() {
             disabled={!settings.micEnabled}
           >
             <option value="">Por defecto del sistema</option>
+            {micDesconectado && (
+              <option value={settings.micDeviceId} disabled>
+                Micrófono guardado (no conectado)
+              </option>
+            )}
             {dispositivos.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -165,6 +175,12 @@ export default function AjustesAudio() {
             ))}
           </select>
         </label>
+        {micDesconectado && (
+          <p className="settings-warning" data-testid="aviso-mic-desconectado">
+            El micrófono guardado ya no está conectado: mientras tanto se graba con el predeterminado
+            del sistema. Elige otro dispositivo y guarda para quitar este aviso.
+          </p>
+        )}
         <label className="settings-check">
           <input
             type="checkbox"
