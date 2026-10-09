@@ -485,11 +485,29 @@ export default function EditorAvanzado() {
     if (v.paused) {
       engineRef.current?.resume(); // dentro del gesto de usuario (política de autoplay)
       const live = await ensureAudioLoaded();
+      // La carga del audio puede tardar segundos con «Salir» habilitado: si el editor se
+      // desmontó (React suelta la ref) o cambió el <video>, no se toca el viejo — sonaría de
+      // fondo sin forma de pararlo.
+      if (videoRef.current !== v) return;
+      // Pasado el último tramo conservado (p. ej. tras llegar al final recortado) no queda nada
+      // que reproducir: el bucle pararía en el primer tick. Se vuelve al inicio del primer
+      // tramo, como hace el navegador con un vídeo terminado. El audio en vivo lo arranca el
+      // bucle cuando el vídeo aterrice (como en el salto de huecos: arrancarlo ya lo
+      // adelantaría a la imagen y sonaría «doble»).
+      const segs = segmentsRef.current;
+      const t = v.currentTime;
+      const reinicio = segs.length > 0 && segmentAt(segs, t) < 0 && nextKeptTime(segs, t) === null;
+      if (reinicio) {
+        const inicio = segs[0].start;
+        skipTargetRef.current = inicio;
+        v.currentTime = inicio;
+        setPlayhead(inicio);
+      }
       // Con audio en vivo, el <video> va mudo (lo pone el motor). Si no, suena la mezcla original.
       v.muted = live;
       // `play()` puede devolver undefined en algunos entornos (jsdom): se envuelve para no romper.
       void Promise.resolve(v.play()).catch(() => undefined);
-      if (live) engineRef.current?.play(v.currentTime);
+      if (live && !reinicio) engineRef.current?.play(v.currentTime);
       setPlaying(true);
     } else {
       v.pause();
@@ -504,6 +522,9 @@ export default function EditorAvanzado() {
       v.pause();
       v.currentTime = 0;
     }
+    // Un salto en curso (hueco o reinicio de ▶) queda anulado: si siguiera «pendiente», el
+    // bucle no re-emitiría ese salto al volver a reproducir desde 0 y sonaría lo recortado.
+    skipTargetRef.current = null;
     engineRef.current?.stop();
     setPlaying(false);
     setPlayhead(0);
