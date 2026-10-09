@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🐞 La tarea de auto-inicio elevado se recreaba en cada arranque — 🧪 en rama (`fix/tarea-elevada-comillas`)
+### 🐞 La tarea de auto-inicio elevado se recreaba en cada arranque — ✅ entregado (`fix/tarea-elevada-comillas`, 2026-10-08)
 
 `elevatedTaskMatches` comparaba el `<Command>` del XML con la ruta sin comillas, pero schtasks lo
 guarda entrecomillado (verificado con la tarea real): nunca coincidía, la tarea se recreaba elevando en

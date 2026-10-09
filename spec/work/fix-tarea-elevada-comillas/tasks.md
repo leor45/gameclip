@@ -16,10 +16,10 @@
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: con el portable empaquetado y el auto-inicio elevado activo, el log ya no recrea la tarea en cada arranque.
+- [x] Comprobación manual: con el portable empaquetado y el auto-inicio elevado activo, el log ya no recrea la tarea en cada arranque.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado
