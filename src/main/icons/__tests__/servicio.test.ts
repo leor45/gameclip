@@ -211,6 +211,88 @@ describe('IconService — nombre de juego → icono', () => {
   });
 });
 
+describe('IconService — nombre del clip distinto del del launcher (regresión)', () => {
+  it('los «:» quitados al nombrar la carpeta del clip no impiden encontrar el juego', async () => {
+    const exe = archivo('Avatar/afop.exe');
+    const { servicio, deps } = crear({
+      index: { afop: 'Avatar: Frontiers of Pandora' },
+      installed: [
+        { name: 'Avatar: Frontiers of Pandora', installDir: join(raiz, 'Avatar'), source: 'steam' },
+      ],
+    });
+    expect(await servicio.forGame('Avatar  Frontiers of Pandora')).toBe(url(PNG));
+    expect(deps.iconoDeArchivo).toHaveBeenCalledWith(exe);
+  });
+
+  it('un sufijo de edición del launcher (INTERGRADE) no impide encontrar el juego', async () => {
+    const exe = archivo('FF7/ff7remake_.exe');
+    const { servicio, deps } = crear({
+      index: { ff7remake_: 'FINAL FANTASY VII REMAKE INTERGRADE' },
+      installed: [
+        { name: 'FINAL FANTASY VII REMAKE INTERGRADE', installDir: join(raiz, 'FF7'), source: 'steam' },
+      ],
+    });
+    expect(await servicio.forGame('FINAL FANTASY VII REMAKE')).toBe(url(PNG));
+    expect(deps.iconoDeArchivo).toHaveBeenCalledWith(exe);
+  });
+
+  it('una secuela no es una edición: «Hades» no toma el icono de «Hades II»', async () => {
+    archivo('Hades2/Hades2.exe');
+    const { servicio, deps } = crear({
+      index: { hades2: 'Hades II' },
+      installed: [{ name: 'Hades II', installDir: join(raiz, 'Hades2'), source: 'steam' }],
+    });
+    expect(await servicio.forGame('Hades')).toBeNull();
+    expect(deps.iconoDeArchivo).not.toHaveBeenCalled();
+  });
+
+  it('el nombre de la lista curada se compara sin signos (Honkai: Star Rail en ejecución)', async () => {
+    const exe = archivo('HSR/StarRail.exe');
+    const { servicio } = crear({
+      running: [{ name: 'Honkai: Star Rail', executable: 'StarRail.exe' }],
+      procesos: { starrail: exe },
+    });
+    expect(await servicio.forGame('Honkai  Star Rail')).toBe(url(PNG));
+  });
+});
+
+describe('IconService — icono recordado por nombre', () => {
+  it('un juego desinstalado conserva el icono que se resolvió cuando estaba instalado', async () => {
+    archivo('Lies/LOP.exe');
+    const primero = crear({
+      index: { lop: 'Lies of P' },
+      installed: [{ name: 'Lies of P', installDir: join(raiz, 'Lies'), source: 'steam' }],
+    });
+    expect(await primero.servicio.forGame('Lies of P')).toBe(url(PNG));
+    await primero.servicio.esperarEscrituras();
+
+    // Otra sesión: el juego ya no está instalado ni corre.
+    const despues = crear();
+    expect(await despues.servicio.forGame('Lies of P')).toBe(url(PNG));
+    expect(despues.deps.iconoDeArchivo).not.toHaveBeenCalled();
+  });
+
+  it('un icono no verificado (proceso que se llama igual) no se recuerda', async () => {
+    const exe = archivo('Otro/pioneergame.exe');
+    const primero = crear({
+      running: [{ name: 'ARC Raiders', executable: 'pioneergame.exe' }],
+      procesos: { pioneergame: exe },
+    });
+    expect(await primero.servicio.forGame('ARC Raiders')).toBe(url(PNG));
+    await primero.servicio.esperarEscrituras();
+
+    const despues = crear();
+    expect(await despues.servicio.forGame('ARC Raiders')).toBeNull();
+  });
+
+  it('un nombres.json roto se ignora', async () => {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(join(cacheDir, 'nombres.json'), '{roto');
+    const { servicio } = crear();
+    expect(await servicio.forGame('Lies of P')).toBeNull();
+  });
+});
+
 describe('IconService — ejecutable suelto → icono', () => {
   it('app en ejecución (audio): icono de su exe', async () => {
     const exe = archivo('Discord/Discord.exe');
