@@ -1297,6 +1297,13 @@ guarda entrecomillado (verificado con la tarea real): nunca coincidía, la tarea
 cada arranque y, si se cancelaba el UAC del relanzado, se pedía un segundo UAC. Ahora el valor se
 normaliza (comillas, entidades XML, mayúsculas) antes de comparar.
 
+### 🔒 La API de cuentas escuchaba en toda la red con un secreto público — ✅ entregado (`fix/api-solo-local`, 2026-10-08)
+
+`listen(port)` sin host enlazaba todas las interfaces y el JWT se firmaba con `gameclip-dev-secret`
+(la app empaquetada nunca definía otro): desde la LAN se podían falsificar tokens y probar contraseñas
+sin límite. Ahora la API escucha solo en `127.0.0.1` (el renderer y la CSP apuntan ahí) y cada
+instalación firma con un secreto aleatorio propio guardado en `userData/api-secret`.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

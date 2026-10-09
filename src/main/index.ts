@@ -16,6 +16,7 @@ import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
 import { screenshotFailureMessage } from '@shared/screenshot';
 import { startApi, type ApiHandle } from '../../server/api';
+import { loadOrCreateSecret } from '../../server/auth/jwt-secret';
 import { ffmpegPath } from './paths';
 import { loginItemSettings } from './auto-launch';
 import { finalizarGrabacion, teardown } from './shutdown';
@@ -160,6 +161,8 @@ function setupApi(): void {
     api = startApi({
       driver: Database,
       dbPath: join(app.getPath('userData'), 'auth.db'),
+      // Secreto propio de la instalación: el de desarrollo es público (está en el repo).
+      jwtSecret: loadOrCreateSecret(join(app.getPath('userData'), 'api-secret')),
       port: SERVER_PORT,
       onError: (err) =>
         fallo(
