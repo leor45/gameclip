@@ -26,9 +26,10 @@ export interface GameDetectorOptions {
 /**
  * Sondea los procesos en ejecución y detecta TODOS los juegos que corren a la vez: los del índice
  * de launchers, los de la lista curada y los manuales. Emite 'games-changed' con la lista completa
- * cuando el CONJUNTO cambia (comparado por nombres). Un solo juego que desaparece un sondeo
- * mientras otros siguen actualiza la lista de inmediato; solo el vaciado total espera
- * `missesBeforeStop` sondeos seguidos sin ver ninguno (anti-parpadeo).
+ * cuando el CONJUNTO cambia (por nombres) o cuando un juego cambia de ejecutable (su lanzador deja
+ * paso al exe real; el ejecutable confirmado es pegajoso mientras siga vivo). Un solo juego que
+ * desaparece un sondeo mientras otros siguen actualiza la lista de inmediato; solo el vaciado total
+ * espera `missesBeforeStop` sondeos seguidos sin ver ninguno (anti-parpadeo).
  *
  * El sondeo es deliberadamente barato —`tasklist` y una consulta al índice en memoria—: construir
  * el índice cuesta, pero eso pasa fuera de aquí, al arrancar.
@@ -90,10 +91,10 @@ export class GameDetector extends EventEmitter {
     try {
       const names = await this.list();
       this.checkNovelty(names);
-      const matches = findRunningGamesMatch(names, {
-        customGames: this.customGames,
-        index: this.index,
-      });
+      const matches = this.keepExecutables(
+        findRunningGamesMatch(names, { customGames: this.customGames, index: this.index }),
+        names,
+      );
       if (matches.length > 0) {
         // Con al menos un juego, la lista es de fiar: se aplica de inmediato (aunque alguno
         // haya desaparecido respecto al sondeo anterior).
@@ -115,11 +116,37 @@ export class GameDetector extends EventEmitter {
     }
   }
 
-  /** ¿El conjunto de juegos (por nombre) difiere del último confirmado? */
+  /**
+   * ¿La lista difiere de la última confirmada? Por nombre y, en cada juego, por ejecutable: el mismo
+   * juego que pasa de su lanzador al exe real (D4-BUG-1) tiene que llegar al manager para que la
+   * captura le siga. Los ejecutables vienen normalizados de `findRunningGamesMatch` (`<clave>.exe`).
+   */
   private setChanged(next: RunningGameMatch[]): boolean {
     if (next.length !== this.running.length) return true;
-    const prev = new Set(this.running.map((g) => g.name));
-    return next.some((g) => !prev.has(g.name));
+    const prev = new Map(this.running.map((g) => [g.name, g.executable]));
+    return next.some((g) => prev.get(g.name) !== g.executable);
+  }
+
+  /**
+   * Ejecutable pegajoso por juego. `findRunningGamesMatch` se queda con el PRIMER proceso de cada
+   * juego en el orden de tasklist; con el lanzador y el exe real del mismo juego vivos a la vez, el
+   * elegido podría saltar de uno a otro entre sondeos y re-apuntar la captura en cada salto. Si el
+   * ejecutable confirmado de un juego sigue en marcha —y sigue resolviéndose como ESE juego—, se
+   * conserva; si no, vale el del matching. Así el relevo ocurre una vez: cuando el viejo se cierra.
+   */
+  private keepExecutables(matches: RunningGameMatch[], processNames: string[]): RunningGameMatch[] {
+    if (this.running.length === 0) return matches;
+    const vivos = new Set(processNames.map(exeKey));
+    const ctx = { customGames: this.customGames, index: this.index };
+    return matches.map((match) => {
+      const previo = this.running.find((g) => g.name === match.name);
+      if (!previo || previo.executable === match.executable) return match;
+      if (!vivos.has(exeKey(previo.executable))) return match;
+      // Mismo criterio que el matching: un re-índice o un manual editado pueden haberlo hecho otro
+      // juego (o ninguno), y entonces no puede seguir representando a este.
+      const sigueSiendo = findRunningGamesMatch([previo.executable], ctx)[0]?.name === match.name;
+      return sigueSiendo ? { ...match, executable: previo.executable } : match;
+    });
   }
 
   /**

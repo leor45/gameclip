@@ -14,7 +14,7 @@ import {
   needsContentProtection,
   settingsChanged,
 } from '@shared/capture';
-import { KNOWN_GAME_PROCESSES } from '@shared/games';
+import { KNOWN_GAME_PROCESSES, exeKey } from '@shared/games';
 import type { RunningGameMatch } from '@shared/games';
 import type { ClipSource } from '@shared/library';
 import { HapticMuteListener, createHapticMuteListener } from './app-audio-mute';
@@ -424,6 +424,13 @@ export class CaptureManager extends EventEmitter {
     const prevName = this.activeGame?.name ?? null;
     const nextName = next?.name ?? null;
     const changed = nextName !== prevName;
+    // Mismo juego, otro ejecutable: su lanzador dejó paso al exe real (D4-BUG-1). Para la sesión y el
+    // estado NO es un cambio de juego (`changed` sigue en false); solo hay que re-apuntar las fuentes.
+    const exeChanged =
+      !changed &&
+      next !== null &&
+      this.detectedGameExe !== null &&
+      exeKey(next.executable) !== exeKey(this.detectedGameExe);
 
     this.activeGame = next;
     this.detectedGameExe = next?.executable ?? null;
@@ -449,11 +456,12 @@ export class CaptureManager extends EventEmitter {
       }
     }
 
-    // Rotación DENTRO del perfil de juego (juego A → juego B): las fuentes se religan en caliente,
-    // sin reconstruir — un rebuild destruiría el replay buffer y su contenido. Si acabamos de
-    // reconstruir, el pipeline nuevo ya apunta al juego; y fuera del perfil de juego no hay a qué
-    // apuntar: en escritorio se captura el PC entero.
-    const rotacionDeJuego = changed && !rebuilt && this.builtProfile === 'game';
+    // Rotación DENTRO del perfil de juego (juego A → juego B, o el mismo juego que cambia de
+    // ejecutable): las fuentes se religan en caliente, sin reconstruir — un rebuild destruiría el
+    // replay buffer y su contenido. Si acabamos de reconstruir, el pipeline nuevo ya apunta al juego;
+    // y fuera del perfil de juego no hay a qué apuntar: en escritorio se captura el PC entero.
+    // Religar es un `update` de la fuente, no toca las salidas: vale también con una grabación en curso.
+    const rotacionDeJuego = (changed || exeChanged) && !rebuilt && this.builtProfile === 'game';
     if (rotacionDeJuego && settings.audioMode === 'apps' && settings.gameAudioEnabled) {
       try {
         this.obs.updateGameAudioTarget(this.detectedGameExe);
@@ -467,6 +475,10 @@ export class CaptureManager extends EventEmitter {
       } catch (err) {
         this.setStatus({ error: err instanceof Error ? err.message : String(err) });
       }
+      // El exe real acaba de relevar a su lanzador: su ventana suele aparecer DESPUÉS del proceso
+      // (anti-cheat), y el bucle del build pudo haber terminado ya (apuntó al lanzador o agotó el
+      // tope). Como tras un rebuild, se reintenta hasta que la ventana del exe nuevo exista.
+      if (exeChanged) this.startAimRetries();
     }
 
     // Modo auto: la presencia/cambio de juego dirige la grabación de sesión.
