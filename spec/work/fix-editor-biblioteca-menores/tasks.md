@@ -18,10 +18,10 @@
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: renombrar un clip mientras se guarda un replay; abrir un clip recién guardado en el editor avanzado y salir → no aparece en «Ediciones sin terminar».
+- [x] Comprobación manual: renombrar un clip mientras se guarda un replay; abrir un clip recién guardado en el editor avanzado y salir → no aparece en «Ediciones sin terminar».
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado

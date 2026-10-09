@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🐞 Fallos menores de la biblioteca y del editor avanzado — 🧪 en rama (`fix/editor-biblioteca-menores`)
+### 🐞 Fallos menores de la biblioteca y del editor avanzado — ✅ entregado (`fix/editor-biblioteca-menores`, 2026-10-08)
 
 Tres fallos pequeños: renombrar un clip perdía lo escrito en cuanto la biblioteca se recargaba (el
 borrador dependía de la identidad del array de etiquetas); un clip ilegible bloqueaba las miniaturas
