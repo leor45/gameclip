@@ -43,8 +43,8 @@ por un referee independiente.
   mismo fallo de D5-BUG-1 un nivel más abajo); una fila cuyo archivo falta se conserva solo si vive
   en la unidad de la carpeta de clips y la raíz de esa unidad (`D:\`, `\\servidor\recurso\`) no es
   accesible (ver «Corrección tras revisión (B1-1)»).
-- `StorageManager` (`getStats`, `enforceLimit`): los clips de una unidad no accesible ni cuentan ni
-  se borran (B1-1).
+- `StorageManager` (`getStats`, `enforceLimit`): los clips de la unidad de la carpeta de clips, si no
+  está montada, ni cuentan ni se borran; solo se consulta esa raíz (B1-1, 1.2).
 - El listener de `'settings'` pasa a `src/main/library/settings-sync.ts`
   (`syncLibraryAfterSettings`, testeable): no escanea con la captura en `'recording'` y nunca lanza
   (cada paso aislado y registrado con `console.error`).
@@ -78,8 +78,12 @@ por un referee independiente.
       archivo suyo.
 - [ ] Las filas de otra unidad que no está (carpeta de salida anterior) se dan de baja: copiar la
       carpeta a otra unidad y quitar el USB no duplica la biblioteca (B1-1).
-- [ ] El uso medido y el auto-borrado ignoran los clips de una unidad no accesible: ni cuentan ni se
-      borran (B1-1).
+- [ ] El uso medido y el auto-borrado ignoran los clips de la unidad de la carpeta de clips sin
+      montar (ni cuentan ni se borran) y cuentan los de otras unidades como siempre (B1-1, 1.2).
+- [ ] Con la carpeta de clips en la raíz de un recurso compartido (`\\nas\clips`, sin barra final, o
+      `//nas/clips`), sus clips se conservan con el recurso caído (1.1).
+- [ ] `getStats` y `enforceLimit` no consultan el disco de ninguna unidad salvo la de la carpeta de
+      clips (1.2).
 - [ ] Guardar ajustes grabando no cataloga la grabación en curso; el re-etiquetado y el límite siguen
       corriendo.
 - [ ] Un fallo del escaneo, del re-etiquetado o del límite no sale del listener de `'settings'`: el
@@ -102,3 +106,15 @@ con el uso real por debajo del límite (p. ej. 40 GB reales y límite de 50 GB �
 **Causa raíz:** la regla «unidad no accesible → se conserva» no distinguía la unidad de la carpeta de
 clips (el caso de D5-BUG-3) de la de una carpeta de salida anterior; y el límite y las estadísticas
 contaban filas que no ocupan espacio medible ni liberable.
+
+## Segunda corrección tras revisión (1.1, 1.2)
+
+Una tercera revisión independiente encontró dos fallos Low en la corrección B1-1 (detalle en el plan):
+
+- **1.1:** con la carpeta de clips en la raíz de un recurso compartido (el selector la da como
+  `\\nas\clips`, sin barra final) no se reconocía su unidad y, con el recurso caído, sus clips se
+  daban de baja. **Causa raíz:** `path.parse` deja esa raíz sin `\` final y las filas la llevan.
+- **1.2:** `getStats` y `enforceLimit`, que corren en el hilo principal, consultaban la raíz de cada
+  unidad del catálogo; un recurso antiguo caído a mitad de sesión los bloqueaba segundos (42 s con el
+  servidor apagado). **Causa raíz:** dejaban fuera las filas de cualquier unidad no accesible, cuando
+  el escaneo solo conserva las de la unidad de la carpeta de clips.

@@ -6,7 +6,7 @@ import { gameFromFolderName } from '@shared/clip-naming';
 import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
 import { isTempMediaFile, normalizeClipPatch, titleFromFileName } from '@shared/library';
-import { createVolumeAccessCheck, volumeRootKey } from './clip-path';
+import { createOfflineOutputVolumeCheck } from './clip-path';
 import type { ClipsRepository } from './clips-repository';
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
@@ -106,14 +106,11 @@ export class LibraryManager extends EventEmitter {
     let added = 0;
     let removed = 0;
 
-    const unidadAccesible = createVolumeAccessCheck();
-    const unidadDeLaSalida = volumeRootKey(outputDir);
+    const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
     for (const { id, filePath } of this.repo.allPaths()) {
       // En la unidad de la salida se mira la unidad antes que el archivo: sin montar, sus clips se
       // conservan sin preguntar por cada uno.
-      const enSalidaSinMontar =
-        volumeRootKey(filePath) === unidadDeLaSalida && !unidadAccesible(filePath);
-      if (enSalidaSinMontar || existsSync(filePath)) continue;
+      if (enSalidaSinMontar(filePath) || existsSync(filePath)) continue;
       this.removeThumbnail(this.repo.get(id));
       this.repo.delete(id);
       removed++;

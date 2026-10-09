@@ -2,7 +2,7 @@ import { existsSync, statfsSync } from 'node:fs';
 import { dirname, parse } from 'node:path';
 import type { CaptureSettings } from '@shared/capture';
 import type { Clip, StorageStats } from '@shared/library';
-import { createVolumeAccessCheck } from './clip-path';
+import { createOfflineOutputVolumeCheck } from './clip-path';
 import type { LibraryManager } from './manager';
 
 export interface StorageManagerDeps {
@@ -24,9 +24,10 @@ export class StorageManager {
     let clipsBytes = 0;
     let recordingsBytes = 0;
     let screenshotsBytes = 0;
-    const unidadAccesible = createVolumeAccessCheck();
+    // La unidad de la carpeta de clips sin montar no ocupa espacio medible (ver enforceLimit).
+    const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
     for (const clip of this.library.list()) {
-      if (!unidadAccesible(clip.filePath)) continue; // unidad sin montar: no ocupa espacio medible
+      if (enSalidaSinMontar(clip.filePath)) continue;
       if (clip.kind === 'image') screenshotsBytes += clip.sizeBytes;
       else if (clip.source === 'recording') recordingsBytes += clip.sizeBytes;
       else clipsBytes += clip.sizeBytes;
@@ -52,23 +53,25 @@ export class StorageManager {
    * videos, aunque las capturas cuenten para medirlo); con `onlyDeleteRecordings` respeta también
    * ese filtro. Devuelve las rutas eliminadas.
    *
-   * Los clips de una unidad sin montar ni cuentan para el uso ni se borran: «borrarlos» no libera
-   * nada (el archivo sigue en el USB) y destruye las ediciones que su fila conserva; y contarlos,
-   * con la carpeta copiada a otra unidad, medía el doble y borraba clips reales bajo el límite.
+   * Con `outputDir` (la carpeta de clips ya resuelta), los clips de su unidad cuando no está montada
+   * ni cuentan para el uso ni se borran: son las filas sin archivo que el escaneo conserva
+   * (D5-BUG-3), «borrarlos» no libera nada (el archivo sigue en el USB) y destruye sus ediciones. Las
+   * filas de otras unidades cuentan como siempre y no se consulta su disco; las de una unidad que ya
+   * no está las da de baja el escaneo. Sin `outputDir` no se deja fuera nada.
    */
   async enforceLimit(
     settings: CaptureSettings,
-    opts: { protectPath?: string } = {},
+    opts: { protectPath?: string; outputDir?: string } = {},
   ): Promise<string[]> {
     if (settings.storageLimitGb <= 0 || !settings.autoDeleteOldest) return [];
 
     const limitBytes = settings.storageLimitGb * 1024 ** 3;
-    const unidadAccesible = createVolumeAccessCheck();
+    const enSalidaSinMontar = createOfflineOutputVolumeCheck(opts.outputDir ?? '');
     // Ascendente por fecha: recorremos del más viejo al más nuevo, saltando los no elegibles
     // (equivale a "parar si no quedan elegibles" sin tener que re-consultar el repositorio).
     const clips = this.library
       .list()
-      .filter((c) => unidadAccesible(c.filePath))
+      .filter((c) => !enSalidaSinMontar(c.filePath))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     let used = clips.reduce((sum, c) => sum + c.sizeBytes, 0);
     const deleted: string[] = [];

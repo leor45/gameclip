@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createVolumeAccessCheck } from '../library/clip-path';
+import { createVolumeAccessCheck, volumeRootKey } from '../library/clip-path';
 import { ClipsRepository } from '../library/clips-repository';
 import { LibraryManager } from '../library/manager';
 
@@ -270,6 +270,47 @@ describe('LibraryManager.reconcile — clips de otra unidad que ya no está (reg
     expect(manager.getClip(conVivo.id)).not.toBeNull();
     expect(manager.getClip(conBorrado.id)).toBeNull();
     rmSync(fuera, { recursive: true, force: true });
+  });
+});
+
+describe('LibraryManager.reconcile — carpeta de clips en la raíz de un recurso de red (regresión 1.1)', () => {
+  // Servidor inventado: `existsSync` contesta «no está» sin salir a la red.
+  const recurso = '\\\\gameclip-nas-test\\clips';
+  function recursoCaido(): void {
+    vi.mocked(existsSync).mockImplementation((p) =>
+      String(p).replace(/\//g, '\\').toLowerCase().startsWith(recurso.toLowerCase())
+        ? false
+        : real.existsSync(p),
+    );
+  }
+
+  it.each([
+    ['tal como la da el selector, sin barra final', recurso],
+    ['con barras normales', '//gameclip-nas-test/clips'],
+    ['con barra final', `${recurso}\\`],
+  ])('con el recurso caído, sus clips se conservan (carpeta %s)', (_, salida) => {
+    recursoCaido();
+    const enRecurso = insertar(`${recurso}\\Fortnite\\Fortnite 2026.07.01.mp4`);
+    const manager = crearManager();
+
+    expect(manager.reconcile(salida)).toEqual({ added: 0, removed: 0 });
+    expect(manager.getClip(enRecurso.id)).not.toBeNull();
+  });
+});
+
+describe('volumeRootKey', () => {
+  it('la misma unidad da la misma clave con o sin barra final, con cualquier barra y capitalización', () => {
+    for (const p of [
+      '\\\\nas\\clips',
+      '\\\\nas\\clips\\',
+      '//nas/clips',
+      '//NAS/Clips/',
+      '\\\\NAS\\Clips\\sub\\a.mp4',
+    ]) {
+      expect(volumeRootKey(p)).toBe('\\\\nas\\clips\\');
+    }
+    for (const p of ['D:', 'd:/', 'D:\\Clips\\a.mp4']) expect(volumeRootKey(p)).toBe('d:\\');
+    expect(volumeRootKey('relativo\\a.mp4')).toBe('');
   });
 });
 

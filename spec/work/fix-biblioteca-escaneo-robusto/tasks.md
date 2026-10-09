@@ -68,8 +68,34 @@ Implementación:
       baja si falta el archivo.
 - [x] 3. `createVolumeAccessCheck`: clave normalizada (`/` → `\`); `\\?\`, `\\.\` y sin raíz cuentan
       como accesibles.
-- [x] 4. `getStats` y `enforceLimit` ignoran los clips de una unidad no accesible.
+- [x] 4. `getStats` y `enforceLimit` ignoran los clips de una unidad no accesible (afinado en 1.2:
+      solo la de la carpeta de clips).
 - [x] 5. Gates: type-check, lint y suite completa verdes (85 archivos, 1081 tests).
+
+## Segunda corrección tras revisión (1.1, 1.2)
+
+Tests (primero, en rojo):
+
+- [x] Regresión 1.1: carpeta de clips en la raíz de un recurso caído (servidor inventado, sin red)
+      dada como `\\…\clips`, `//…/clips` y `\\…\clips\` → sus clips se conservan.
+- [x] Regresión 1.1: `volumeRootKey` da la misma clave con o sin barra final, con `/` o `\` y con
+      cualquier capitalización (`\\nas\clips\`, `d:\`).
+- [x] Regresión 1.2: `getStats` con filas en tres unidades → solo consulta la raíz de la carpeta de
+      clips, deja fuera las suyas y cuenta las de otra unidad ausente (como en `main`).
+- [x] Regresión 1.2: `enforceLimit` deja fuera solo la unidad de la carpeta de clips sin montar,
+      cuenta la otra unidad ausente y no la consulta.
+- [x] 1.1 en el límite: carpeta en la raíz de un recurso caído sin barra final → sus clips no cuentan.
+- [x] B1-1 de punta a punta: el escaneo da de baja las copias muertas y después el límite no borra
+      nada.
+
+Implementación:
+
+- [x] 1. `volumeRootKey` y `createVolumeAccessCheck` con la raíz normalizada (acabada en `\`).
+- [x] 2. `createOfflineOutputVolumeCheck(outputDir)` compartido por `reconcile`, `getStats` y
+      `enforceLimit`: una sola consulta, a la raíz de la carpeta de clips.
+- [x] 3. `enforceLimit` recibe `outputDir` en `opts`; `aplicarLimite` (`index.ts`) le pasa
+      `manager.outputDir()`.
+- [x] 4. Gates: type-check, lint y suite completa verdes (85 archivos, 1087 tests).
 
 ## Cierre
 

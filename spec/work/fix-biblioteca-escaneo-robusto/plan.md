@@ -10,21 +10,25 @@
    - `mediaFilesIn`: `readdirSync` en try/catch (carpeta ilegible → `[]`, el recorrido sigue con las
      hermanas) y `CARPETAS_DE_SISTEMA` (`$recycle.bin`, `system volume information`) comparadas en
      minúsculas.
-   - `reconcile`, bajas: una fila cuyo archivo falta se conserva solo si su unidad es la de la
-     carpeta de clips (`volumeRootKey`) y esa unidad no es accesible (`createVolumeAccessCheck`); en
-     ese caso no se pregunta por el archivo. El resto, como antes del fix: baja si falta el archivo.
+   - `reconcile`, bajas: una fila cuyo archivo falta se conserva solo si vive en la unidad de la
+     carpeta de clips y esa unidad no está montada (`createOfflineOutputVolumeCheck`); en ese caso no
+     se pregunta por el archivo. El resto, como antes del fix: baja si falta el archivo.
    - `reconcile`, altas: el `statSync` del archivo nuevo en try/catch → se salta.
-2. `src/main/library/clip-path.ts`: `volumeRootKey(ruta)` (raíz de `path.parse`, en minúsculas y con
-   `\`) y `createVolumeAccessCheck()` (`existsSync` de la raíz, memorizado por raíz mientras viva la
-   función devuelta). Compartidos por el catálogo y el almacenamiento.
-3. `src/main/library/storage-manager.ts`: `getStats` y `enforceLimit` ignoran los clips cuya unidad no
-   es accesible (B1-1).
+2. `src/main/library/clip-path.ts`: `volumeRootKey(ruta)` (raíz de `path.parse` con `\`, acabada en
+   `\` y en minúsculas), `createVolumeAccessCheck()` (`existsSync` de la raíz, memorizado por raíz) y
+   `createOfflineOutputVolumeCheck(outputDir)` (¿el clip vive en la unidad de la carpeta de clips y
+   no está montada? Una sola consulta al disco, a la raíz de la salida). Compartidos por el catálogo
+   y el almacenamiento, que así no pueden discrepar.
+3. `src/main/library/storage-manager.ts`: `getStats(outputDir)` y `enforceLimit(settings,
+   { outputDir })` dejan fuera los clips de la unidad de la carpeta de clips cuando no está montada;
+   las filas de otras unidades cuentan como siempre, sin consultar su disco (B1-1, 1.2).
 4. `src/main/library/settings-sync.ts` (nuevo): `syncLibraryAfterSettings({ library, capture,
    aplicarLimite })` con el cuerpo del listener: `outputDir()` → `reconcile` (solo si
    `capture.getStatus().state !== 'recording'`) → `relabelGames` → `aplicarLimite`, cada paso en su
    try/catch y todo dentro de otro.
 5. `src/main/index.ts`: el listener de `'settings'` llama a `syncLibraryAfterSettings`; la migración
-   y el escaneo del arranque, en try/catch separados con `console.error`.
+   y el escaneo del arranque, en try/catch separados con `console.error`; `aplicarLimite` pasa
+   `outputDir: manager.outputDir()` a `enforceLimit`.
 
 ## Archivos / módulos afectados
 
@@ -92,10 +96,10 @@
 - **Una carpeta de clips y sus filas con distinta forma de la misma unidad** (unidad mapeada `Z:` y
   su ruta UNC): no se reconocen como la misma unidad y, sin montar, las filas se dan de baja como
   antes del fix. El selector de carpetas y libobs escriben siempre la misma forma.
-- **`getStats` y `enforceLimit` consultan la raíz de cada unidad** en cada llamada (memorizada solo
-  dentro de la llamada). Con un recurso de red caído, la primera consulta tarda ~4 s y las siguientes
-  ~0 ms (Windows recuerda la respuesta negativa). `getStats` ya consultaba ese disco por la carpeta de
-  salida (`nearestExistingDir` + `statfsSync`).
+- **`getStats` y `enforceLimit` consultan la raíz de la carpeta de clips** una vez por llamada (solo
+  si algún clip vive en ella). Con esa unidad en un recurso de red caído, la primera consulta tarda
+  segundos; `getStats` ya consultaba ese mismo disco (`nearestExistingDir` + `statfsSync`) y el
+  escaneo también, así que no es una clase de bloqueo nueva. Ninguna otra unidad se consulta.
 - **Ventanas residuales de D5-BUG-2** (ver «Fuera» del spec): el arranque de la salida de libobs y el
   guardado de un replay; exigen que un guardado de ajustes coincida con ellas en uno o dos segundos.
 
@@ -118,6 +122,34 @@ siempre y el auto-borrado medía el doble y borraba clips reales (ver spec). Cor
 Alternativas descartadas: conservar las filas de otra unidad ausente solo si no hay copia en la
 carpeta actual (reconocer «copia» exige comparar nombre, tamaño y fecha, y sigue duplicando si se
 renombró); purgar tras N días sin ver la unidad (necesita persistir fechas por unidad).
+
+## Segunda corrección tras revisión (1.1, 1.2)
+
+Una tercera revisión independiente encontró dos fallos Low en la corrección B1-1:
+
+- **1.1 — carpeta de clips en la raíz de un recurso compartido.** El selector devuelve `\\nas\clips`
+  sin barra final y `path.parse` deja la raíz así, mientras que las filas canónicas dan
+  `\\nas\clips\`: las claves no coincidían y se perdía la protección de D5-BUG-3 (reproducido:
+  `outputDir = \\localhost\noexiste` → fila dada de baja; con barra final o una subcarpeta, se
+  conservaba). **Corrección:** `volumeRootKey` devuelve siempre la raíz acabada en `\` (si no está
+  vacía); de paso `D:` pasa a `d:\`. La comprobación de acceso usa la misma raíz normalizada.
+- **1.2 — bloqueo nuevo del hilo principal.** `getStats` (IPC síncrono, en cada `library:changed`) y
+  `enforceLimit` (tras cada `clip-saved`) hacían `existsSync` de la raíz de **cada** unidad del
+  catálogo: un recurso antiguo que se cae a mitad de sesión bloqueaba la primera llamada (42 s
+  medidos por el revisor con el servidor apagado, 4 s con un recurso inexistente). **Corrección:**
+  como `reconcile` solo conserva filas sin archivo de la unidad de la carpeta de clips, el
+  almacenamiento solo deja fuera esas y solo consulta esa raíz (`createOfflineOutputVolumeCheck`,
+  compartido con `reconcile`). Las filas de otras unidades cuentan y son candidatas como en `main`,
+  sin consultar su disco; las de una unidad que ya no está las da de baja el escaneo (al arrancar
+  corre antes del primer auto-borrado).
+
+**Cómo sabe `enforceLimit` la carpeta de clips:** un campo opcional `outputDir` en sus `opts`, que el
+único llamador (`aplicarLimite` en `index.ts`) rellena con `manager.outputDir()` —la carpeta ya
+resuelta, con el valor por defecto si el ajuste está vacío—. Es lo menos invasivo y simétrico con
+`getStats(outputDir)`, que ya la recibía del IPC. Se descartó una dependencia del constructor
+(`() => string`): mezclaría dos formas de pasar lo mismo. Sin `outputDir`, `enforceLimit` no deja
+fuera nada (comportamiento de `main`); hacerlo obligatorio obligaba a tocar todos los tests
+existentes sin ganar seguridad (hay un solo llamador).
 
 ---
 

@@ -357,7 +357,7 @@ function setupLibrary(
 
     const aplicarLimite = (protectPath?: string): void => {
       void stor
-        .enforceLimit(manager.getSettings(), { protectPath })
+        .enforceLimit(manager.getSettings(), { protectPath, outputDir: manager.outputDir() })
         .catch((err) => console.error('[storage] auto-borrado falló:', err));
     };
 
