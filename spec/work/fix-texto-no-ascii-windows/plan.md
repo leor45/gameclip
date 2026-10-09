@@ -98,6 +98,9 @@
   en vez de matar.
 - **El reintento cuenta desde que responde el taskkill**, no desde que se lanzó: así nunca hay dos a la
   vez aunque uno tarde.
+- **Tercera revisión (2.1):** la llamada a `killTree` va en `try/catch` (spawn lanza en síncrono ante
+  ENOMEM y similares): un aviso de una línea y el mismo rearme que ante un error, como mucho uno por
+  intento.
 
 ### Riesgos
 

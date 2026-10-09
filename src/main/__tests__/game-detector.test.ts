@@ -550,6 +550,43 @@ describe('createTasklistLister — válvula de seguridad (regresión B3-2: taskl
     expect(console.warn).not.toHaveBeenCalled();
   });
 
+  it('si lanzar taskkill lanza en síncrono (p. ej. ENOMEM), no escapa del temporizador y la válvula se rearma (regresión 2.1)', async () => {
+    // spawn/execFile lanzan en síncrono para errores que no son EACCES/EAGAIN/EMFILE/ENFILE/ENOENT: sin
+    // try/catch sería una excepción no capturada en un temporizador del main y la válvula no volvería
+    // a armarse (detección congelada otra vez).
+    const { run, llamadas } = runnerFalso();
+    const pids: number[] = [];
+    const listar = createTasklistLister({
+      run,
+      killTree: (pid) => {
+        pids.push(pid);
+        throw new Error('spawn ENOMEM');
+      },
+      timeoutMs: 10000,
+      valveMs: 60000,
+    });
+    void listar().catch(() => {});
+    await vi.advanceTimersByTimeAsync(60000); // con la excepción escapando, esto rechaza
+    expect(pids).toEqual([llamadas[0].proceso.pid]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('spawn ENOMEM'));
+
+    await vi.advanceTimersByTimeAsync(59999);
+    expect(pids).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(pids).toEqual([llamadas[0].proceso.pid, llamadas[0].proceso.pid]);
+    expect(llamadas).toHaveLength(1); // ningún segundo sondeo mientras tanto
+
+    // Cuando el cmd vuelve, se sondea de nuevo y no queda ninguna válvula armada.
+    llamadas[0].done(new Error('cmd terminado'), '');
+    const p = listar();
+    expect(llamadas).toHaveLength(2);
+    llamadas[1].done(null, '"cs2.exe","1"\r\n');
+    await expect(p).resolves.toEqual(['cs2.exe']);
+    await vi.advanceTimersByTimeAsync(180000);
+    expect(pids).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('si el cmd ya salió pero su salida sigue abierta, no mata por pid (podría estar reusado) y libera', async () => {
     const { listar, llamadas, kills } = montar();
     void listar().catch(() => {});

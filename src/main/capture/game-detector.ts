@@ -302,12 +302,26 @@ export function createTasklistLister(options: TasklistListerOptions = {}): () =>
             `[games] tasklist lleva ${segundos} s sin responder: se mata el árbol del cmd ` +
               `(pid ${pid}, intento ${intento}${previo ? `; el anterior falló: ${previo}` : ''})`,
           );
-          killTree(pid, (err) => {
-            // Si el cmd sigue sin volver, otro intento `valveMs` después de que responda ESTE
-            // taskkill: nunca dos a la vez y nada se acumula.
-            if (!terminado)
-              armarValvula(proceso, intento + 1, err ? err.message.split(/\r?\n/)[0] : '');
-          });
+          // Si el cmd sigue sin volver, otro intento `valveMs` después de que responda ESTE taskkill:
+          // nunca dos a la vez y nada se acumula. Una sola vez por intento (un solo temporizador vivo).
+          let rearmado = false;
+          const rearmar = (motivo: string): void => {
+            if (rearmado || terminado) return;
+            rearmado = true;
+            armarValvula(proceso, intento + 1, motivo);
+          };
+          try {
+            killTree(pid, (err) => rearmar(err ? err.message.split(/\r?\n/)[0] : ''));
+          } catch (err) {
+            // spawn/execFile lanzan en síncrono ante errores como ENOMEM: sin esto sería una excepción
+            // no capturada en un temporizador del main y la válvula no volvería a armarse.
+            const motivo = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0];
+            console.warn(
+              `[games] no se pudo lanzar taskkill (pid ${pid}, intento ${intento}): ${motivo}; ` +
+                `se reintenta en ${Math.round(valveMs / 1000)} s`,
+            );
+            rearmar(motivo);
+          }
         }, valveMs);
       };
 

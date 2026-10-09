@@ -95,6 +95,8 @@ un juego en marcha, `running` no se vaciaba y la grabación de sesión no paraba
   comprobación de novedad del detector. Los ajustes no se reescriben.
 - Válvula de seguridad del listador: con el sondeo vivo 60 s, `taskkill /F /T /PID <cmd>`; el sondeo
   sigue «en curso» hasta que el `cmd` vuelve; si taskkill falla o se cuelga, se reintenta 60 s después.
+- Tercera revisión (2.1, Low): si lanzar taskkill lanza en síncrono (p. ej. ENOMEM), se captura, se
+  avisa y la válvula se rearma igual que ante un error de taskkill.
 
 **Fuera (explícito):**
 - Letras fuera de la codepage OEM que el «best fit» de Windows pasaba a ASCII (`ź` → `z`, `ł` → `l`):

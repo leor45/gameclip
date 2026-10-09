@@ -58,6 +58,8 @@
       exacto primero y entradas corruptas precalculadas.
 - [x] 2. `esReconocido` del detector con `findCustomGame`.
 - [x] 3. `createTasklistLister({ run, killTree, timeoutMs, valveMs })` con la válvula `taskkill /F /T`.
+- [x] 4. Tercera revisión (2.1): `killTree` que lanza en síncrono → capturado, aviso y válvula rearmada
+      (test en rojo primero: la excepción escapaba del temporizador); gates verdes, 1088 tests.
 
 ### Verificación (gates)
 
