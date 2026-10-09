@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_SETTINGS, type CaptureSettings } from '@shared/capture';
+import { DEFAULT_CAPTURE_SETTINGS, type CaptureSettings, type CaptureStatus } from '@shared/capture';
 import CaptureBar from '../components/CaptureBar';
 import { crearGameclipMock } from './setup';
 
@@ -310,6 +310,74 @@ describe('CaptureBar — menú de duración del clip', () => {
     expect(screen.getByTestId('ruta')).toHaveTextContent(
       '/ajustes/general {"focus":"replaySeconds"}',
     );
+  });
+
+  it('un clic en el título o el relleno del menú no lo cierra', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(await botonDuracion());
+    await user.click(screen.getByText('Duración del clip', { selector: '.cap-menu-title' }));
+    await user.click(document.querySelector('.cap-menu') as HTMLElement);
+
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('Esc cierra también con el foco en el botón', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    const boton = await botonDuracion();
+    await user.click(boton);
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(boton).toHaveFocus();
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(boton).toHaveFocus();
+  });
+
+  it('cambiar de estado con el menú abierto no lo cierra ni pierde el foco', async () => {
+    const user = userEvent.setup();
+    let empujar: ((s: CaptureStatus) => void) | null = null;
+    mock().capture.onStatusChanged.mockImplementation((listener: (s: CaptureStatus) => void) => {
+      empujar = listener;
+      return () => undefined;
+    });
+    renderBar();
+
+    await user.click(await botonDuracion());
+    const lista = screen.getByRole('listbox');
+
+    act(() =>
+      empujar?.({ state: 'idle', error: null, lastClipPath: null, detectedGame: null } as CaptureStatus),
+    );
+
+    expect(await screen.findByText('Captura lista')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar clip' })).not.toBeInTheDocument();
+    expect(screen.getByRole('listbox')).toBe(lista);
+    expect(lista).toHaveFocus();
+  });
+
+  it('si cambian las opciones con la última activa, Intro no falla y elige dentro de rango', async () => {
+    const user = userEvent.setup();
+    conAjustes({ replaySeconds: 45 }); // 6 opciones: 45 s + presets
+    let empujar: ((s: CaptureSettings) => void) | null = null;
+    mock().capture.onSettingsChanged.mockImplementation((listener: (s: CaptureSettings) => void) => {
+      empujar = listener;
+      return () => undefined;
+    });
+    renderBar();
+
+    await user.click(await botonDuracion());
+    await user.keyboard('{End}'); // activa = índice 5
+    act(() => empujar?.({ ...DEFAULT_CAPTURE_SETTINGS, replaySeconds: 60 })); // ahora 5 opciones
+
+    await user.keyboard('{Enter}');
+
+    expect(mock().capture.setSettings).toHaveBeenCalledWith({ replaySeconds: 300 });
   });
 
   it('cambiar la duración desde Ajustes actualiza el control en el acto', async () => {

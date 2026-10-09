@@ -308,6 +308,16 @@
   white-space: nowrap;
 }
 
+.capture-bar .gc-dot.rec {
+  animation: gc-pulso 1.2s ease-in-out infinite;
+}
+
+@keyframes gc-pulso {
+  50% {
+    opacity: 0.4;
+  }
+}
+
 .cap-state {
   color: var(--dim);
   font-size: 13px;
@@ -362,9 +372,14 @@
 }
 
 /* Botón dividido: «Guardar clip | 1 m ▾». */
-.cap-split {
+.cap-split,
+.cap-split-solo {
   display: inline-flex;
   flex: none;
+}
+
+.cap-split-solo:empty {
+  display: none;
 }
 
 .cap-split-main {
@@ -537,6 +552,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .capture-bar .gc-dot.rec {
+    animation: none;
+  }
+
   .update-check.is-busy svg {
     animation: none;
   }

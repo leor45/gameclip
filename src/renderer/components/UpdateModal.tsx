@@ -22,10 +22,10 @@ export default function UpdateModal() {
       onDismiss={descartarModal}
       actions={
         <>
-          <button type="button" className="gc-btn ghost" onClick={descartarModal}>
+          <button type="button" className="gc-btn ghost" data-autofocus onClick={descartarModal}>
             Ahora no
           </button>
-          <button type="button" className="gc-btn" data-autofocus onClick={verRelease}>
+          <button type="button" className="gc-btn" onClick={verRelease}>
             Ver release
           </button>
         </>

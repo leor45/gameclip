@@ -48,6 +48,9 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
     ? DURACIONES
     : [{ seconds, label: `${seconds} s` }, ...DURACIONES];
 
+  // Si cambian las opciones (p. ej. `settings:changed` quita la de fuera de lista), `activa` se acota.
+  const act = Math.min(activa, opciones.length - 1);
+
   function abrir() {
     setActiva(Math.max(0, opciones.findIndex((o) => o.seconds === seconds)));
     setAbierto(true);
@@ -81,6 +84,12 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
   }
 
   function teclasBoton(e: KeyboardEvent) {
+    if (e.key === 'Escape' && abierto) {
+      e.preventDefault();
+      e.stopPropagation();
+      cerrar(true);
+      return;
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       abrir();
@@ -91,11 +100,11 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setActiva((i) => (i + 1) % opciones.length);
+        setActiva((i) => (Math.min(i, opciones.length - 1) + 1) % opciones.length);
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setActiva((i) => (i - 1 + opciones.length) % opciones.length);
+        setActiva((i) => (Math.min(i, opciones.length - 1) - 1 + opciones.length) % opciones.length);
         break;
       case 'Home':
         e.preventDefault();
@@ -108,7 +117,7 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
       case 'Enter':
       case ' ':
         e.preventDefault();
-        void elegir(opciones[activa].seconds);
+        void elegir(opciones[act].seconds);
         break;
     }
   }
@@ -148,7 +157,12 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
       </button>
 
       {abierto && (
-        <div className="cap-menu" onKeyDown={teclasMenu}>
+        <div
+          className="cap-menu"
+          onKeyDown={teclasMenu}
+          // Un clic en el título o el relleno no debe mover el foco fuera (cerraría el menú por el blur).
+          onMouseDown={(e) => e.preventDefault()}
+        >
           <div className="gc-label cap-menu-title" id={`${id}-t`}>
             Duración del clip
           </div>
@@ -157,7 +171,7 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
             className="cap-menu-list"
             role="listbox"
             aria-labelledby={`${id}-t`}
-            aria-activedescendant={`${id}-o${activa}`}
+            aria-activedescendant={`${id}-o${act}`}
             tabIndex={-1}
             onKeyDown={teclasLista}
           >
@@ -167,7 +181,7 @@ export default function DurationMenu({ seconds, disabled, onSelect, variant }: D
                 id={`${id}-o${i}`}
                 role="option"
                 aria-selected={o.seconds === seconds}
-                className={`cap-opt${i === activa ? ' is-active' : ''}${o.seconds === seconds ? ' is-current' : ''}`}
+                className={`cap-opt${i === act ? ' is-active' : ''}${o.seconds === seconds ? ' is-current' : ''}`}
                 onMouseEnter={() => setActiva(i)}
                 onClick={() => void elegir(o.seconds)}
               >

@@ -158,6 +158,14 @@ describe('Comprobar actualizaciones — modal de arranque', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('el foco inicial está en «Ahora no», no en la acción que abre el navegador', async () => {
+    conChequeo({ updateAvailable: true, latest: '0.6.0' });
+    renderModal();
+
+    expect(await screen.findByRole('button', { name: 'Ahora no' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Ver release' })).not.toHaveFocus();
+  });
+
   it('Esc lo cierra como «Ahora no», sin abrir nada', async () => {
     const user = userEvent.setup();
     const abrir = vi.spyOn(window, 'open').mockReturnValue(null);

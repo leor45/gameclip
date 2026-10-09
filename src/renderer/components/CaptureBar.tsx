@@ -113,8 +113,9 @@ export default function CaptureBar() {
         </span>
       )}
 
-      {activo ? (
-        <div className="cap-split">
+      {/* Una sola instancia del menú: al cambiar de estado solo cambia la presentación (no se remonta). */}
+      <div className={activo ? 'cap-split' : 'cap-split-solo'}>
+        {activo && (
           <button
             type="button"
             className="cap-split-main"
@@ -123,26 +124,17 @@ export default function CaptureBar() {
           >
             Guardar clip
           </button>
-          {settings && (
-            <DurationMenu
-              variant="split"
-              seconds={settings.replaySeconds}
-              disabled={ocupado}
-              onSelect={cambiarDuracion}
-            />
-          )}
-        </div>
-      ) : (
-        // Sin «Guardar clip» (captura no lista) la duración sigue al alcance, como el selector de antes.
-        settings && (
+        )}
+        {/* Sin «Guardar clip» (captura no lista) la duración sigue al alcance, como el selector de antes. */}
+        {settings && (
           <DurationMenu
-            variant="solo"
+            variant={activo ? 'split' : 'solo'}
             seconds={settings.replaySeconds}
             disabled={ocupado}
             onSelect={cambiarDuracion}
           />
-        )
-      )}
+        )}
+      </div>
 
       {activo && !grabando && (
         <button
