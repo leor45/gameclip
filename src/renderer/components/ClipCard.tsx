@@ -21,6 +21,8 @@ interface Props {
   previewActiva?: boolean;
   /** Avisa a la grilla de que el cursor entró (true) o salió (false). */
   onPreviewChange?: (activa: boolean) => void;
+  /** La cuadrícula está oculta (clip abierto en el panel): ningún arranque pendiente sigue vivo. */
+  oculta?: boolean;
 }
 
 /** El usuario pidió menos animación: la preview no se reproduce (queda el borde y el thumbnail). */
@@ -38,6 +40,7 @@ export default function ClipCard({
   onPlay,
   onEliminar,
   previewActiva,
+  oculta = false,
   onPreviewChange,
 }: Props) {
   const esImagen = clip.kind === 'image';
@@ -47,6 +50,12 @@ export default function ClipCard({
 
   // Al desmontar (filtro, borrado, navegación) no puede quedar un arranque pendiente.
   useEffect(() => cancelarPreview, []);
+
+  // Al abrir el panel la tarjeta se oculta sin recibir blur ni mouseleave: un arranque pendiente
+  // (el clic que abrió el clip también la enfocó) saltaría después y sonaría al volver.
+  useEffect(() => {
+    if (oculta) cancelarPreview();
+  }, [oculta]);
 
   function cancelarPreview() {
     if (temporizador.current) clearTimeout(temporizador.current);
@@ -75,7 +84,11 @@ export default function ClipCard({
       data-clip-id={clip.id}
       onMouseEnter={entrar}
       onMouseLeave={salir}
-      onFocus={entrar}
+      onFocus={(e) => {
+        // Foco devuelto por la Biblioteca al cerrar el panel: sin vista previa (ver Biblioteca).
+        if (e.target instanceof HTMLElement && e.target.dataset.gcSinPreview) return;
+        entrar();
+      }}
       onBlur={salir}
     >
       <button

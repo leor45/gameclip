@@ -224,7 +224,12 @@ export default function Biblioteca() {
     const destino =
       el.querySelector<HTMLElement>(`[data-clip-id="${cierre.id}"] .clip-thumb`) ??
       el.querySelector<HTMLElement>('.clip-thumb');
-    destino?.focus({ preventScroll: true });
+    if (!destino) return;
+    // Foco devuelto por código, no por el usuario: la tarjeta no debe arrancar su vista previa
+    // (acaba de cerrarse un vídeo). El evento focus es síncrono: la marca vive solo durante él.
+    destino.dataset.gcSinPreview = '1';
+    destino.focus({ preventScroll: true });
+    delete destino.dataset.gcSinPreview;
   }, [abiertoId]);
 
   // Teclado del panel: Esc cierra, ↑ ↓ cambian de clip, Intro abre el editor. Con un modal abierto
@@ -376,6 +381,7 @@ export default function Biblioteca() {
                     onPlay={abrir}
                     onEliminar={pedirBorrado}
                     previewActiva={!abierto && preview === clip.id}
+                    oculta={abierto !== null}
                     // Apagar solo apaga LA PROPIA: un mouseleave tardío de otra tarjeta no puede
                     // matar la preview de la que el cursor ya está apuntando.
                     onPreviewChange={(activa) =>

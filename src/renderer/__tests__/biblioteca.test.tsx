@@ -1157,3 +1157,36 @@ describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
     expect(window.location.hash).toBe('');
   });
 });
+
+describe('Biblioteca — foco devuelto al cerrar el panel', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    matchMediaFalso(false);
+  });
+
+  it('cerrar el panel devuelve el foco a la tarjeta SIN arrancar su vista previa', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue([crearClip({ id: 51, title: 'Cerrado' })]);
+    render(<Biblioteca />);
+    await user.click(await screen.findByRole('button', { name: 'Reproducir Cerrado' }));
+
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('button', { name: 'Reproducir Cerrado' })).toHaveFocus();
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(screen.queryByTestId('preview-51')).not.toBeInTheDocument();
+    expect(document.querySelector('video')).toBeNull();
+  });
+
+  it('el foco de teclado normal (Tab hasta la tarjeta) sí arranca la vista previa', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue([crearClip({ id: 52, title: 'Con Tab' })]);
+    render(<Biblioteca />);
+    const thumb = await screen.findByRole('button', { name: 'Reproducir Con Tab' });
+
+    while (document.activeElement !== thumb) await user.tab();
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(screen.getByTestId('preview-52')).toBeInTheDocument();
+  });
+});
