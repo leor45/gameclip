@@ -175,6 +175,20 @@ describe('GameIndexService', () => {
     expect(segundo.current()).toEqual({ milesmorales: 'Miles' });
   });
 
+  it('ready() se resuelve al terminar el primer refresco, aunque falle', async () => {
+    const service = new GameIndexService({
+      cachePath: join(raiz, 'cache.json'),
+      sources: [{ id: 'steam', listInstalledGames: () => Promise.reject(new Error('roto')) }],
+    });
+    let listo = false;
+    void service.ready().then(() => (listo = true));
+    await Promise.resolve();
+    expect(listo).toBe(false);
+    await service.refresh();
+    await service.ready();
+    expect(listo).toBe(true);
+  });
+
   it('una caché escrita por versiones anteriores (solo claves, sin rutas) sigue cargando', () => {
     // Los iconos no cambiaron el formato del índice: la caché vieja vale tal cual.
     const cachePath = join(raiz, 'cache.json');

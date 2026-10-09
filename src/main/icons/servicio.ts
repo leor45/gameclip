@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, parse as parsePath } from 'node:path';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, parse as parsePath, resolve } from 'node:path';
 import { KNOWN_GAME_PROCESSES, exeKey, resolveGameName } from '@shared/games';
 import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
 import type { InstalledGame } from '../games/types';
@@ -17,7 +17,11 @@ import {
 
 /**
  * Servicio de iconos: el icono oficial de un juego (por su nombre) o de una app (por el nombre de su
- * `.exe`), como data URL PNG de hasta 64 px. `null` = sin icono (el renderer pone el logo de GameClip).
+ * `.exe`), como data URL PNG. `null` = sin icono (el renderer pone el logo de GameClip).
+ *
+ * Tamaño: el icono del shell de un exe (`app.getFileIcon`, `large`) mide 32 px en Windows a escala
+ * 100 % y 48 px con más DPI; se entrega tal cual (nunca se amplía). El logo de una app de la Store se
+ * reduce a 64 px. Ver `LADO_ICONO`.
  *
  * Flujo: nombre → ruta del `.exe` (con datos del main, nunca rutas del renderer) → fuente de la imagen
  * (el propio exe, o el logo del paquete si es una app de la Store) → PNG → caché en disco y memoria.
@@ -27,30 +31,47 @@ import {
  * `fs/promises`). Ningún error sale de aquí: cualquier fallo es `null`.
  */
 
-/** Lado máximo del icono que se entrega. */
+/** Lado máximo: las imágenes mayores se reducen a esto; las menores (iconos de 32/48 px) no se amplían. */
 export const LADO_ICONO = 64;
 
 /** Un «sin icono» se recuerda este tiempo: el renderer no cachea los null y vuelve a pedir. */
 export const REINTENTO_NULL_MS = 30_000;
 
+/**
+ * Un icono sacado de una ruta NO verificada (la de un proceso que se llama igual, sin carpeta de
+ * instalación con la que contrastarla) vale solo este tiempo: luego se vuelve a resolver.
+ */
+export const CADUCIDAD_NO_VERIFICADA_MS = 5 * 60_000;
+
+/** Tope de claves recordadas en memoria; al pasarlo se descarta la más antigua. */
+export const MAX_CLAVES = 500;
+
 /** Lo que el servicio necesita del sistema. Todo inyectable: los tests no dependen de Electron. */
 export interface DependenciasIconos {
   /** Carpeta de la caché en disco (`userData/icons`). */
   cacheDir: string;
-  /** Icono del shell de un archivo, ya reducido a ≤ 64 px, como PNG; null si está vacío. */
+  /** Icono del shell de un archivo como PNG (≤ `LADO_ICONO`); null si está vacío. */
   iconoDeArchivo: (ruta: string) => Promise<Buffer | null>;
-  /** Una imagen (PNG del paquete) reducida a ≤ 64 px, como PNG; null si está vacía. */
+  /** Una imagen (PNG del paquete) reducida a ≤ `LADO_ICONO`, como PNG; null si está vacía. */
   imagenDeArchivo: (ruta: string) => Promise<Buffer | null>;
+  /** ¿Un PNG leído de la caché en disco se puede usar? Por defecto, que tenga la firma PNG. */
+  pngValido?: (png: Buffer) => boolean;
   /** Índice de juegos vigente (`ejecutable → nombre`). */
   index: () => GameIndex;
-  /** Juegos instalados según los launchers (con su carpeta). */
+  /** Juegos instalados según los launchers (con su carpeta), sin los excluidos («no son juegos»). */
   installed: () => InstalledGame[];
+  /**
+   * Se resuelve cuando el índice de launchers ya está cargado (primer refresco terminado). Hasta
+   * entonces no se resuelve nada: sin `installed()` se acabaría preguntando a los procesos por juegos
+   * que el índice sabrá ubicar en un momento.
+   */
+  indiceListo: () => Promise<void>;
   /** Juegos añadidos a mano en Ajustes. */
   customGames: () => CustomGame[];
   /** Juegos en ejecución ahora (con el exe real que vio el detector). */
   runningGames: () => RunningGameMatch[];
-  /** Ruta de un proceso en ejecución de esas claves `exeKey`, o null. */
-  rutaDeProceso: (claves: string[]) => Promise<string | null>;
+  /** Rutas de los procesos en ejecución de esas claves `exeKey` (vacío si no corre ninguno). */
+  rutaDeProceso: (claves: string[]) => Promise<string[]>;
   /** Rutas completas de los `.exe` de la carpeta de un juego (mismas reglas que el índice). */
   exesDeCarpeta: (dir: string) => Promise<string[]>;
   /** `InstallLocation` de un paquete de la Store por su `PackageFamilyName`, o null. */
@@ -59,12 +80,16 @@ export interface DependenciasIconos {
   ahora?: () => number;
 }
 
+/** Ruta resuelta y si está contrastada con la carpeta de instalación del juego. */
+interface RutaResuelta {
+  ruta: string;
+  verificada: boolean;
+}
+
 interface EntradaMemo {
   promesa: Promise<string | null>;
-  resuelta: boolean;
-  resultado: string | null;
-  /** Cuándo se resolvió (para la ventana de reintento de los null). */
-  en: number;
+  /** Hasta cuándo vale (Infinity mientras está en vuelo o si salió de una ruta verificada). */
+  caduca: number;
 }
 
 interface FuenteImagen {
@@ -72,6 +97,16 @@ interface FuenteImagen {
   ruta: string;
   /** Firma del archivo (fecha + tamaño): si cambia, el icono en disco no vale. */
   firma: string;
+}
+
+const FIRMA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** ¿La ruta está dentro de la carpeta (o es ella)? Sin distinguir mayúsculas ni separadores. */
+export function dentroDe(ruta: string, carpeta: string): boolean {
+  const norma = (p: string): string => resolve(p.trim()).replace(/[\\/]+$/, '').toLowerCase();
+  const r = norma(ruta);
+  const c = norma(carpeta);
+  return r === c || r.startsWith(`${c}\\`) || r.startsWith(`${c}/`);
 }
 
 export class IconService {
@@ -109,55 +144,66 @@ export class IconService {
   }
 
   /**
-   * Caché en memoria por clave de petición. Un acierto vale para siempre; un null, solo
-   * `REINTENTO_NULL_MS` (el juego puede arrancar luego y entonces sí habrá ruta).
+   * Caché en memoria por clave de petición. Un icono de ruta verificada vale toda la sesión; uno de
+   * ruta no verificada, `CADUCIDAD_NO_VERIFICADA_MS`; un null, `REINTENTO_NULL_MS` (el juego puede
+   * arrancar luego y entonces sí habrá ruta). Como mucho `MAX_CLAVES` entradas.
    */
-  private memo(clave: string, resolverRuta: () => Promise<string | null>): Promise<string | null> {
+  private memo(clave: string, resolver: () => Promise<RutaResuelta | null>): Promise<string | null> {
     const previo = this.porClave.get(clave);
-    // Se reutiliza si sigue en vuelo, si dio icono, o si el null es reciente.
-    if (
-      previo &&
-      (!previo.resuelta || previo.resultado !== null || this.ahora() - previo.en < REINTENTO_NULL_MS)
-    ) {
-      return previo.promesa;
-    }
-    const entrada: EntradaMemo = {
-      promesa: (async () => {
-        try {
-          const ruta = await resolverRuta();
-          return ruta ? await this.iconoDeRuta(ruta) : null;
-        } catch (err) {
-          this.log(`[icons] ${clave}: ${err instanceof Error ? err.message : err}`);
-          return null;
+    if (previo && this.ahora() < previo.caduca) return previo.promesa;
+    this.porClave.delete(clave);
+
+    const entrada: EntradaMemo = { promesa: Promise.resolve(null), caduca: Number.POSITIVE_INFINITY };
+    entrada.promesa = (async () => {
+      let verificada = false;
+      let icono: string | null = null;
+      try {
+        const resuelta = await resolver();
+        if (resuelta) {
+          verificada = resuelta.verificada;
+          icono = await this.iconoDeRuta(resuelta.ruta);
         }
-      })(),
-      resuelta: false,
-      resultado: null,
-      en: 0,
-    };
-    void entrada.promesa.then((r) => {
-      entrada.resuelta = true;
-      entrada.resultado = r;
-      // El null se fecha al terminar (una resolución lenta no consume la ventana de reintento).
-      entrada.en = this.ahora();
-    });
+      } catch (err) {
+        this.log(`[icons] ${clave}: ${err instanceof Error ? err.message : err}`);
+        icono = null;
+      }
+      // Se fecha al terminar (una resolución lenta no consume la ventana).
+      const t = this.ahora();
+      entrada.caduca =
+        icono === null
+          ? t + REINTENTO_NULL_MS
+          : verificada
+            ? Number.POSITIVE_INFINITY
+            : t + CADUCIDAD_NO_VERIFICADA_MS;
+      return icono;
+    })();
+
     this.porClave.set(clave, entrada);
+    // Tope: el Map conserva el orden de inserción, así que el primero es el más antiguo.
+    while (this.porClave.size > MAX_CLAVES) {
+      const masAntigua = this.porClave.keys().next().value;
+      if (masAntigua === undefined) break;
+      this.porClave.delete(masAntigua);
+    }
     return entrada.promesa;
   }
 
   // ---------------------------------------------------------------- nombre → ruta del ejecutable
 
   /**
-   * Ruta del `.exe` de un juego por su nombre visible:
+   * Ruta del `.exe` de un juego por su nombre visible. Primero se espera al índice de launchers.
    *
-   *   1. si está en ejecución, la ruta de su proceso real (el exe exacto que se está capturando);
-   *   2. si un launcher lo declara, el exe más representativo de su carpeta: entre los que el índice
-   *      asigna a ese juego (los ambiguos no), con preferencia por el que se ve en ejecución y los de
-   *      los juegos manuales y la lista curada (ver `elegirEjecutable`);
-   *   3. si no, la ruta de cualquier proceso en ejecución de los exes que se resuelven a ese nombre
-   *      (juegos manuales y de la lista curada, que no tienen carpeta).
+   * Si algún launcher declara el juego (su carpeta de instalación es la referencia):
+   *   1. si está en ejecución, la ruta de su proceso real, SOLO si cae dentro de esa carpeta;
+   *   2. si no, el exe más representativo de la carpeta entre los que el índice asigna a ese juego
+   *      (ver `elegirEjecutable`). Si el índice no le asigna ninguno de los de la carpeta, null: serían
+   *      exes de otro juego que comparte carpeta (o ambiguos).
+   *
+   * Si ningún launcher lo declara (juegos manuales y de la lista curada), la ruta de un proceso en
+   * ejecución de sus exes. No hay carpeta con la que contrastarla: es una ruta «no verificada».
    */
-  private async rutaDeJuego(nombre: string): Promise<string | null> {
+  private async rutaDeJuego(nombre: string): Promise<RutaResuelta | null> {
+    await this.deps.indiceListo();
     const clave = claveNombre(nombre);
     const enEjecucion = this.deps
       .runningGames()
@@ -165,26 +211,29 @@ export class IconService {
       .map((g) => exeKey(g.executable));
     const { fuertes, delIndice } = this.exesDelNombre(clave);
 
-    if (enEjecucion.length > 0) {
-      const ruta = await this.deps.rutaDeProceso(enEjecucion);
-      if (ruta) return ruta;
+    const instalados = this.deps.installed().filter((j) => claveNombre(j.name) === clave);
+    if (instalados.length > 0) {
+      const procesos = enEjecucion.length > 0 ? await this.deps.rutaDeProceso(enEjecucion) : [];
+      for (const juego of instalados) {
+        const propia = procesos.find((r) => dentroDe(r, juego.installDir));
+        if (propia) return { ruta: propia, verificada: true };
+      }
+      for (const juego of instalados) {
+        const rutas = await this.exesDe(juego.installDir);
+        // El índice ya descartó los exes ambiguos y los de juegos excluidos: se respetan.
+        const indexados = rutas.filter((r) => delIndice.has(exeKey(r)));
+        const elegida = elegirEjecutable(juego.name, indexados, {
+          preferidas: [...enEjecucion, ...fuertes],
+        });
+        if (elegida) return { ruta: elegida, verificada: true };
+      }
+      return null;
     }
 
-    const instalado = this.deps.installed().find((j) => claveNombre(j.name) === clave);
-    if (instalado) {
-      const rutas = await this.exesDe(instalado.installDir);
-      // El índice ya descartó los exes ambiguos (compartidos con otro juego): se respetan. Si no queda
-      // ninguno (índice aún sin construir), valen todos los de la carpeta.
-      const indexados = rutas.filter((r) => delIndice.has(exeKey(r)));
-      const elegida = elegirEjecutable(instalado.name, indexados.length > 0 ? indexados : rutas, {
-        preferidas: [...enEjecucion, ...fuertes],
-      });
-      if (elegida) return elegida;
-    }
-
-    const candidatos = [...new Set([...fuertes, ...delIndice])];
-    if (candidatos.length > 0) return this.deps.rutaDeProceso(candidatos);
-    return null;
+    const candidatos = [...new Set([...enEjecucion, ...fuertes, ...delIndice])];
+    if (candidatos.length === 0) return null;
+    const ruta = (await this.deps.rutaDeProceso(candidatos))[0];
+    return ruta ? { ruta, verificada: false } : null;
   }
 
   /**
@@ -213,28 +262,39 @@ export class IconService {
   }
 
   /**
-   * Ruta de un exe suelto: el proceso en ejecución (apps de audio, juegos manuales); si no corre y el
-   * índice sabe de qué juego es, el exe de ese juego en su carpeta.
+   * Ruta de un exe suelto. Si el índice sabe de qué juego es, ese exe dentro de la carpeta del juego
+   * (verificada, sin consultar procesos). Si no, la ruta de un proceso en ejecución con ese nombre
+   * (apps de audio, juegos manuales): no verificada.
    */
-  private async rutaDeExe(clave: string): Promise<string | null> {
-    const enProceso = await this.deps.rutaDeProceso([clave]);
-    if (enProceso) return enProceso;
-
+  private async rutaDeExe(clave: string): Promise<RutaResuelta | null> {
+    await this.deps.indiceListo();
     const nombre = this.deps.index()[clave];
-    const instalado = nombre
-      ? this.deps.installed().find((j) => claveNombre(j.name) === claveNombre(nombre))
-      : undefined;
-    if (!instalado) return null;
-    const rutas = await this.exesDe(instalado.installDir);
-    return rutas.find((r) => exeKey(r) === clave) ?? null;
+    if (nombre) {
+      const instalados = this.deps
+        .installed()
+        .filter((j) => claveNombre(j.name) === claveNombre(nombre));
+      for (const juego of instalados) {
+        const ruta = (await this.exesDe(juego.installDir)).find((r) => exeKey(r) === clave);
+        if (ruta) return { ruta, verificada: true };
+      }
+    }
+    const ruta = (await this.deps.rutaDeProceso([clave]))[0];
+    return ruta ? { ruta, verificada: false } : null;
   }
 
+  /** Exes de una carpeta, una vez por sesión. Un recorrido vacío (disco sin montar) no se recuerda. */
   private exesDe(dir: string): Promise<string[]> {
     const clave = dir.trim().toLowerCase();
     let promesa = this.exesPorCarpeta.get(clave);
     if (!promesa) {
-      promesa = this.deps.exesDeCarpeta(dir).catch(() => []);
-      this.exesPorCarpeta.set(clave, promesa);
+      const nueva = this.deps.exesDeCarpeta(dir).catch(() => [] as string[]);
+      promesa = nueva;
+      this.exesPorCarpeta.set(clave, nueva);
+      void nueva.then((rutas) => {
+        if (rutas.length === 0 && this.exesPorCarpeta.get(clave) === nueva) {
+          this.exesPorCarpeta.delete(clave);
+        }
+      });
     }
     return promesa;
   }
@@ -265,7 +325,9 @@ export class IconService {
 
     const archivo = join(this.deps.cacheDir, `${hashFuente(fuente)}.png`);
     const enDisco = await readFile(archivo).catch(() => null);
-    if (enDisco && enDisco.length > 0) return aDataUrl(enDisco);
+    if (enDisco && this.pngUsable(enDisco)) return aDataUrl(enDisco);
+    // Un PNG roto (apagón a mitad de escritura de una versión vieja, disco tocado) se descarta.
+    if (enDisco) await rm(archivo, { force: true }).catch(() => undefined);
 
     const png =
       fuente.tipo === 'png'
@@ -340,12 +402,27 @@ export class IconService {
     return null;
   }
 
+  private pngUsable(png: Buffer): boolean {
+    if (png.length <= FIRMA_PNG.length || !png.subarray(0, FIRMA_PNG.length).equals(FIRMA_PNG)) {
+      return false;
+    }
+    try {
+      return this.deps.pngValido ? this.deps.pngValido(png) : true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Escritura atómica: a un temporal y `rename` (mismo volumen). Nunca queda un PNG a medias. */
   private async guardar(archivo: string, png: Buffer): Promise<void> {
+    const temporal = `${archivo}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
     try {
       this.cacheDirLista ??= mkdir(this.deps.cacheDir, { recursive: true }).then(() => undefined);
       await this.cacheDirLista;
-      await writeFile(archivo, png);
+      await writeFile(temporal, png);
+      await rename(temporal, archivo);
     } catch (err) {
+      await rm(temporal, { force: true }).catch(() => undefined);
       // Sin caché en disco el icono sale igual; la próxima sesión se vuelve a extraer.
       this.cacheDirLista = null;
       this.log(`[icons] no se pudo guardar ${archivo}: ${err instanceof Error ? err.message : err}`);

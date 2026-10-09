@@ -6,7 +6,6 @@ import { BuscadorRutas } from './rutas-procesos';
 import { IconService, LADO_ICONO, type DependenciasIconos } from './servicio';
 
 export { IconService } from './servicio';
-export { recordarRutaProceso } from './rutas-procesos';
 
 /**
  * Pegamento con Electron: `app.getFileIcon` para los exes, `nativeImage` para los logos de paquete y
@@ -14,7 +13,11 @@ export { recordarRutaProceso } from './rutas-procesos';
  * `servicio.ts`, que no depende de Electron.
  */
 
-/** Reduce a ≤ 64 px (manteniendo la proporción) y devuelve el PNG; null si la imagen está vacía. */
+/**
+ * Reduce a ≤ `LADO_ICONO` (manteniendo la proporción) y devuelve el PNG; null si la imagen está vacía.
+ * Los iconos del shell (`getFileIcon`, `large`) miden 32 px a escala 100 % y 48 px con más DPI: pasan
+ * tal cual. Los logos de la Store suelen venir mayores y se quedan en 64.
+ */
 export function pngAjustado(img: NativeImage): Buffer | null {
   if (img.isEmpty()) return null;
   const { width, height } = img.getSize();
@@ -63,8 +66,14 @@ export function carpetaDePaquetePowerShell(familia: string): Promise<string | nu
 
 export type FuentesDeJuegos = Pick<
   DependenciasIconos,
-  'index' | 'installed' | 'customGames' | 'runningGames'
+  'index' | 'installed' | 'customGames' | 'runningGames' | 'indiceListo'
 >;
+
+/**
+ * Tope de espera al índice de launchers: si su primer refresco se cuelga (un launcher raro), los
+ * iconos siguen sin él en lugar de quedarse esperando para siempre.
+ */
+const ESPERA_MAX_INDICE_MS = 60_000;
 
 /** El servicio real, con Electron. Llamar después de `app.whenReady()`. */
 export function createIconService(
@@ -72,8 +81,15 @@ export function createIconService(
   log: (msg: string) => void = (msg) => console.warn(msg),
 ): IconService {
   const buscador = new BuscadorRutas();
+  let indice: Promise<void> | null = null;
   return new IconService({
     ...juegos,
+    indiceListo: () =>
+      (indice ??= Promise.race([
+        juegos.indiceListo().catch(() => undefined),
+        new Promise<void>((r) => setTimeout(r, ESPERA_MAX_INDICE_MS)),
+      ])),
+    pngValido: (png) => !nativeImage.createFromBuffer(png).isEmpty(),
     cacheDir: join(app.getPath('userData'), 'icons'),
     iconoDeArchivo: async (ruta) => pngAjustado(await app.getFileIcon(ruta, { size: 'large' })),
     imagenDeArchivo: async (ruta) => pngAjustado(nativeImage.createFromPath(ruta)),

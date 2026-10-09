@@ -711,7 +711,14 @@ app.whenReady().then(async () => {
     // Iconos: perezosos (solo cuando la UI los pide) y una vez por ejecutable.
     createIconService({
       index: () => gamesIndex.current(),
-      installed: () => gamesIndex.installed(),
+      // Sin los «no son juegos»: su nombre no debe llevarse el icono de nada.
+      installed: () => {
+        const excluidos = activeExcludedNames(capture?.getSettings().excludedGames ?? []);
+        return gamesIndex
+          .installed()
+          .filter((j) => !excluidos.has(j.name.trim().toLowerCase()));
+      },
+      indiceListo: () => gamesIndex.ready(),
       customGames: () => capture?.getSettings().customGames ?? [],
       runningGames: () => capture?.getRunningGames() ?? [],
     }),
