@@ -184,14 +184,28 @@ void rescan(std::vector<HidDevice*>& open, std::set<std::wstring>& openPaths) {
   SetupDiDestroyDeviceInfoList(info);
 }
 
-// Bucle de lectura HID: espera en los eventos de todos los DualSense + el stopEvent, con timeout
-// corto que dispara re-escaneo (hotplug). Corre en el hilo principal hasta que se señala stopEvent.
+// Cada cuánto se re-escanea (hotplug); también es el timeout de la espera.
+constexpr DWORD kRescanIntervalMs = 2000;
+
+// Bucle de lectura HID: espera en los eventos de todos los DualSense + el stopEvent y re-escanea
+// cada ~2 s (hotplug). Corre en el hilo principal hasta que se señala stopEvent.
 void runHidLoop() {
   std::vector<HidDevice*> open;
   std::set<std::wstring> openPaths;
   rescan(open, openPaths);
+  ULONGLONG lastRescan = GetTickCount64();
 
   for (;;) {
+    // Re-escaneo por tiempo transcurrido, no solo por timeout: con un DualSense abierto sus
+    // lecturas completan sin parar y la espera no agota nunca el timeout, así que un segundo mando
+    // conectado después no se abría. Va antes de montar `waits` para que el índice de la espera
+    // corresponda siempre al `open` vigente. `lastRescan` se toma al acabar el rescan: aunque
+    // tarde, entre dos re-escaneos siempre se atienden lecturas.
+    if (GetTickCount64() - lastRescan >= kRescanIntervalMs) {
+      rescan(open, openPaths);
+      lastRescan = GetTickCount64();
+    }
+
     std::vector<HANDLE> waits;
     waits.push_back(g_stopEvent);
     for (auto* dev : open) waits.push_back(dev->ov.hEvent);
@@ -199,11 +213,13 @@ void runHidLoop() {
     const DWORD count = static_cast<DWORD>(waits.size() > MAXIMUM_WAIT_OBJECTS
                                                ? MAXIMUM_WAIT_OBJECTS
                                                : waits.size());
-    const DWORD r = WaitForMultipleObjects(count, waits.data(), FALSE, 2000);
+    const DWORD r = WaitForMultipleObjects(count, waits.data(), FALSE, kRescanIntervalMs);
 
     if (r == WAIT_OBJECT_0) break;  // stop
     if (r == WAIT_TIMEOUT) {
+      // Sin eventos en todo el intervalo: re-escanear ya, sin depender de la resolución del reloj.
       rescan(open, openPaths);
+      lastRescan = GetTickCount64();
       continue;
     }
     if (r < WAIT_OBJECT_0 + 1 || r >= WAIT_OBJECT_0 + count) continue;
