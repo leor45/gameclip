@@ -4,6 +4,7 @@ import type { Clip } from '@shared/library';
 import { formatDuration } from '@shared/library';
 import { deleteDraft, listDrafts, type EditorDraft } from '../../lib/editor-drafts';
 import { thumbMediaUrl } from '../../lib/media';
+import GameIcon from '../GameIcon';
 
 /** Texto sencillo del tiempo transcurrido: "hace un momento", "hace 5 min", "hace 2 h", "hace 3 días". */
 function editadoHace(updatedAt: number): string {
@@ -28,7 +29,7 @@ const trashIcon = (
 
 /**
  * Lista de "ediciones sin terminar" (drafts del editor avanzado), en la pestaña Editor cuando no hay un
- * clip elegido. Mismo diseño de tarjetas en cuadrícula que la Biblioteca. Cada una se puede **Retomar**
+ * clip elegido. Tarjetas en cuadrícula con clases propias (`eav-draft-*`), independientes de la Biblioteca. Cada una se puede **Retomar**
  * (thumbnail o ✂) o **Quitar** (🗑). Sin ninguna, invita a editar. Copy sencilla (nada de "draft").
  */
 export default function DraftsList() {
@@ -55,48 +56,59 @@ export default function DraftsList() {
     return (
       <p className="placeholder">
         Aquí aparecerán tus ediciones sin terminar. Elige un clip en la{' '}
-        <Link to="/biblioteca">Biblioteca</Link> y pulsa «Editar» para recortarlo, ajustar el audio y
-        exportarlo.
+        <Link to="/biblioteca">Biblioteca</Link> y pulsa «Editar» para recortarlo, ajustar el audio
+        y exportarlo.
       </p>
     );
   }
 
   return (
     <>
-      <h2 className="eav-drafts-title">Ediciones sin terminar</h2>
-      <div className="library-grid">
+      <h2 className="eav-drafts-title gc-label">Ediciones sin terminar</h2>
+      <div className="eav-draft-grid">
         {drafts.map((d) => {
           const clip = clips.get(d.clipId);
           const to = `/editor-avanzado/${d.clipId}`;
-          const poster = clip?.thumbnailPath ? thumbMediaUrl(d.clipId, clip.thumbnailPath) : undefined;
+          const poster = clip?.thumbnailPath
+            ? thumbMediaUrl(d.clipId, clip.thumbnailPath)
+            : undefined;
           return (
-            <article className="clip-card" key={d.clipId}>
+            <article className="eav-draft-card" key={d.clipId}>
               {clip ? (
-                <Link className="clip-thumb" to={to} aria-label={`Retomar ${clip.title}`}>
+                <Link className="eav-draft-thumb" to={to} aria-label={`Retomar ${clip.title}`}>
                   {poster ? (
                     <img src={poster} alt="" />
                   ) : (
-                    <span className="clip-thumb-placeholder">🎬</span>
+                    <span className="eav-draft-placeholder">🎬</span>
                   )}
-                  <span className="clip-duration">{formatDuration(clip.durationSeconds)}</span>
+                  <span className="eav-draft-dur">{formatDuration(clip.durationSeconds)}</span>
                 </Link>
               ) : (
-                <div className="clip-thumb">
-                  <span className="clip-thumb-placeholder">🎬</span>
+                <div className="eav-draft-thumb is-gone">
+                  <span className="eav-draft-placeholder">🎬</span>
                 </div>
               )}
 
-              <div className="clip-info">
-                <h3 title={clip?.title}>{clip ? clip.title : 'Este vídeo ya no está en tu biblioteca'}</h3>
-                <p className="clip-meta">
-                  {clip ? `Editado ${editadoHace(d.updatedAt)}` : 'La edición no se puede retomar.'}
+              <div className="eav-draft-info">
+                <h3 className="eav-draft-title" title={clip?.title}>
+                  {clip ? clip.title : 'Este vídeo ya no está en tu biblioteca'}
+                </h3>
+                <p className="eav-draft-meta">
+                  {clip ? (
+                    <>
+                      <GameIcon game={clip.game} />
+                      <span>{`Editado ${editadoHace(d.updatedAt)}`}</span>
+                    </>
+                  ) : (
+                    'La edición no se puede retomar.'
+                  )}
                 </p>
               </div>
 
-              <div className="clip-actions">
+              <div className="eav-draft-actions">
                 {clip && (
                   <Link
-                    className="clip-action-link"
+                    className="gc-btn ghost icon eav-draft-retomar"
                     to={to}
                     aria-label="Retomar"
                     title="Retomar la edición"
@@ -106,7 +118,7 @@ export default function DraftsList() {
                 )}
                 <button
                   type="button"
-                  className="clip-trash"
+                  className="gc-btn ghost icon eav-draft-quitar"
                   aria-label="Quitar"
                   title="Quitar esta edición"
                   onClick={() => quitar(d.clipId)}

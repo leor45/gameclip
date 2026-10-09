@@ -54,12 +54,34 @@ describe('DraftsList — ediciones sin terminar', () => {
     expect(localStorage.getItem('gameclip.editor.draft.7')).toBeNull();
   });
 
+  it('usa clases propias (eav-draft-*) y no las de la Biblioteca', async () => {
+    seedDraft(7, 100);
+    mock().library.list.mockResolvedValue([
+      crearClip({ id: 7, title: 'Jugada épica', durationSeconds: 75, game: 'Elden Ring' }),
+    ]);
+    const { container } = renderList();
+    await screen.findByText('Jugada épica');
+
+    expect(container.querySelector('.eav-draft-grid')).not.toBeNull();
+    expect(container.querySelector('.eav-draft-card')).not.toBeNull();
+    expect(container.querySelector('.eav-draft-dur')).toHaveTextContent('1:15');
+    expect(container.querySelector('.eav-draft-meta .gc-icon')).not.toBeNull();
+    expect(container.querySelector('.library-grid, .clip-card, [class^="clip-"]')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Retomar' })).toHaveAttribute(
+      'href',
+      '/editor-avanzado/7',
+    );
+  });
+
   it('una edición cuyo vídeo ya no está lo dice en lenguaje sencillo', async () => {
     seedDraft(8, 100);
     mock().library.list.mockResolvedValue([]); // el clip 8 ya no existe
     renderList();
 
     expect(await screen.findByText('Este vídeo ya no está en tu biblioteca')).toBeInTheDocument();
+    expect(screen.getByText('La edición no se puede retomar.')).toBeInTheDocument();
+    // Solo se puede quitar: no hay enlace para retomar.
+    expect(screen.queryByRole('link', { name: 'Retomar' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Quitar' }));
     expect(localStorage.getItem('gameclip.editor.draft.8')).toBeNull();
   });

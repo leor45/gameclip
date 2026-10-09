@@ -12,6 +12,17 @@ interface Props {
   duration: number;
   /** Atenuada (pista eliminada): se dibuja apagada. */
   dimmed?: boolean;
+  /** Rol de la pista: elige el color de la onda (variable CSS `--wave` de `editor.css`). */
+  tone?: WaveTone;
+}
+
+export type WaveTone = 'game' | 'mic' | 'other';
+
+/** Rol de color de una pista según su clave: juego/PC, micrófono o el resto (apps). */
+export function waveTone(key: string): WaveTone {
+  if (key === 'game' || key === 'pc') return 'game';
+  if (key === 'mic') return 'mic';
+  return 'other';
 }
 
 /** Alto del lienzo de la onda en px (CSS). */
@@ -23,7 +34,14 @@ const HEIGHT = 44;
  * (zoom/recorte) con un ResizeObserver. En jsdom no hay contexto 2D ni ResizeObserver: todo se
  * protege y no rompe los tests.
  */
-export default function Waveform({ peaks, gain, segments, duration, dimmed }: Props) {
+export default function Waveform({
+  peaks,
+  gain,
+  segments,
+  duration,
+  dimmed,
+  tone = 'other',
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -51,7 +69,9 @@ export default function Waveform({ peaks, gain, segments, duration, dimmed }: Pr
       if (n === 0 || outLen <= 0 || duration <= 0) return;
 
       const mid = HEIGHT / 2;
-      ctx.fillStyle = dimmed ? 'rgba(139,144,160,0.5)' : '#f5c518';
+      // El color sale de los tokens CSS (`--wave` por rol), no de hex sueltos en el canvas.
+      const color = getComputedStyle(canvas).getPropertyValue('--wave').trim();
+      ctx.fillStyle = dimmed ? 'rgba(141,147,161,0.5)' : color || '#8d93a1';
       const starts = outputStarts(segments);
 
       // Cada segmento: su tramo de picos (por tiempo de origen) dibujado en su hueco de salida.
@@ -77,7 +97,14 @@ export default function Waveform({ peaks, gain, segments, duration, dimmed }: Pr
     const ro = new ResizeObserver(draw);
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [peaks, gain, segments, duration, dimmed]);
+  }, [peaks, gain, segments, duration, dimmed, tone]);
 
-  return <canvas ref={canvasRef} className="waveform-canvas" style={{ height: HEIGHT }} />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="waveform-canvas"
+      data-tone={tone}
+      style={{ height: HEIGHT }}
+    />
+  );
 }

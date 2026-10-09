@@ -90,7 +90,9 @@ describe('Editor — exportación', () => {
     fireEvent.change(screen.getByLabelText('Fin del recorte'), { target: { value: '10' } });
 
     // el fin queda al menos MIN_RECORTE por encima del inicio
-    expect(Number((screen.getByLabelText('Fin del recorte') as HTMLInputElement).value)).toBeGreaterThan(30);
+    expect(
+      Number((screen.getByLabelText('Fin del recorte') as HTMLInputElement).value),
+    ).toBeGreaterThan(30);
   });
 
   it('al terminar ofrece copiar al portapapeles y mostrar en carpeta', async () => {
@@ -228,7 +230,9 @@ describe('Editor — pistas de audio', () => {
     expect(srcAlGuardar).toBeNull(); // el archivo ya no estaba abierto por el reproductor
     expect(HTMLMediaElement.prototype.load).toHaveBeenCalled();
     // y al terminar, el clip vuelve a estar cargado
-    expect(document.querySelector('video')?.getAttribute('src')).toContain('gameclip-media://clip/7');
+    expect(document.querySelector('video')?.getAttribute('src')).toContain(
+      'gameclip-media://clip/7',
+    );
   });
 
   it('tras un error al guardar, el reproductor vuelve a cargar el clip (no queda en negro)', async () => {
@@ -244,13 +248,18 @@ describe('Editor — pistas de audio', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar edit' }));
 
     expect(await screen.findByText(/está en uso/)).toBeInTheDocument();
-    expect(document.querySelector('video')?.getAttribute('src')).toContain('gameclip-media://clip/7');
+    expect(document.querySelector('video')?.getAttribute('src')).toContain(
+      'gameclip-media://clip/7',
+    );
   });
 
   it('un fallo de ffmpeg al guardar el edit se muestra', async () => {
     const user = userEvent.setup();
     await prepararConPistas();
-    mock().editor.saveAudioEdit.mockResolvedValue({ status: 'error', message: 'Permission denied' });
+    mock().editor.saveAudioEdit.mockResolvedValue({
+      status: 'error',
+      message: 'Permission denied',
+    });
 
     await user.click(screen.getByRole('button', { name: 'Guardar edit' }));
 
@@ -280,5 +289,40 @@ describe('Editor — pistas de audio', () => {
     expect(screen.getByLabelText('mic')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Guardar edit' })).toBeEnabled();
     expect(screen.queryByText(/un solo audio/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Editor — rediseño «Portada oscura» (dos columnas, mismas acciones)', () => {
+  it('el título de la vista usa la tipografía de titulares y sin clip no hay enlace al avanzado', async () => {
+    renderEditor('/editor');
+    const h1 = await screen.findByRole('heading', { level: 1, name: 'Editor' });
+    expect(h1).toHaveClass('gc-display');
+    expect(screen.queryByRole('link', { name: /Editor avanzado/ })).not.toBeInTheDocument();
+  });
+
+  it('con clip: vídeo y recorte a la izquierda; pistas, exportar y acciones a la derecha', async () => {
+    mock().library.get.mockResolvedValue(
+      crearClip({ id: 7, title: 'Jugada épica', durationSeconds: 60, game: 'Elden Ring' }),
+    );
+    mock().editor.getAudioTracks.mockResolvedValue([
+      { index: 0, name: 'default' },
+      { index: 1, name: 'game' },
+      { index: 2, name: 'mic' },
+    ]);
+    const { container } = renderEditor('/editor/7');
+    await screen.findByText('Jugada épica');
+    await screen.findByLabelText('game');
+
+    const [izquierda, derecha] = Array.from(container.querySelectorAll('.editor > .editor-col'));
+    expect(izquierda).toContainElement(container.querySelector('video'));
+    expect(izquierda).toContainElement(screen.getByLabelText('Inicio del recorte'));
+    expect(izquierda).toContainElement(screen.getByRole('link', { name: /Editor avanzado/ }));
+    expect(izquierda.querySelector('.gc-icon')).not.toBeNull();
+    expect(derecha).toContainElement(screen.getByLabelText('game'));
+    expect(derecha).toContainElement(screen.getByLabelText('Formato'));
+    expect(derecha).toContainElement(screen.getByLabelText('Calidad'));
+    expect(derecha).toContainElement(screen.getByRole('button', { name: 'Exportar…' }));
+    expect(derecha).toContainElement(screen.getByRole('button', { name: 'Guardar edit' }));
+    expect(screen.getByRole('button', { name: 'Previsualizar recorte' })).toBeInTheDocument();
   });
 });

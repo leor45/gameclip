@@ -40,6 +40,7 @@ import AudioTrackRow from '../components/editor-avanzado/AudioTrackRow';
 import RenderDialog from '../components/editor-avanzado/RenderDialog';
 import ReframeControls from '../components/editor-avanzado/ReframeControls';
 import Filmstrip from '../components/editor-avanzado/Filmstrip';
+import GameIcon from '../components/GameIcon';
 import { clampPanelHeight, loadPanelHeight, panelMax, savePanelHeight } from '../lib/editor-prefs';
 import {
   deleteDraft,
@@ -398,7 +399,7 @@ export default function EditorAvanzado() {
     return (
       <div className="editor-avanzado eav-empty">
         <p>Ese clip ya no está disponible.</p>
-        <button type="button" className="eav-btn" onClick={() => navigate('/biblioteca')}>
+        <button type="button" className="gc-btn ghost" onClick={() => navigate('/biblioteca')}>
           Volver a la biblioteca
         </button>
       </div>
@@ -455,7 +456,11 @@ export default function EditorAvanzado() {
 
   function onFrameWheel(e: React.WheelEvent) {
     if (reframe.mode !== 'cover' || !hasReframe(reframe)) return;
-    setReframe((r) => ({ ...r, zoom: wheelToZoom(r.zoom, e.deltaY), offset: clampOffset(r.offset) }));
+    setReframe((r) => ({
+      ...r,
+      zoom: wheelToZoom(r.zoom, e.deltaY),
+      offset: clampOffset(r.offset),
+    }));
   }
 
   // Carga (perezosa, en el primer play) el audio por pista y devuelve si el audio EN VIVO va a sonar.
@@ -665,7 +670,9 @@ export default function EditorAvanzado() {
       return;
     }
     const res = await window.gameclip.editor.captureFrame(id, pngBase64);
-    setFrameNotice(res.ok ? 'Fotograma guardado ✓' : (res.message ?? 'No se pudo guardar el fotograma.'));
+    setFrameNotice(
+      res.ok ? 'Fotograma guardado ✓' : (res.message ?? 'No se pudo guardar el fotograma.'),
+    );
   }
 
   const fecha = clip ? new Date(clip.createdAt).toLocaleString() : '';
@@ -710,14 +717,15 @@ export default function EditorAvanzado() {
     <div className="editor-avanzado">
       <header className="eav-topbar">
         <span className="eav-topbar-title" title={clip?.title}>
-          ✎ {clip?.title ?? 'Cargando…'}
+          <GameIcon game={clip?.game ?? null} size="md" />
+          <h1 className="eav-topbar-name gc-display">{clip?.title ?? 'Cargando…'}</h1>
           <span className="eav-topbar-date">{fecha}</span>
         </span>
         <div className="eav-topbar-center">
           <ReframeControls reframe={reframe} onChange={setReframe} />
           <button
             type="button"
-            className="eav-btn eav-btn-ghost"
+            className="gc-btn ghost icon"
             onClick={() => void captureFrame()}
             disabled={!sourceDims}
             title="Guardar el fotograma actual como captura"
@@ -727,12 +735,12 @@ export default function EditorAvanzado() {
           </button>
         </div>
         <div className="eav-topbar-right">
-          <button type="button" className="eav-btn" onClick={() => navigate('/biblioteca')}>
+          <button type="button" className="gc-btn ghost" onClick={() => navigate('/biblioteca')}>
             Salir
           </button>
           <button
             type="button"
-            className="eav-btn eav-btn-primary"
+            className="gc-btn"
             onClick={() => {
               setDone(false);
               setRenderError(null);
@@ -767,7 +775,11 @@ export default function EditorAvanzado() {
         {done && (
           <div className="eav-done">
             Render listo ✓
-            <button type="button" className="eav-btn" onClick={() => void window.gameclip.exporter.showLast()}>
+            <button
+              type="button"
+              className="gc-btn ghost sm"
+              onClick={() => void window.gameclip.exporter.showLast()}
+            >
               Mostrar en carpeta
             </button>
           </div>
@@ -785,140 +797,158 @@ export default function EditorAvanzado() {
 
       <div className="eav-bottom" style={{ height: panelH }}>
         <div className="eav-toolbar">
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={() => void togglePlay()}
-          disabled={audioLoading}
-          aria-label={playing ? 'Pausar' : 'Reproducir'}
-        >
-          {playing ? '❚❚' : '▶'}
-        </button>
-        <button type="button" className="eav-btn" onClick={stop} aria-label="Detener">
-          ■
-        </button>
-        <span className="eav-time">
-          {formatDuration(sourceToOutput(segments, playhead))} / {formatDuration(keptDuration(segments))}
-        </span>
-        {audioLoading && <span className="eav-audio-loading">Cargando audio…</span>}
-        <span className="eav-toolbar-sep" />
-        <button type="button" className="eav-btn" onClick={splitAtPlayhead} aria-label="Dividir" title="Dividir en el cursor (S)">
-          ✂ Dividir
-        </button>
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={deleteSelected}
-          disabled={selectedSegment === null || segments.length <= 1}
-          aria-label="Borrar segmento"
-          title="Borrar el segmento seleccionado (Supr)"
-        >
-          🗑 Borrar
-        </button>
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={undo}
-          disabled={edit.past.length === 0}
-          aria-label="Deshacer"
-          title="Deshacer (Ctrl+Z)"
-        >
-          ↶
-        </button>
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={redo}
-          disabled={edit.future.length === 0}
-          aria-label="Rehacer"
-          title="Rehacer (Ctrl+Y)"
-        >
-          ↷
-        </button>
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={resetEdit}
-          disabled={!hasEdits}
-          aria-label="Restablecer"
-          title="Descartar los cambios y volver al vídeo original"
-        >
-          ⟲ Restablecer
-        </button>
-        <span className="eav-toolbar-spacer" />
-        <span className="eav-trim-info">
-          Duración: {formatDuration(keptDuration(segments))}
-          {segments.length > 1 && ` · ${segments.length} segmentos`}
-        </span>
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={() => setZoomFactor((z) => clampZoomFactor(z / ZOOM_FACTOR_STEP))}
-          disabled={zoomFactor <= ZOOM_FACTOR_MIN}
-          aria-label="Alejar"
-        >
-          –
-        </button>
-        <button
-          type="button"
-          className="eav-btn"
-          onClick={() => setZoomFactor((z) => clampZoomFactor(z * ZOOM_FACTOR_STEP))}
-          disabled={zoomFactor >= ZOOM_FACTOR_MAX}
-          aria-label="Acercar"
-        >
-          +
-        </button>
-      </div>
-
-      <Timeline
-        zoomFactor={zoomFactor}
-        playhead={playhead}
-        segments={segments}
-        selectedSegment={selectedSegment}
-        onSeek={seek}
-        onSelectSegment={(i) => setSelectedSegment((prev) => (prev === i ? null : i))}
-        onTrimBegin={beginTrim}
-        onTrimCommit={() => dispatch({ type: 'endDrag' })}
-        onTrimStartBy={(delta) =>
-          dispatch({
-            type: 'live',
-            segments: setSegmentsStart(segmentsRef.current, trimBaseRef.current.firstStart + delta, duration),
-          })
-        }
-        onTrimEndBy={(delta) =>
-          dispatch({
-            type: 'live',
-            segments: setSegmentsEnd(segmentsRef.current, trimBaseRef.current.lastEnd + delta, duration),
-          })
-        }
-      >
-        <div className="eav-track eav-track-video">
-          <div className="eav-track-head">
-            <span className="eav-track-name">🎬 {clip?.game ?? 'Vídeo'}</span>
-          </div>
-          <Filmstrip clipId={id} segments={segments} duration={duration} />
+          <button
+            type="button"
+            className="gc-btn sm eav-play"
+            onClick={() => void togglePlay()}
+            disabled={audioLoading}
+            aria-label={playing ? 'Pausar' : 'Reproducir'}
+          >
+            {playing ? '❚❚' : '▶'}
+          </button>
+          <button type="button" className="gc-btn ghost sm" onClick={stop} aria-label="Detener">
+            ■
+          </button>
+          <span className="eav-time">
+            {formatDuration(sourceToOutput(segments, playhead))} /{' '}
+            {formatDuration(keptDuration(segments))}
+          </span>
+          {audioLoading && <span className="eav-audio-loading">Cargando audio…</span>}
+          <span className="eav-toolbar-sep" />
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={splitAtPlayhead}
+            aria-label="Dividir"
+            title="Dividir en el cursor (S)"
+          >
+            ✂ Dividir
+          </button>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={deleteSelected}
+            disabled={selectedSegment === null || segments.length <= 1}
+            aria-label="Borrar segmento"
+            title="Borrar el segmento seleccionado (Supr)"
+          >
+            🗑 Borrar
+          </button>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={undo}
+            disabled={edit.past.length === 0}
+            aria-label="Deshacer"
+            title="Deshacer (Ctrl+Z)"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={redo}
+            disabled={edit.future.length === 0}
+            aria-label="Rehacer"
+            title="Rehacer (Ctrl+Y)"
+          >
+            ↷
+          </button>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={resetEdit}
+            disabled={!hasEdits}
+            aria-label="Restablecer"
+            title="Descartar los cambios y volver al vídeo original"
+          >
+            ⟲ Restablecer
+          </button>
+          <span className="eav-toolbar-spacer" />
+          <span className="eav-trim-info">
+            Duración: {formatDuration(keptDuration(segments))}
+            {segments.length > 1 && ` · ${segments.length} segmentos`}
+          </span>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={() => setZoomFactor((z) => clampZoomFactor(z / ZOOM_FACTOR_STEP))}
+            disabled={zoomFactor <= ZOOM_FACTOR_MIN}
+            aria-label="Alejar"
+          >
+            –
+          </button>
+          <button
+            type="button"
+            className="gc-btn ghost sm"
+            onClick={() => setZoomFactor((z) => clampZoomFactor(z * ZOOM_FACTOR_STEP))}
+            disabled={zoomFactor >= ZOOM_FACTOR_MAX}
+            aria-label="Acercar"
+          >
+            +
+          </button>
         </div>
-        <ul className="eav-audio-list">
-          {tracks.map((t) => {
-            const key = trackKey(t);
-            return (
-              <AudioTrackRow
-                key={key}
-                trackKey={key}
-                label={trackLabel(t)}
-                gain={trackGain(volumes, key)}
-                peaks={waveforms.find((w) => w.key === key)?.peaks ?? []}
-                removed={removed.has(key)}
-                segments={segments}
-                duration={duration}
-                onSetGain={setGain}
-                onToggleRemove={toggleRemove}
-              />
-            );
-          })}
-          {tracks.length === 0 && <li className="eav-audio-empty">Este clip no tiene pistas de audio editables.</li>}
-        </ul>
-      </Timeline>
+
+        <Timeline
+          zoomFactor={zoomFactor}
+          playhead={playhead}
+          segments={segments}
+          selectedSegment={selectedSegment}
+          onSeek={seek}
+          onSelectSegment={(i) => setSelectedSegment((prev) => (prev === i ? null : i))}
+          onTrimBegin={beginTrim}
+          onTrimCommit={() => dispatch({ type: 'endDrag' })}
+          onTrimStartBy={(delta) =>
+            dispatch({
+              type: 'live',
+              segments: setSegmentsStart(
+                segmentsRef.current,
+                trimBaseRef.current.firstStart + delta,
+                duration,
+              ),
+            })
+          }
+          onTrimEndBy={(delta) =>
+            dispatch({
+              type: 'live',
+              segments: setSegmentsEnd(
+                segmentsRef.current,
+                trimBaseRef.current.lastEnd + delta,
+                duration,
+              ),
+            })
+          }
+        >
+          <div className="eav-track eav-track-video">
+            <div className="eav-track-head">
+              <GameIcon game={clip?.game ?? null} />
+              <span className="eav-track-name">{clip?.game ?? 'Vídeo'}</span>
+            </div>
+            <Filmstrip clipId={id} segments={segments} duration={duration} />
+          </div>
+          <ul className="eav-audio-list">
+            {tracks.map((t) => {
+              const key = trackKey(t);
+              return (
+                <AudioTrackRow
+                  key={key}
+                  trackKey={key}
+                  label={trackLabel(t)}
+                  gain={trackGain(volumes, key)}
+                  peaks={waveforms.find((w) => w.key === key)?.peaks ?? []}
+                  removed={removed.has(key)}
+                  segments={segments}
+                  duration={duration}
+                  onSetGain={setGain}
+                  onToggleRemove={toggleRemove}
+                />
+              );
+            })}
+            {tracks.length === 0 && (
+              <li className="eav-audio-empty">Este clip no tiene pistas de audio editables.</li>
+            )}
+          </ul>
+        </Timeline>
       </div>
 
       {showRender && (

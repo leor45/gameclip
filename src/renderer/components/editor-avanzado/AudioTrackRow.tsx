@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { wheelToGain, type Segment } from '@shared/timeline';
 import { MAX_TRACK_GAIN } from '@shared/tracks';
-import Waveform from './Waveform';
+import Waveform, { waveTone } from './Waveform';
 
 interface Props {
   trackKey: string;
@@ -110,7 +110,13 @@ export default function AudioTrackRow({
         {removed ? (
           <p className="eav-track-removed-note">Pista eliminada — no entra en el render.</p>
         ) : (
-          <Waveform peaks={peaks} gain={gain} segments={segments} duration={duration} />
+          <Waveform
+            tone={waveTone(trackKey)}
+            peaks={peaks}
+            gain={gain}
+            segments={segments}
+            duration={duration}
+          />
         )}
       </div>
     </li>
