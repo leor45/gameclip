@@ -535,6 +535,14 @@ export class CaptureManager extends EventEmitter {
     if (this.status.state !== 'buffering' && this.status.state !== 'idle') return;
     try {
       this.syncOverlayProtection(true); // proteger antes de que la salida arranque
+      // Grabando a mano el replay sobra: el buffer se para para no codificar dos veces ni mantener
+      // el búfer en RAM; settleAfterRecording → reconcileBuffer lo rearranca al parar. Se para a
+      // pelo y no con stopBuffer(): su syncOverlayProtection() vería el estado aún en 'buffering'
+      // y desprotegería el overlay unos frames justo antes de que arranque la grabación.
+      if (this.bufferRunning) {
+        await this.obs.stopReplayBuffer();
+        this.bufferRunning = false;
+      }
       await this.obs.startRecording();
       // La grabación es del juego con el que empieza, no del que esté activo al pararla.
       this.sessionGameName = this.activeGame?.name ?? null;
@@ -585,6 +593,12 @@ export class CaptureManager extends EventEmitter {
       return;
     }
     if (this.status.state !== 'buffering' && this.status.state !== 'recording') return;
+    // Grabación manual: el buffer está parado (doStartRecording) y no hay nada que guardar. No es
+    // un error, así que no va al status: se avisa aparte para que el overlay lo diga.
+    if (this.status.state === 'recording' && !this.bufferRunning) {
+      this.emit('replay-skipped');
+      return;
+    }
     try {
       const raw = await this.obs.saveReplay();
       const file = await this.finishSavedClip(raw, this.status.detectedGame);

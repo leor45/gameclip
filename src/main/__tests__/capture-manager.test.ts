@@ -508,6 +508,85 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     });
   });
 
+  describe('buffer pausado durante la grabación manual', () => {
+    it('grabar a mano para el buffer y al parar vuelve a arrancar de cero', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      expect(obs.bufferActivo).toBe(true);
+
+      await manager.startRecording();
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.grabando).toBe(true);
+      expect(obs.bufferActivo).toBe(false); // grabando a mano el replay sobra: una sola codificación
+      // El buffer se para ANTES de que arranque la grabación.
+      expect(obs.llamadas.indexOf('stopReplayBuffer')).toBeLessThan(obs.llamadas.indexOf('startRecording'));
+
+      const status = await manager.stopRecording();
+      expect(status.state).toBe('buffering');
+      expect(obs.bufferActivo).toBe(true);
+    });
+
+    it('el replay durante una grabación manual no toca libobs y avisa (replay-skipped)', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      let saltados = 0;
+      manager.on('replay-skipped', () => saltados++);
+      await manager.startRecording();
+
+      const status = await manager.saveReplay();
+
+      expect(saltados).toBe(1);
+      expect(obs.llamadas).not.toContain('saveReplay');
+      expect(status).toMatchObject({ state: 'recording', error: null }); // no es un error
+    });
+
+    it('al terminar la grabación el replay vuelve a guardarse', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.startRecording();
+      await manager.stopRecording();
+
+      await manager.saveReplay();
+
+      expect(obs.llamadas.filter((l) => l === 'saveReplay')).toHaveLength(1);
+    });
+
+    it('modo auto: la sesión de juego graba CON el buffer activo (el replay marca jugadas)', async () => {
+      const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+      await manager.initialize();
+
+      await manager.setRunningGames([cs2]);
+
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.bufferActivo).toBe(true);
+      await manager.saveReplay();
+      expect(obs.llamadas).toContain('saveReplay');
+    });
+
+    it('grabar desde idle (sin buffer) no intenta parar nada', async () => {
+      const manager = crear({ bufferMode: 'game' }); // sin juego: idle
+      await manager.initialize();
+      expect(obs.bufferActivo).toBe(false);
+
+      await manager.startRecording();
+
+      expect(obs.llamadas).not.toContain('stopReplayBuffer');
+      expect(obs.grabando).toBe(true);
+    });
+
+    it('el overlay de rendimiento no se desprotege al pasar de buffering a recording', async () => {
+      const manager = crear({ bufferMode: 'always' }); // escritorio: protegido mientras se captura
+      const emitidos: boolean[] = [];
+      manager.on('overlay-protection', (p: boolean) => emitidos.push(p));
+      await manager.initialize();
+
+      await manager.startRecording();
+
+      // Parar el buffer justo antes de grabar no puede dejar el overlay visible ni un frame.
+      expect(emitidos).not.toContain(false);
+    });
+  });
+
   it("modo 'always': el buffer arranca en la init (comportamiento previo)", async () => {
     const manager = crear({ bufferMode: 'always' });
     await manager.initialize();
@@ -548,7 +627,7 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     await manager.setGameDetected(null);
     expect(manager.getStatus().state).toBe('recording');
     expect(obs.grabando).toBe(true);
-    expect(obs.bufferActivo).toBe(true); // el buffer sigue; se ajusta al terminar
+    expect(obs.bufferActivo).toBe(false); // pausado por la grabación manual; se ajusta al terminar
 
     const status = await manager.stopRecording();
     expect(status.state).toBe('idle'); // sin juego: buffer detenido al reconciliar

@@ -1339,6 +1339,18 @@ retroactivo válido durante la grabación y después; MP4 con vídeo + 3 pistas 
 prueba en las pistas 1 y 2. El selftest admite `GAMECLIP_SELFTEST_DELAY_MS`, `_RECORD_MS`,
 `_REBUILDS` y `_CLIP=1` para repetir estas medidas.
 
+### ✨ El buffer de repetición se pausa durante la grabación manual — ✅ entregado (`feature/buffer-pausado-al-grabar`, 2026-10-08)
+
+Pedido por el owner tras el fix anterior: grabando a mano (botón o atajo) el replay sobra, así que
+`doStartRecording` para el buffer antes de arrancar la grabación (una sola codificación, sin búfer en
+RAM) y `reconcileBuffer` lo rearranca de cero al parar. El atajo de replay o el botón del mando durante
+una grabación manual no tocan libobs y el overlay avisa «Ya estás grabando» (evento `replay-skipped`).
+El modo `auto` **mantiene el buffer** durante la sesión: ahí el replay sirve para marcar jugadas sin
+recortar luego una grabación larga. Limitación inherente: justo después de parar una grabación el
+replay dispone de menos de los segundos configurados hasta que el buffer se llena.
+Verificado con el selftest (`GAMECLIP_SELFTEST_CLIP=1`): buffer parado 0,15 s antes de la grabación,
+replay saltado durante, rearranque 0,2 s después de parar y clip guardado.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
