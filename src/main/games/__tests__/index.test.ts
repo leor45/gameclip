@@ -192,6 +192,56 @@ describe('GameIndexService', () => {
     const service = crear([fuente([])]);
     expect(await service.refresh()).toEqual({});
   });
+
+  it('un caché de antes de las reglas de escaneo actuales se re-indexa aunque los juegos no cambien (regresión)', async () => {
+    // Quien actualizaba sin cambios en sus juegos conservaba el índice viejo: la huella solo miraba
+    // nombres y carpetas, así que el fix que filtra QtWebEngineProcess no le llegaba nunca.
+    exe('W3', 'witcher3.exe');
+    exe('W3', 'QtWebEngineProcess.exe');
+    const juego = { name: 'The Witcher 3', installDir: join(raiz, 'W3'), source: 'gog' as const };
+    const cachePath = join(raiz, 'cache.json');
+    // Huella tal cual la escribían las versiones anteriores (sin la versión de las reglas).
+    const huellaVieja = [`${juego.name} ${juego.installDir}`].sort().join('');
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        huella: huellaVieja,
+        index: { witcher3: 'The Witcher 3', qtwebengineprocess: 'The Witcher 3' },
+      }),
+    );
+
+    const service = new GameIndexService({ cachePath, sources: [fuente([juego], 'gog')] });
+    expect(await service.refresh()).toEqual({ witcher3: 'The Witcher 3' });
+  });
+
+  it('volver a escanear (force) ignora el caché aunque la huella coincida', async () => {
+    exe('MM', 'MilesMorales.exe');
+    const service = crear([
+      fuente([{ name: 'Miles', installDir: join(raiz, 'MM'), source: 'steam' }]),
+    ]);
+    await service.refresh();
+    exe('MM', 'MilesMoralesDX12.exe'); // cambia el contenido de la carpeta, no la lista de juegos
+
+    expect(await service.refresh()).toEqual({ milesmorales: 'Miles' }); // arranque normal: caché
+    expect(await service.refresh({ force: true })).toEqual({
+      milesmorales: 'Miles',
+      milesmoralesdx12: 'Miles',
+    });
+  });
+
+  it('un rescan forzado durante un refresco en curso no se pierde', async () => {
+    exe('MM', 'MilesMorales.exe');
+    const service = crear([
+      fuente([{ name: 'Miles', installDir: join(raiz, 'MM'), source: 'steam' }]),
+    ]);
+    await service.refresh();
+    exe('MM', 'MilesMoralesDX12.exe');
+
+    const normal = service.refresh();
+    const forzado = service.refresh({ force: true });
+    await normal;
+    expect(await forzado).toHaveProperty('milesmoralesdx12', 'Miles');
+  });
 });
 
 describe('GameIndexService · exclusiones («no son juegos»)', () => {
