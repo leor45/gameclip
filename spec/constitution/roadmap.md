@@ -1382,6 +1382,30 @@ replay saltado durante, rearranque 0,2 s después de parar y clip guardado.
 - 🐞 **BUG-8 · temporales de ffmpeg en la biblioteca** (`fix/temporales-en-biblioteca`): el escaneo
   salta los `.gameclip-*` (prefijo compartido por el remux y «Guardar edit»).
 
+## Atajos con los botones laterales del ratón (2026-10-09) — ✅ publicado en v0.9.7 (portable)
+
+### ✨ Botones laterales del ratón como atajos — ✅ entregado (`feature/atajos-raton`, 2026-10-09)
+
+Los cinco atajos (guardar clip, grabar, captura, cambio de juego, overlay) aceptan `Mouse4`/`Mouse5`,
+solos o con modificadores (`Ctrl+Mouse5`). `globalShortcut` solo entiende teclas, así que van por el
+hook global `uiohook-napi` del push-to-talk, ahora **compartido** (`GlobalHook`: cada consumidor
+declara si lo necesita y el hook corre mientras alguno lo haga; apagar el PTT no deja sin hook a los
+atajos). Se capturan pulsando el botón en «Editar atajo» (Atajos y Avanzado); derecho/central avisan.
+El PTT en un botón del ratón reserva ese botón suelto, igual que con las teclas. Como las teclas, no se
+intercepta: el juego también recibe el botón.
+
+**Sin navegación atrás/adelante con el ratón:** los botones laterales cambiaban de pantalla como en
+un navegador. La vía es Blink al soltar el botón (`mouseup` sin `preventDefault`), no el
+`app-command` de la ventana (probado: con solo ese handler la app navegaba igual). Se anula siempre en
+`App.tsx`.
+
+**Fuera:** ratones con 4 laterales — Windows solo ve cinco botones; los extra los emite el software
+del fabricante como teclas, que ya sirven como atajo de teclado. Acordes de mando → «Futuro».
+
+**Verificado:** suite 1034 tests; app real con `SendInput` XBUTTON1/2 (clip con la app delante y en
+segundo plano, `Ctrl+Mouse5` captura y `Mouse5` solo no, sin navegación con historial disponible,
+PTT encendido y apagado sin perder el hook) y ratón físico del owner.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

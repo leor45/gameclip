@@ -36,5 +36,5 @@
 ## Cierre
 
 - [x] Aprobación del owner (2026-10-09)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado (publicado en v0.9.7)
