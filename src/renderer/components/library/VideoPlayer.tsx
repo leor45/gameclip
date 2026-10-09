@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CSSProperties,
+  Ref,
+  SyntheticEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -9,6 +11,14 @@ interface Props {
   src: string;
   /** Nombre accesible del reproductor (el título del clip). */
   title: string;
+  /** Arrancar solo al cargar (la Biblioteca sí; el editor no, como antes). */
+  autoPlay?: boolean;
+  /** Acceso al `<video>` para quien lo monta (el editor previsualiza el recorte y lo suelta al guardar). */
+  videoRef?: Ref<HTMLVideoElement>;
+  /** Tramo marcado en la barra de posición (el recorte del editor), en segundos. */
+  marca?: { inicio: number; fin: number } | null;
+  onLoadedMetadata?: (e: SyntheticEvent<HTMLVideoElement>) => void;
+  onTimeUpdate?: (e: SyntheticEvent<HTMLVideoElement>) => void;
 }
 
 /** Pasos de velocidad: los mismos que ofrece el menú de los controles nativos de Chromium. */
@@ -54,9 +64,17 @@ function esControlPropio(el: EventTarget | null): boolean {
  * Quien lo monta lo desmonta al cambiar de clip (`key`): así se suelta el `<video>`, que en Windows
  * mantiene el archivo abierto.
  */
-export default function VideoPlayer({ src, title }: Props) {
+export default function VideoPlayer({
+  src,
+  title,
+  autoPlay = true,
+  videoRef,
+  marca = null,
+  onLoadedMetadata,
+  onTimeUpdate,
+}: Props) {
   const raiz = useRef<HTMLDivElement>(null);
-  const video = useRef<HTMLVideoElement>(null);
+  const video = useRef<HTMLVideoElement | null>(null);
   const pista = useRef<HTMLDivElement>(null);
   const [reproduciendo, setReproduciendo] = useState(false);
   const [actual, setActual] = useState(0);
@@ -70,9 +88,11 @@ export default function VideoPlayer({ src, title }: Props) {
   const [arrastrando, setArrastrando] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
-  const [destello, setDestello] = useState<{ lado: 'izq' | 'der'; texto: string; n: number } | null>(
-    null,
-  );
+  const [destello, setDestello] = useState<{
+    lado: 'izq' | 'der';
+    texto: string;
+    n: number;
+  } | null>(null);
   const temporizadorReposo = useRef<ReturnType<typeof setTimeout> | null>(null);
   const temporizadorDestello = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pipDisponible =
@@ -168,7 +188,8 @@ export default function VideoPlayer({ src, title }: Props) {
   const imagenEnImagen = useCallback(() => {
     const v = video.current;
     if (!v) return;
-    if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => undefined);
+    if (document.pictureInPictureElement)
+      void document.exitPictureInPicture().catch(() => undefined);
     else void v.requestPictureInPicture?.().catch(() => undefined);
   }, []);
 
@@ -274,12 +295,11 @@ export default function VideoPlayer({ src, title }: Props) {
   };
   useEffect(() => {
     if (!menuVelocidad) return;
-    raiz.current
-      ?.querySelector<HTMLButtonElement>('.vp-rate-menu [aria-checked="true"]')
-      ?.focus();
+    raiz.current?.querySelector<HTMLButtonElement>('.vp-rate-menu [aria-checked="true"]')?.focus();
     const fuera = (e: PointerEvent) => {
       if (!(e.target instanceof Node)) return;
-      if (!raiz.current?.querySelector('.vp-rate-wrap')?.contains(e.target)) setMenuVelocidad(false);
+      if (!raiz.current?.querySelector('.vp-rate-wrap')?.contains(e.target))
+        setMenuVelocidad(false);
     };
     document.addEventListener('pointerdown', fuera);
     return () => document.removeEventListener('pointerdown', fuera);
@@ -302,11 +322,15 @@ export default function VideoPlayer({ src, title }: Props) {
       onPointerDown={despertar}
     >
       <video
-        ref={video}
+        ref={(el) => {
+          video.current = el;
+          if (typeof videoRef === 'function') videoRef(el);
+          else if (videoRef) (videoRef as { current: HTMLVideoElement | null }).current = el;
+        }}
         className="lib-player-video"
         data-testid="player-video"
         src={src}
-        autoPlay
+        autoPlay={autoPlay}
         onClick={alternar}
         onDoubleClick={alternarPantallaCompleta}
         onPlay={() => {
@@ -315,7 +339,10 @@ export default function VideoPlayer({ src, title }: Props) {
         }}
         onPause={() => setReproduciendo(false)}
         onEnded={() => setReproduciendo(false)}
-        onTimeUpdate={(e) => setActual(e.currentTarget.currentTime)}
+        onTimeUpdate={(e) => {
+          setActual(e.currentTarget.currentTime);
+          onTimeUpdate?.(e);
+        }}
         onDurationChange={(e) => {
           const d = e.currentTarget.duration;
           setDuracion(Number.isFinite(d) ? d : 0);
@@ -323,6 +350,7 @@ export default function VideoPlayer({ src, title }: Props) {
         onLoadedMetadata={(e) => {
           const d = e.currentTarget.duration;
           setDuracion(Number.isFinite(d) ? d : 0);
+          onLoadedMetadata?.(e);
         }}
         onProgress={(e) => {
           const v = e.currentTarget;
@@ -366,6 +394,15 @@ export default function VideoPlayer({ src, title }: Props) {
         >
           <div className="vp-rail">
             <div className="vp-buf" style={{ width: `${cargado * 100}%` }} />
+            {marca && duracion > 0 && (
+              <div
+                className="vp-mark"
+                style={{
+                  left: `${(Math.max(0, marca.inicio) / duracion) * 100}%`,
+                  width: `${(Math.max(0, Math.min(duracion, marca.fin) - marca.inicio) / duracion) * 100}%`,
+                }}
+              />
+            )}
             <div className="vp-fill" style={{ width: `${progreso * 100}%` }} />
           </div>
           <div className="vp-knob" style={{ left: `${progreso * 100}%` }} />
@@ -449,7 +486,12 @@ export default function VideoPlayer({ src, title }: Props) {
               {velocidad === 1 ? '1×' : velocidadTexto(velocidad)}
             </button>
             {menuVelocidad && (
-              <div className="vp-rate-menu" role="menu" aria-label="Velocidad" onKeyDown={onMenuKey}>
+              <div
+                className="vp-rate-menu"
+                role="menu"
+                aria-label="Velocidad"
+                onKeyDown={onMenuKey}
+              >
                 {VELOCIDADES.map((v) => (
                   <button
                     key={v}
@@ -557,7 +599,16 @@ function VolumeGlyph({ mudo }: { mudo: boolean }) {
 function PipGlyph() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="14"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
       <rect x="12" y="11.5" width="7" height="5.5" rx="1" fill="currentColor" />
     </svg>
   );

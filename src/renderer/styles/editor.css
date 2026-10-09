@@ -135,30 +135,42 @@ a.eav-draft-thumb:hover {
 }
 
 /* ── Editor básico ────────────────────────────────────────────────────────── */
+/* Dos zonas a todo el alto: a la izquierda el vídeo con el recorte sobre fotogramas; a la derecha la
+   «hoja de exportación» (resumen de lo que sale, pistas, formato, calidad y las acciones al pie). Como
+   en Ajustes, el contenedor de la app no hace scroll: cada columna se las arregla con su alto. */
+.app-content:has(> .editor) {
+  padding: 0;
+  overflow: hidden;
+}
 
 .editor {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 28px;
-  align-items: start;
-  max-width: 1100px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  height: 100%;
+  min-height: 0;
 }
 
 .editor-col {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   min-width: 0;
+  min-height: 0;
+}
+
+.editor-col-main {
+  gap: 16px;
+  padding: 24px 32px 22px;
 }
 
 .editor-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+  min-width: 0;
 }
 
 .editor-avanzado-link {
+  margin-left: auto;
   color: var(--sello);
   text-decoration: none;
   font-size: 13px;
@@ -189,104 +201,433 @@ a.eav-draft-thumb:hover {
   white-space: nowrap;
 }
 
-.editor-video {
+/* El vídeo y su recorte van juntos, arriba: el bloque es tan ancho como el vídeo más grande que cabe
+   (16:9) dejando sitio debajo para el recorte, así nunca queda el vídeo flotando lejos de su tira. */
+.editor-stage {
+  --alto-recorte: 118px;
+  flex: 1;
+  min-height: 0;
+  container-type: size;
+}
+
+.editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100cqw, calc((100cqh - var(--alto-recorte)) * 16 / 9));
+  margin-inline: auto;
+}
+
+.editor-media {
+  position: relative;
   width: 100%;
-  max-height: 420px;
-  background: #000;
+  aspect-ratio: 16 / 9;
   border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
 }
 
-/* Grupos de controles: sin caja, separados por un filete con su etiqueta encima. */
-.editor-trim,
-.editor-tracks,
-.editor-export {
-  border: 0;
-  border-top: 1px solid var(--rule);
-  padding: 14px 0 0;
+/* Recorte: etiqueta y tiempos en una línea, la tira debajo. */
+.editor-trim {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.editor-trim legend {
+  float: left;
+  padding: 0;
+}
+
+.editor-trim-times {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: baseline;
+  gap: 8px;
 }
 
-.editor-col-side > fieldset:first-child {
-  border-top: 0;
-  padding-top: 0;
+.editor-trim-times b {
+  font: 500 14px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--paper);
 }
 
-.editor-trim legend,
-.editor-tracks legend,
-.editor-export legend {
-  padding: 0 8px 0 0;
+.editor-trim-times b + .gc-label {
+  margin-left: 10px;
 }
 
-.editor-trim label,
-.editor-export label {
-  display: flex;
-  flex-direction: column;
+/* ── Tira de fotogramas con dos asas ──
+   Las asas son <input type="range"> superpuestos a la tira: transparentes, sin eventos salvo en su
+   asa. El centro del asa de un range va de ASA/2 a (ancho - ASA/2); la tira y las zonas se dibujan en
+   ese mismo tramo para que el asa caiga justo en el borde del recorte. */
+.trim-strip {
+  --asa: 14px;
+  --alto: 58px;
+  position: relative;
+  display: grid;
   gap: 6px;
-  font-size: 13px;
+  clear: both;
+}
+
+.trim-strip-film {
+  position: relative;
+  height: var(--alto);
+  margin-inline: calc(var(--asa) / 2);
+  border-radius: var(--radius-sm);
+  background: var(--raise);
+  overflow: hidden;
+}
+
+/* La tira del editor avanzado, a la altura de esta. */
+.trim-strip-film .eav-track-video-bar {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.trim-strip-out {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(13, 14, 18, 0.72);
+}
+
+.trim-strip-out.is-left {
+  left: 0;
+  width: calc(var(--trim-a) * 100%);
+}
+
+.trim-strip-out.is-right {
+  right: 0;
+  width: calc((1 - var(--trim-b)) * 100%);
+}
+
+.trim-strip-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--trim-a) * 100%);
+  width: calc((var(--trim-b) - var(--trim-a)) * 100%);
+  border-top: 3px solid var(--sello);
+  border-bottom: 3px solid var(--sello);
+  pointer-events: none;
+}
+
+.trim-strip-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--trim-t) * 100%);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px rgba(13, 14, 18, 0.5);
+  pointer-events: none;
+}
+
+.trim-strip-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--alto);
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  pointer-events: none;
+  outline: none;
+}
+
+.trim-strip-handle.is-top {
+  z-index: 1;
+}
+
+.trim-strip-handle::-webkit-slider-runnable-track {
+  height: var(--alto);
+  background: transparent;
+}
+
+.trim-strip-handle::-webkit-slider-thumb {
+  width: var(--asa);
+  height: var(--alto);
+  border-radius: 3px;
+  background:
+    linear-gradient(var(--on-sello), var(--on-sello)) center / 1px 14px no-repeat,
+    var(--sello);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+
+.trim-strip-handle:hover::-webkit-slider-thumb {
+  background:
+    linear-gradient(var(--on-sello), var(--on-sello)) center / 1px 14px no-repeat,
+    var(--sello-hover);
+}
+
+.trim-strip-handle:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--paper);
+  outline-offset: 2px;
+}
+
+.trim-strip.is-disabled {
+  opacity: 0.55;
+}
+
+.trim-strip.is-disabled .trim-strip-handle::-webkit-slider-thumb {
+  cursor: default;
+}
+
+.trim-strip-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding-inline: calc(var(--asa) / 2);
+  font: 500 10.5px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
 
-.editor-trim-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Zona del recorte marcada en la barra del reproductor. */
+.vp-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  border-left: 2px solid var(--sello);
+  border-right: 2px solid var(--sello);
+  background: rgba(245, 197, 24, 0.22);
+}
+
+/* ── Hoja de exportación ── */
+.editor-col-side {
+  border-left: 1px solid var(--rule);
+  background: var(--page);
+}
+
+.editor-summary {
+  display: grid;
   gap: 12px;
-  font-size: 13px;
+  padding: 22px 20px 18px;
+  border-bottom: 1px dashed var(--rule);
+}
+
+.editor-summary-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.editor-figure {
+  display: block;
+  font: 500 32px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
   color: var(--paper);
+}
+
+.editor-figure-sub {
+  display: block;
+  margin-top: 6px;
+  font: 500 12px/1 var(--font-mono);
+  color: var(--dim);
+}
+
+.editor-preview {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+}
+
+.editor-side-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.editor-tracks,
+.editor-export {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.editor-tracks legend,
+.editor-export legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 2px;
 }
 
 .editor-tracks-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .editor-tracks-list label {
-  flex-direction: row;
+  display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
   font-size: 14px;
+  font-weight: 600;
   color: var(--paper);
   cursor: pointer;
 }
 
+.editor-tracks-list label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .editor-tracks-hint {
-  margin: 0;
+  margin: 4px 0 0;
   font-size: 12px;
+  font-style: italic;
+  line-height: 1.45;
   color: var(--dim);
 }
 
-.editor-export {
-  flex-direction: row;
-  flex-wrap: wrap;
+/* Formato y calidad: opciones iguales que llenan la columna. La radio real queda debajo (teclado
+   nativo: flechas dentro del grupo); se ve la tarjeta. */
+.editor-opts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
-.editor-export legend {
-  width: 100%;
+.editor-opt {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s ease-out;
 }
 
-.editor-export label {
-  flex: 1;
-  min-width: 140px;
+.editor-opt.is-center {
+  justify-items: center;
+  text-align: center;
+}
+
+.editor-opt input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.editor-opt b {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--paper);
+}
+
+.editor-opt span {
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: var(--dim);
+}
+
+.editor-opt:hover {
+  border-color: var(--dim);
+}
+
+.editor-opt:has(input:checked) {
+  border-color: var(--sello);
+  background: rgba(245, 197, 24, 0.08);
+  box-shadow: inset 0 0 0 1px var(--sello);
+}
+
+.editor-opt:has(input:checked) b {
+  color: var(--sello);
+}
+
+.editor-opt:has(input:focus-visible) {
+  outline: 2px solid var(--sello);
+  outline-offset: 2px;
+}
+
+fieldset:disabled .editor-opt {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Pie: la acción principal grande; progreso y resultado en el mismo sitio. */
+.editor-side-foot {
+  display: grid;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  border-top: 1px dashed var(--rule);
 }
 
 .editor-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.editor-actions .gc-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.editor-export-btn {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.editor-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.editor-progress-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  border-top: 1px solid var(--rule);
-  padding-top: 14px;
+  gap: 12px;
+}
+
+.editor-progress .gc-btn {
+  justify-self: start;
 }
 
 /* Barra de progreso (exportación y render): carril fino con el relleno amarillo. */
-.editor-actions progress,
+.editor-progress progress,
 .eav-modal-progress progress {
   flex: 1;
   height: 4px;
@@ -299,12 +640,12 @@ a.eav-draft-thumb:hover {
   overflow: hidden;
 }
 
-.editor-actions progress::-webkit-progress-bar,
+.editor-progress progress::-webkit-progress-bar,
 .eav-modal-progress progress::-webkit-progress-bar {
   background: var(--rule);
 }
 
-.editor-actions progress::-webkit-progress-value,
+.editor-progress progress::-webkit-progress-value,
 .eav-modal-progress progress::-webkit-progress-value {
   background: var(--sello);
 }
@@ -316,12 +657,16 @@ a.eav-draft-thumb:hover {
 }
 
 .editor-done {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  gap: 8px;
   font-size: 14px;
   color: var(--paper);
+}
+
+.editor-done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .editor-copied {
@@ -335,9 +680,29 @@ a.eav-draft-thumb:hover {
   font-size: 13px;
 }
 
+/* Ventana estrecha: una sola columna con scroll, la hoja debajo del recorte. */
 @media (max-width: 900px) {
+  .app-content:has(> .editor) {
+    overflow-y: auto;
+  }
+
   .editor {
     grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .editor-stage {
+    flex: none;
+    container-type: normal;
+  }
+
+  .editor-stack {
+    width: 100%;
+  }
+
+  .editor-col-side {
+    border-left: 0;
+    border-top: 1px solid var(--rule);
   }
 }
 

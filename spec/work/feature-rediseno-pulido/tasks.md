@@ -11,6 +11,8 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] 5. Biblioteca: flecha atrás y transición de abrir/cerrar (sin animación con «reducir movimiento»).
 - [x] 6. Reproductor propio (`VideoPlayer`) con ±10 s, velocidad, PiP, pantalla completa y teclado.
 - [x] 7. Verificación en la app real (CDP / capturas) a 1920×1080 y 1280×800.
+- [x] 8. Editor básico: hoja de exportación + recorte sobre fotogramas + reproductor propio (ampliación
+  aprobada por el owner sobre la maqueta).
 
 ## Tests unitarios (obligatorios)
 
@@ -21,6 +23,8 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Reproductor: ±10 s y ±5 s, Espacio/K, M, límites (0 y duración), velocidad, controles ocultos
   en reposo; ↑ ↓ siguen cambiando de clip con el foco en el reproductor.
 - [x] Ajustes: las filas viven solo dentro de la container query (por debajo, nada cambia).
+- [x] Editor básico: la hoja resume recorte y formato; formato y calidad como radios; reproductor
+  propio sin autoplay; exportar, guardar edit, progreso y resultado intactos.
 
 ## Verificación (gates)
 

@@ -55,6 +55,17 @@ con igualdad exacta (`claveNombre`: recorte + minúsculas). Medido en la bibliot
 - **Teclado** con el foco en el reproductor: Espacio/K reproducir, ← → ±5 s, J L ±10 s, M silencio,
   F pantalla completa. ↑ ↓, Intro y Esc siguen como hoy (cambiar de clip, editor, cerrar).
 
+- **Editor básico (ampliación aprobada el 2026-10-09, maqueta
+  https://claude.ai/artifact/Uy6scP6cDh7AqT7kURYCsX, «propuesta 2 + tira de fotogramas»):**
+  a la izquierda el vídeo con el reproductor de la Biblioteca (sin arrancar solo, con el tramo
+  recortado marcado en su barra) y, pegado debajo, el recorte sobre una tira de fotogramas con dos asas
+  (los mismos dos `range`, mínimo 0,5 s), lo de fuera oscurecido, la línea de reproducción y la
+  entrada y la salida encima. A la derecha, una «hoja de exportación» a todo el alto: resumen (duración
+  del recorte de la total, formato y calidad) con «Previsualizar recorte», pistas con interruptores y
+  sus avisos, formato (MP4 «H.264 · con audio», GIF «Animado · sin audio») y calidad como opciones
+  iguales que llenan la columna, y al pie «Exportar…», «Guardar edit», progreso con «Cancelar» y el
+  resultado («Copiar al portapapeles», «Mostrar en carpeta»). Mismas funciones que antes.
+
 **Fuera (explícito):**
 
 - Cambios en las tarjetas de la cuadrícula (el sello de duración se queda como está).

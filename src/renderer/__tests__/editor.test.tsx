@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { within, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,6 +37,31 @@ describe('Editor — carga', () => {
     expect(await screen.findByText(/Elige un clip/)).toBeInTheDocument();
   });
 
+  it('la hoja de exportación resume el recorte y el formato; el reproductor es el propio', async () => {
+    const user = userEvent.setup();
+    mock().library.get.mockResolvedValue(
+      crearClip({ id: 7, title: 'Jugada épica', durationSeconds: 60 }),
+    );
+    renderEditor('/editor/7');
+    await screen.findByText('Jugada épica');
+
+    const hoja = screen.getByRole('complementary', { name: 'Exportar' });
+    expect(within(hoja).getByText('1:00', { selector: '.editor-figure' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Inicio del recorte'), { target: { value: '15' } });
+    fireEvent.change(screen.getByLabelText('Fin del recorte'), { target: { value: '38' } });
+    expect(within(hoja).getByText('0:23', { selector: '.editor-figure' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /GIF/ }));
+    expect(within(hoja).getByText('GIF', { selector: '.editor-figure' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /GIF/ })).toBeChecked();
+
+    // Sin controles nativos: los del reproductor de la Biblioteca, sin arrancar solo.
+    const video = document.querySelector('video') as HTMLVideoElement;
+    expect(video.controls).toBe(false);
+    expect(video.autoplay).toBe(false);
+    expect(screen.getByRole('button', { name: 'Adelantar 10 segundos' })).toBeInTheDocument();
+  });
+
   it('carga el clip de la ruta y muestra los controles de recorte', async () => {
     const clip = crearClip({ id: 7, title: 'Jugada épica', durationSeconds: 60 });
     mock().library.get.mockResolvedValue(clip);
@@ -69,8 +94,17 @@ describe('Editor — exportación', () => {
 
     fireEvent.change(screen.getByLabelText('Inicio del recorte'), { target: { value: '5' } });
     fireEvent.change(screen.getByLabelText('Fin del recorte'), { target: { value: '20' } });
-    await user.selectOptions(screen.getByLabelText('Formato'), 'gif');
-    await user.selectOptions(screen.getByLabelText('Calidad'), 'alta');
+    // Formato y calidad: opciones (radio) dentro de sus grupos.
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'Formato' })).getByRole('radio', {
+        name: /GIF/,
+      }),
+    );
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'Calidad' })).getByRole('radio', {
+        name: 'Alta',
+      }),
+    );
     await user.click(screen.getByRole('button', { name: 'Exportar…' }));
 
     expect(mock().exporter.run).toHaveBeenCalledWith({

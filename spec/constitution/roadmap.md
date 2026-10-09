@@ -1566,6 +1566,9 @@ Tras un día de uso del build de prueba. Maqueta: https://claude.ai/artifact/VWn
       ancho del formulario (sin columna centrada) y el botón de guardar alineado con los controles; por debajo, igual que antes.
 - [x] Biblioteca: transición al abrir (180 ms, desde la miniatura) y cerrar (120 ms), sin animación con
       «reducir movimiento»; flecha atrás junto a «Biblioteca».
+- [x] Editor básico: vídeo con el reproductor propio y el recorte sobre una tira de fotogramas (asas
+      amarillas) pegado debajo; a la derecha, «hoja de exportación» con el resumen, pistas, formato y
+      calidad como opciones a todo el ancho y «Exportar…» al pie. Mismas funciones.
 - [x] Reproductor propio: posición con arrastre y hora al pasar el ratón, ±10 s, volumen, velocidad, imagen
       en imagen y pantalla completa; teclado ← → (±5 s), J L (±10 s), Espacio/K, M, F.
 
