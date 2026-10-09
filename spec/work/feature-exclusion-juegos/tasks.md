@@ -25,10 +25,10 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: Sincronizar → Wallpaper Engine y Lossless Scaling aparecen como *auto*; desaparecen del índice (Ajustes → Desarrollo); añadir uno a mano antes de sincronizar deja una sola entrada *manual*.
+- [x] Comprobación manual: Sincronizar → Wallpaper Engine y Lossless Scaling aparecen como *auto*; desaparecen del índice (Ajustes → Desarrollo); añadir uno a mano antes de sincronizar deja una sola entrada *manual*.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado

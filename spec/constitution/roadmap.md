@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### ✨ Lista «no son juegos» (sincronizada y manual) — 🧪 en rama (`feature/exclusion-juegos`)
+### ✨ Lista «no son juegos» (sincronizada y manual) — ✅ entregado (`feature/exclusion-juegos`, 2026-10-08)
 
 Steam daba de alta como juego cualquier app (Wallpaper Engine, Lossless Scaling…): Wallpaper Engine,
 que corre de fondo, contaba como juego abierto permanente. Nueva sección en Ajustes → Grabación con un
