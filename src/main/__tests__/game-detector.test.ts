@@ -160,6 +160,145 @@ describe('GameDetector (multi-juego)', () => {
   });
 });
 
+/**
+ * D4-BUG-1: un juego que arranca con un lanzador indexado bajo su mismo nombre (`PlayRDR2.exe`,
+ * `start_protected_game.exe`) y luego pasa al exe real. Antes, el detector solo comparaba NOMBRES:
+ * el relevo no se emitía y la captura se quedaba apuntando al lanzador toda la sesión.
+ */
+describe('GameDetector — el juego cambia de ejecutable (D4-BUG-1)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // `stub` (el lanzador) y `real` (el juego) son el MISMO juego para el índice de launchers.
+  const index: GameIndex = { stub: 'Juego', real: 'Juego' };
+
+  function crear(procesosPorSondeo: string[][], indice: GameIndex = index) {
+    let i = 0;
+    const detector = new GameDetector({
+      listProcessNames: () => {
+        const lista = procesosPorSondeo[Math.min(i, procesosPorSondeo.length - 1)];
+        i++;
+        return Promise.resolve(lista);
+      },
+      intervalMs: 1000,
+      missesBeforeStop: 2,
+      index: indice,
+    });
+    const emisiones: RunningGameMatch[][] = [];
+    detector.on('games-changed', (lista: RunningGameMatch[]) => emisiones.push(lista));
+    return { detector, emisiones };
+  }
+
+  it('regresión: del lanzador al exe real se emite el relevo, sin parpadeo mientras conviven', async () => {
+    const { detector, emisiones } = crear([['stub.exe'], ['stub.exe', 'real.exe'], ['real.exe']]);
+    detector.start();
+    await avanzar(0); // sondeo 1: solo el lanzador
+    expect(emisiones).toEqual([[{ name: 'Juego', executable: 'stub.exe' }]]);
+
+    await avanzar(1000); // sondeo 2: conviven → se queda con el lanzador, sin emitir
+    expect(emisiones).toHaveLength(1);
+
+    await avanzar(1000); // sondeo 3: el lanzador salió → relevo al exe real
+    expect(emisiones).toEqual([
+      [{ name: 'Juego', executable: 'stub.exe' }],
+      [{ name: 'Juego', executable: 'real.exe' }],
+    ]);
+    expect(detector.running).toEqual([{ name: 'Juego', executable: 'real.exe' }]);
+    detector.stop();
+  });
+
+  it('regresión: el ejecutable es pegajoso mientras siga vivo, aunque tasklist cambie el orden', async () => {
+    const { detector, emisiones } = crear([
+      ['stub.exe'],
+      ['real.exe', 'stub.exe'], // el real sale PRIMERO en tasklist: sin pegajoso, saltaría a él
+      ['STUB.EXE', 'real.exe'], // capitalización distinta: sigue siendo el mismo proceso
+      ['real.exe'], // el lanzador salió: ahora sí, relevo
+      ['stub.exe', 'real.exe'], // vuelve un lanzador con el real vivo: se queda con el real
+    ]);
+    detector.start();
+    await avanzar(0);
+    await avanzar(1000);
+    await avanzar(1000);
+    expect(emisiones).toEqual([[{ name: 'Juego', executable: 'stub.exe' }]]);
+
+    await avanzar(1000);
+    await avanzar(1000);
+    expect(emisiones).toEqual([
+      [{ name: 'Juego', executable: 'stub.exe' }],
+      [{ name: 'Juego', executable: 'real.exe' }],
+    ]);
+    detector.stop();
+  });
+
+  it('regresión: con varios juegos, el relevo de uno emite la lista completa (el otro intacto)', async () => {
+    const { detector, emisiones } = crear([
+      ['cs2.exe', 'stub.exe'],
+      ['cs2.exe', 'real.exe'],
+    ]);
+    detector.start();
+    await avanzar(0);
+    await avanzar(1000);
+    expect(emisiones).toEqual([
+      [
+        { name: 'Counter-Strike 2', executable: 'cs2.exe' },
+        { name: 'Juego', executable: 'stub.exe' },
+      ],
+      [
+        { name: 'Counter-Strike 2', executable: 'cs2.exe' },
+        { name: 'Juego', executable: 'real.exe' },
+      ],
+    ]);
+    detector.stop();
+  });
+
+  it('regresión: el pegajoso suelta un ejecutable que ya no es de ese juego (índice nuevo)', async () => {
+    const { detector, emisiones } = crear([['stub.exe', 'real.exe']]);
+    detector.start();
+    await avanzar(0);
+    expect(emisiones).toEqual([[{ name: 'Juego', executable: 'stub.exe' }]]);
+
+    // Re-índice: el lanzador deja de contar como juego. Sigue vivo, pero ya no es «Juego».
+    detector.setIndex({ real: 'Juego' });
+    await avanzar(1000);
+    expect(emisiones[1]).toEqual([{ name: 'Juego', executable: 'real.exe' }]);
+    detector.stop();
+  });
+
+  it('el pegajoso nunca deja un mismo ejecutable bajo dos juegos (pasa a nombrar otro)', async () => {
+    const { detector, emisiones } = crear([['stub.exe', 'real.exe']]);
+    detector.start();
+    await avanzar(0);
+    expect(emisiones).toEqual([[{ name: 'Juego', executable: 'stub.exe' }]]);
+
+    // El lanzador pasa a resolverse como otro juego: «Juego» se queda con su otro ejecutable vivo.
+    detector.setIndex({ stub: 'Otro', real: 'Juego' });
+    await avanzar(1000);
+    expect(emisiones[1]).toEqual([
+      { name: 'Otro', executable: 'stub.exe' },
+      { name: 'Juego', executable: 'real.exe' },
+    ]);
+    detector.stop();
+  });
+
+  it('sin cambios de nombre ni de ejecutable no emite (aunque cambie el orden de tasklist)', async () => {
+    const { detector, emisiones } = crear([
+      ['cs2.exe', 'real.exe'],
+      ['real.exe', 'cs2.exe'],
+      ['REAL.exe', 'CS2.EXE'],
+    ]);
+    detector.start();
+    await avanzar(0);
+    await avanzar(1000);
+    await avanzar(1000);
+    expect(emisiones).toHaveLength(1);
+    detector.stop();
+  });
+});
+
 describe('GameDetector — re-índice por novedad (unknown-executable)', () => {
   beforeEach(() => {
     vi.useFakeTimers();

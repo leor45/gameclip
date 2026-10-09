@@ -70,8 +70,11 @@ class FakeObs implements CaptureBackend {
   reintentosApuntado = 0;
   /** Nº de intento a partir del cual `retryAimGameWindow` devuelve true (Infinity = nunca). */
   apuntaEnIntento = Number.POSITIVE_INFINITY;
-  retryAimGameWindow(): boolean {
+  /** Ejecutable de cada reintento de apuntado, en orden. */
+  reintentosExe: (string | null)[] = [];
+  retryAimGameWindow(_settings: CaptureSettings, executable: string | null): boolean {
     this.reintentosApuntado++;
+    this.reintentosExe.push(executable);
     return this.reintentosApuntado >= this.apuntaEnIntento;
   }
   micMuted: boolean | null = null;
@@ -1234,6 +1237,177 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
       // El activo deja de correr: pasa al primero disponible.
       await manager.setRunningGames([cs2]);
       expect(manager.getStatus().detectedGame).toBe('Counter-Strike 2');
+    });
+  });
+
+  /**
+   * D4-BUG-1: el juego activo pasa de su lanzador (indexado con el mismo nombre) al exe real. Solo
+   * se re-apuntaba al cambiar el NOMBRE, así que la captura y el audio del juego seguían en el
+   * lanzador toda la sesión.
+   */
+  describe('el mismo juego cambia de ejecutable (D4-BUG-1)', () => {
+    const lanzador = { name: 'Juego', executable: 'stub.exe' };
+    const real = { name: 'Juego', executable: 'real.exe' };
+
+    it('regresión: en perfil de juego re-apunta el vídeo al exe nuevo SIN reconstruir (el buffer sobrevive)', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.setRunningGames([lanzador]);
+      expect(obs.ultimoGameExe).toBe('stub.exe');
+      const builds = obs.buildCount;
+      const llamadasAntes = obs.llamadas.length;
+      const juegos: (string | null)[] = [];
+      manager.on('status', (s: { detectedGame: string | null }) => juegos.push(s.detectedGame));
+
+      await manager.setRunningGames([real]);
+
+      expect(obs.ultimoGameCaptureTarget).toBe('real.exe');
+      expect(manager.activeGameExecutable()).toBe('real.exe');
+      expect(obs.buildCount).toBe(builds); // sin rebuild: el replay conserva su contenido
+      const nuevas = obs.llamadas.slice(llamadasAntes);
+      expect(nuevas).not.toContain('stopReplayBuffer');
+      expect(nuevas).not.toContain('startReplayBuffer');
+      expect(obs.bufferActivo).toBe(true);
+      expect(manager.getStatus()).toMatchObject({ state: 'buffering', detectedGame: 'Juego' });
+      expect(juegos.every((j) => j === 'Juego')).toBe(true); // el juego visible no cambió
+    });
+
+    it('regresión: modo auto con la sesión grabando → re-apunta sin cortar ni rearrancar la grabación', async () => {
+      const manager = crear({ recordingMode: 'auto', bufferMode: 'always' });
+      await manager.initialize();
+      await manager.setRunningGames([lanzador]);
+      expect(manager.getStatus().state).toBe('recording');
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+      const builds = obs.buildCount;
+      const llamadasAntes = obs.llamadas.length;
+
+      await manager.setRunningGames([real]);
+
+      expect(obs.ultimoGameCaptureTarget).toBe('real.exe');
+      const nuevas = obs.llamadas.slice(llamadasAntes);
+      expect(nuevas).not.toContain('stopRecording');
+      expect(nuevas).not.toContain('startRecording');
+      expect(obs.grabando).toBe(true);
+      expect(guardados).toEqual([]); // ningún clip cortado a medias
+      expect(obs.buildCount).toBe(builds);
+      expect(manager.getStatus()).toMatchObject({ state: 'recording', detectedGame: 'Juego' });
+    });
+
+    it("regresión: modo 'apps' con audio de juego religa también el audio al exe nuevo", async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+      await manager.initialize();
+      await manager.setRunningGames([lanzador]);
+      const builds = obs.buildCount;
+
+      await manager.setRunningGames([real]);
+
+      expect(obs.ultimoGameAudioTarget).toBe('real.exe');
+      expect(obs.updateGameAudioCount).toBe(1);
+      expect(obs.ultimoGameCaptureTarget).toBe('real.exe');
+      expect(obs.buildCount).toBe(builds);
+    });
+
+    it("regresión: modo 'desktop' re-apunta el vídeo pero no toca el audio (no hay fuente por proceso)", async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'desktop' });
+      await manager.initialize();
+      await manager.setRunningGames([lanzador]);
+
+      await manager.setRunningGames([real]);
+
+      expect(obs.ultimoGameCaptureTarget).toBe('real.exe');
+      expect(obs.updateGameAudioCount).toBe(0);
+    });
+
+    it('regresión: durante una grabación manual re-apunta en caliente y la grabación sigue entera', async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+      await manager.initialize();
+      await manager.setRunningGames([lanzador]);
+      await manager.startRecording();
+      const builds = obs.buildCount;
+      const guardados: ClipSavedInfo[] = [];
+      manager.on('clip-saved', (info: ClipSavedInfo) => guardados.push(info));
+
+      await manager.setRunningGames([real]);
+
+      expect(obs.ultimoGameCaptureTarget).toBe('real.exe');
+      expect(obs.ultimoGameAudioTarget).toBe('real.exe');
+      expect(obs.grabando).toBe(true);
+      expect(manager.getStatus().state).toBe('recording');
+      expect(obs.buildCount).toBe(builds);
+
+      // Al parar no queda nada pendiente: ni rebuild, y el clip es del mismo juego.
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(builds);
+      expect(guardados.map((g) => g.game)).toEqual(['Juego']);
+    });
+
+    describe('re-apuntado a la ventana del exe nuevo', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('regresión: vuelve a reintentar con el exe nuevo aunque el bucle del lanzador ya hubiera terminado', async () => {
+        const pedidos: (string | null)[] = [];
+        obs.retryAimGameWindow = (_s: CaptureSettings, exe: string | null) => {
+          pedidos.push(exe);
+          // La ventana del lanzador existe; la del exe real tarda dos intentos (anti-cheat).
+          return exe === 'stub.exe' || pedidos.filter((e) => e === 'real.exe').length >= 2;
+        };
+        const manager = crear({ bufferMode: 'always' });
+        await manager.initialize();
+        await manager.setRunningGames([lanzador]);
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 3);
+        expect(pedidos).toEqual(['stub.exe']); // apuntó al lanzador y el bucle paró
+
+        await manager.setRunningGames([real]);
+        await vi.advanceTimersByTimeAsync(AIM_RETRY_INTERVAL_MS * 5);
+        expect(pedidos).toEqual(['stub.exe', 'real.exe', 'real.exe']); // reintenta y para al apuntar
+      });
+    });
+
+    it('en perfil de escritorio (sin cambio automático al juego) no re-apunta nada', async () => {
+      const manager = crear({ bufferMode: 'always', desktopAutoSwitchToGame: false });
+      await manager.initialize();
+      await manager.setRunningGames([lanzador]);
+      const builds = obs.buildCount;
+
+      await manager.setRunningGames([real]);
+
+      expect(obs.llamadas).not.toContain('updateGameCaptureTarget');
+      expect(obs.llamadas).not.toContain('updateGameAudioTarget');
+      expect(obs.buildCount).toBe(builds);
+      expect(manager.activeGameExecutable()).toBe('real.exe');
+    });
+
+    it('el mismo ejecutable con otra capitalización no es un cambio (no re-apunta)', async () => {
+      const manager = crear({ bufferMode: 'always', audioMode: 'apps', gameAudioEnabled: true });
+      await manager.initialize();
+      await manager.setRunningGames([{ name: 'Juego', executable: 'Stub.EXE' }]);
+
+      await manager.setRunningGames([lanzador]);
+
+      expect(obs.llamadas).not.toContain('updateGameCaptureTarget');
+      expect(obs.updateGameAudioCount).toBe(0);
+    });
+
+    it('con el rebuild a juego aplazado por una grabación de escritorio, el pipeline nace con el exe nuevo', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      await manager.startRecording(); // grabación manual en perfil de escritorio
+      const builds = obs.buildCount;
+
+      await manager.setRunningGames([lanzador]); // rebuild a juego aplazado
+      await manager.setRunningGames([real]);
+      expect(obs.buildCount).toBe(builds);
+      expect(obs.llamadas).not.toContain('updateGameCaptureTarget'); // no hay game capture aún
+
+      await manager.stopRecording();
+      expect(obs.buildCount).toBe(builds + 1);
+      expect(obs.ultimoGameExe).toBe('real.exe');
     });
   });
 
