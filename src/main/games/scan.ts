@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 /**
  * Escaneo de los ejecutables de la carpeta de un juego. Se indexan TODOS (no solo el que declare el
@@ -87,9 +87,21 @@ export async function executablesIn(
   dir: string,
   maxDepth: number = MAX_SCAN_DEPTH,
 ): Promise<string[]> {
+  const rutas = await exePathsIn(dir, maxDepth);
+  return [...new Set(rutas.map((ruta) => basename(ruta).slice(0, -4).toLowerCase()))];
+}
+
+/**
+ * Rutas completas de los mismos ejecutables que indexa `executablesIn` (mismas reglas y profundidad).
+ * Las usa el servicio de iconos para llegar al `.exe` de un juego sin guardar rutas en el índice.
+ */
+export async function exePathsIn(
+  dir: string,
+  maxDepth: number = MAX_SCAN_DEPTH,
+): Promise<string[]> {
   const out: string[] = [];
   await walk(dir, maxDepth, out);
-  return [...new Set(out)];
+  return out;
 }
 
 async function walk(dir: string, depthLeft: number, out: string[]): Promise<void> {
@@ -109,7 +121,7 @@ async function walk(dir: string, depthLeft: number, out: string[]): Promise<void
     if (!entry.name.toLowerCase().endsWith('.exe')) continue;
     const base = entry.name.slice(0, -4);
     if (ignorarExe(base)) continue;
-    out.push(base.toLowerCase());
+    out.push(join(dir, entry.name));
   }
   for (const sub of subcarpetas) await walk(sub, depthLeft - 1, out);
 }

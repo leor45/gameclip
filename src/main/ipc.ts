@@ -40,6 +40,15 @@ export interface GamesIpcDeps {
   setExcluded: (list: ExcludedGame[]) => Promise<ExcludedGame[]>;
 }
 
+/**
+ * Iconos oficiales de juegos y apps (`main/icons`). Reciben lo que manda el renderer sin tipar: el
+ * servicio valida (solo nombres de juego o de `.exe`, nunca rutas) y nunca rechaza.
+ */
+export interface IconsIpcDeps {
+  forGame: (name: unknown) => Promise<string | null>;
+  forExe: (executable: unknown) => Promise<string | null>;
+}
+
 export function registerIpcHandlers(
   capture: CaptureManager,
   library: LibraryManager | null,
@@ -48,6 +57,7 @@ export function registerIpcHandlers(
   pttAvailable: () => boolean = () => false,
   games: GamesIpcDeps | null = null,
   perfPreview: ((config: PerfOverlayConfig) => void) | null = null,
+  icons: IconsIpcDeps | null = null,
 ): void {
   ipcMain.handle(
     IpcChannel.AppVersion,
@@ -140,10 +150,14 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.CaptureStopRecording, () => capture.stopRecording());
   ipcMain.handle(IpcChannel.CaptureSaveReplay, () => capture.saveReplay());
 
-  // Iconos de juegos y apps. Contrato fijado; la extracción real llega con el servicio de iconos.
-  // Mientras tanto responde null y el renderer pone el logo de GameClip.
-  ipcMain.handle(IpcChannel.IconsForGame, () => null);
-  ipcMain.handle(IpcChannel.IconsForExe, () => null);
+  // Iconos de juegos y apps. Sin servicio (o ante cualquier fallo) responde null y el renderer pone
+  // el logo de GameClip: un icono nunca es motivo de error en la UI.
+  ipcMain.handle(IpcChannel.IconsForGame, (_event, req: { name?: unknown } | undefined) =>
+    icons ? icons.forGame(req?.name).catch(() => null) : null,
+  );
+  ipcMain.handle(IpcChannel.IconsForExe, (_event, req: { executable?: unknown } | undefined) =>
+    icons ? icons.forExe(req?.executable).catch(() => null) : null,
+  );
 
   // El índice de juegos instalados: lo consulta la UI de ajustes para mostrar los nombres reales y
   // para proponer uno al dar de alta un juego a mano.

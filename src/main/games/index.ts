@@ -113,6 +113,9 @@ export class GameIndexService {
   private readonly exclusions: (juegos: InstalledGame[]) => string[];
   /** Lo que devolvieron los launchers en la última lectura, excluidos incluidos (para la UI). */
   private instalados: InstalledGame[] = [];
+  /** Se resuelve al terminar el primer refresco (bien o mal): desde ahí `installed()` es fiable. */
+  private readonly primerRefresco: Promise<void>;
+  private marcarListo: () => void = () => {};
 
   constructor(options: GameIndexServiceOptions) {
     this.cachePath = options.cachePath;
@@ -120,6 +123,17 @@ export class GameIndexService {
     this.log = options.log ?? (() => {});
     this.exclusions = options.exclusions ?? (() => []);
     this.index = this.leerCache()?.index ?? {};
+    this.primerRefresco = new Promise((resolve) => {
+      this.marcarListo = resolve;
+    });
+  }
+
+  /**
+   * Se resuelve cuando termina el primer refresco (con éxito o no). Lo usa el servicio de iconos: hasta
+   * entonces `installed()` está vacío y no sabría dónde está instalado cada juego.
+   */
+  ready(): Promise<void> {
+    return this.primerRefresco;
   }
 
   /** El índice vigente. Siempre devuelve algo (vacío si es el primerísimo arranque). */
@@ -169,6 +183,7 @@ export class GameIndexService {
   private lanzar(force: boolean): Promise<GameIndex> {
     const actual: Promise<GameIndex> = this.doRefresh(force).finally(() => {
       if (this.refreshing === actual) this.refreshing = null;
+      this.marcarListo();
     });
     this.refreshing = actual;
     return actual;
