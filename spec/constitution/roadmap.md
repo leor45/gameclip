@@ -1245,7 +1245,7 @@ pendientes, clip con imagen (0 frames negros, YAVG ≈ 95) y audio sano medido c
 > 14 confirmados y 2 de revisión manual que el owner confirmó. Un trabajo por rama; se prueban juntos
 > en una rama de integración temporal antes de mergear cada uno a `main`.
 
-### 🔒 La API de cuentas escuchaba en toda la red con un secreto público — 🧪 en rama (`fix/api-solo-local`)
+### 🔒 La API de cuentas escuchaba en toda la red con un secreto público — ✅ entregado (`fix/api-solo-local`, 2026-10-08)
 
 `listen(port)` sin host enlazaba todas las interfaces y el JWT se firmaba con `gameclip-dev-secret`
 (la app empaquetada nunca definía otro): desde la LAN se podían falsificar tokens y probar contraseñas

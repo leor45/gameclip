@@ -19,10 +19,10 @@
 - [x] Type-check verde (`npm run typecheck`)
 - [x] Lint verde (`npm run lint`)
 - [x] Tests verdes (`npm run test`)
-- [ ] Comprobación manual: `npm run dev` + `npm run dev:server` → login funciona; `Get-NetTCPConnection -LocalPort 3030` muestra `127.0.0.1`.
+- [x] Comprobación manual: `npm run dev` + `npm run dev:server` → login funciona; `Get-NetTCPConnection -LocalPort 3030` muestra `127.0.0.1`.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
 - [x] `spec/constitution/roadmap.md` actualizado
