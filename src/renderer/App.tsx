@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { isSideMouseButton } from '@shared/hotkeys';
 import type { AppVersionInfo } from '@shared/ipc';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import AuthGate from './auth/AuthGate';
@@ -66,7 +67,21 @@ function Root() {
   return session ? <Shell /> : <AuthGate />;
 }
 
+/**
+ * Botones laterales del ratón: Chromium navega el historial (atrás/adelante) al soltarlos, como un
+ * navegador. Se anula siempre porque pueden ser atajos de GameClip (pulsar «Guardar clip» no debe
+ * cambiar además de pantalla) y la app no se navega así.
+ */
+function bloquearNavegacionRaton(e: MouseEvent): void {
+  if (isSideMouseButton(e.button)) e.preventDefault();
+}
+
 export default function App() {
+  useEffect(() => {
+    window.addEventListener('mouseup', bloquearNavegacionRaton, true);
+    return () => window.removeEventListener('mouseup', bloquearNavegacionRaton, true);
+  }, []);
+
   return (
     <AuthProvider>
       <UpdateProvider>

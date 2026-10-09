@@ -75,4 +75,4 @@ nuevas.
 
 ---
 
-**Estado:** ⏳ pendiente de aprobación
+**Estado:** ✅ aprobado por el owner (2026-10-08)

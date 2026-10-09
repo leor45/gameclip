@@ -11,7 +11,13 @@ import {
   syncExcludedGames,
 } from '@shared/games';
 import type { HotkeyKey } from '@shared/hotkeys';
-import { HOTKEY_ACTIONS, hotkeyCollisions, hotkeySettingsChanged, isHotkeyActive } from '@shared/hotkeys';
+import {
+  HOTKEY_ACTIONS,
+  hotkeyCollisions,
+  hotkeySettingsChanged,
+  isHotkeyActive,
+  isMouseAccelerator,
+} from '@shared/hotkeys';
 import { IpcEvent } from '@shared/ipc';
 import { buildGameNotice } from '@shared/overlay';
 import { screenshotFailureMessage } from '@shared/screenshot';
@@ -28,6 +34,8 @@ import { GameDetector } from './capture/game-detector';
 import { AutoSwitcher } from './capture/auto-switcher';
 import { takeAndRegisterScreenshot } from './capture/screenshot-action';
 import { debeRelanzarPorHdr } from './capture/screenshot-hdr';
+import { GlobalHook } from './capture/global-hook';
+import { MouseHotkeys } from './capture/mouse-hotkeys';
 import { PushToTalk } from './capture/push-to-talk';
 import { SettingsStore } from './capture/settings-store';
 import { ExportManager } from './export/manager';
@@ -92,7 +100,10 @@ if (settingsStore.load().screenshotHdrCompatibility) {
   app.commandLine.appendSwitch('disable-features', 'DirectXCapturer');
   console.log('[app] capturador GDI activado para capturas de pantalla (compatibilidad HDR)');
 }
-const pushToTalk = new PushToTalk();
+// Un solo hook global de teclado/ratón para el push-to-talk y los atajos de ratón.
+const globalHook = new GlobalHook();
+const pushToTalk = new PushToTalk(globalHook);
+const mouseHotkeys = new MouseHotkeys(globalHook);
 
 /**
  * Juegos instalados en el PC (Steam, Epic, …). Se carga del caché al instante y se refresca en
@@ -203,6 +214,13 @@ function createMainWindow(options: { hidden?: boolean } = {}): void {
   });
   win.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Los botones laterales del ratón llegan como APPCOMMAND_BROWSER_BACKWARD/FORWARD y Chromium
+  // navegaría el historial de pantallas como un navegador. Se anulan siempre: pueden ser atajos
+  // (pulsar «Guardar clip» no debe cambiar además de pantalla) y la app no se navega así.
+  win.on('app-command', (event, command) => {
+    if (command === 'browser-backward' || command === 'browser-forward') event.preventDefault();
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -434,10 +452,11 @@ function registerMediaProtocol(): void {
 /**
  * Hotkeys globales de captura, uno por acción del catálogo (`HOTKEY_ACTIONS`). Se re-registran
  * enteros al cambiar los ajustes (globalShortcut no permite editar uno solo). Las acciones inactivas
- * (modo off, capturas o cambio de juego apagados) no registran nada.
+ * (modo off, capturas o cambio de juego apagados) no registran nada. Las teclas van por
+ * `globalShortcut`; los botones laterales del ratón, por el hook global (`MouseHotkeys`).
  */
 function registerHotkeys(manager: CaptureManager): void {
-  globalShortcut.unregisterAll();
+  unregisterHotkeys();
   const s = manager.getSettings();
 
   // La UI ya impide guardar atajos duplicados; si aun así llegan (ajustes editados a mano), la
@@ -472,12 +491,21 @@ function registerHotkeys(manager: CaptureManager): void {
     if (!isHotkeyActive(action, s) || enColision.has(action.key)) continue;
     const accel = s[action.key].trim();
     if (!accel) continue;
+    if (isMouseAccelerator(accel)) {
+      mouseHotkeys.register(accel, acciones[action.key]);
+      continue;
+    }
     try {
       globalShortcut.register(accel, acciones[action.key]);
     } catch {
       // acelerador inválido: la acción sigue disponible desde la UI
     }
   }
+}
+
+function unregisterHotkeys(): void {
+  globalShortcut.unregisterAll();
+  mouseHotkeys.unregisterAll();
 }
 
 /**
@@ -772,8 +800,8 @@ app.on('will-quit', () => {
   // El orden lo decide shutdown.ts: primero se apaga lo que emite (la captura emite un `status`
   // final), después se destruye lo que escucha (overlay y bandeja).
   teardown({
-    unregisterHotkeys: () => globalShortcut.unregisterAll(),
-    pushToTalk,
+    unregisterHotkeys,
+    globalHook,
     clearTimers: () => {
       if (autoSwitchTimer) clearInterval(autoSwitchTimer);
       if (displaysTimer) clearTimeout(displaysTimer);

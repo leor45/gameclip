@@ -208,12 +208,23 @@ describe('Ajustes — Overlay de rendimiento', () => {
     expect(await screen.findByText('Alt+R')).toBeInTheDocument();
   });
 
+  it('el atajo del overlay acepta un botón lateral del ratón con la misma validación', async () => {
+    const user = await irAAvanzado();
+
+    await user.click(screen.getByRole('button', { name: 'Editar atajo…' }));
+    fireEvent.mouseDown(window, { button: 2 });
+    expect(await screen.findByText(/solo sirven los botones laterales/)).toBeInTheDocument();
+
+    fireEvent.mouseDown(window, { button: 4, shiftKey: true });
+    expect(await screen.findByText('Shift+Mouse5')).toBeInTheDocument();
+  });
+
   it('el atajo del overlay aparece también en la sección Atajos', async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('link', { name: 'Ajustes' }));
     await user.click(await screen.findByRole('link', { name: 'Atajos' }));
-    await screen.findByText('Atajos de teclado');
+    await screen.findByText('Atajos de teclado y ratón');
     expect(screen.getByText('Mostrar/ocultar overlay de rendimiento')).toBeInTheDocument();
   });
 

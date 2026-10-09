@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { CaptureSettings } from '@shared/capture';
-import { HOTKEY_ACTIONS, accelFromKeyPress, hotkeyCollisions, isPttReserved } from '@shared/hotkeys';
+import {
+  HOTKEY_ACTIONS,
+  accelFromKeyPress,
+  accelFromMousePress,
+  hotkeyCollisions,
+  isPttReserved,
+} from '@shared/hotkeys';
 import type { PerfMetricKey, PerfOverlayConfig } from '@shared/perf';
 import {
   PAWNIO_DOWNLOAD_URL,
@@ -12,6 +18,7 @@ import {
   positionForPreset,
   presetFor,
 } from '@shared/perf';
+import { RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -84,18 +91,9 @@ export default function AjustesAvanzado() {
 
   // Captura del atajo: misma validación que la sección Atajos — tecla del PTT reservada y sin
   // duplicar un atajo ya asignado a otra acción (grabar, clip, captura, cambio de juego).
-  const alPulsar = useCallback(
-    (e: KeyboardEvent) => {
+  const asignar = useCallback(
+    (accel: string) => {
       if (!capturando || !settings) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.key === 'Escape') {
-        setCapturando(false);
-        setRechazo(null);
-        return;
-      }
-      const accel = accelFromKeyPress(e);
-      if (!accel) return; // solo modificadores: seguimos escuchando
       if (isPttReserved(accel, settings.pttHotkey)) {
         setRechazo(`${accel} está reservada para el push to talk. Elige otra tecla.`);
         return;
@@ -116,11 +114,51 @@ export default function AjustesAvanzado() {
     [capturando, settings, set],
   );
 
+  const alPulsar = useCallback(
+    (e: KeyboardEvent) => {
+      if (!capturando) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        setCapturando(false);
+        setRechazo(null);
+        return;
+      }
+      const accel = accelFromKeyPress(e);
+      if (!accel) return; // solo modificadores: seguimos escuchando
+      asignar(accel);
+    },
+    [capturando, asignar],
+  );
+
+  const alPulsarRaton = useCallback(
+    (e: MouseEvent) => {
+      if (!capturando) return;
+      // El izquierdo sigue siendo para usar la página (p. ej. el botón «Cancelar»).
+      if (e.button === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const accel = accelFromMousePress(e);
+      if (!accel) {
+        setRechazo(RECHAZO_BOTON_RATON);
+        return;
+      }
+      asignar(accel);
+    },
+    [capturando, asignar],
+  );
+
   useEffect(() => {
     if (!capturando) return;
     window.addEventListener('keydown', alPulsar, true);
-    return () => window.removeEventListener('keydown', alPulsar, true);
-  }, [capturando, alPulsar]);
+    window.addEventListener('mousedown', alPulsarRaton, true);
+    window.addEventListener('contextmenu', evitarMenu, true);
+    return () => {
+      window.removeEventListener('keydown', alPulsar, true);
+      window.removeEventListener('mousedown', alPulsarRaton, true);
+      window.removeEventListener('contextmenu', evitarMenu, true);
+    };
+  }, [capturando, alPulsar, alPulsarRaton]);
 
   if (!settings || !perf) return <p className="placeholder">Cargando…</p>;
 

@@ -12,7 +12,8 @@
 
 export interface PartesDelCierre {
   unregisterHotkeys: () => void;
-  pushToTalk: { stop(): void };
+  /** Hook de teclado/ratón del push-to-talk y los atajos de ratón. */
+  globalHook: { stop(): void };
   clearTimers: () => void;
   detector: { stop(): void } | null;
   /** Al apagarse emite un `status` final; sus oyentes tienen que seguir vivos. */
@@ -31,7 +32,7 @@ export function teardown(partes: PartesDelCierre): void {
   const pasos: Array<[string, () => void]> = [
     // Emisores: se callan primero, para que nadie genere eventos durante el cierre.
     ['hotkeys', () => partes.unregisterHotkeys()],
-    ['push-to-talk', () => partes.pushToTalk.stop()],
+    ['hook global', () => partes.globalHook.stop()],
     ['timers', () => partes.clearTimers()],
     ['detector de juegos', () => partes.detector?.stop()],
     ['captura', () => partes.capture?.shutdown()],

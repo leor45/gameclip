@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '../capture';
-import type { KeyPress } from '../hotkeys';
+import type { KeyPress, MousePress } from '../hotkeys';
 import {
   HOTKEY_ACTIONS,
   accelFromKeyPress,
+  accelFromMousePress,
   hotkeyCollisions,
   hotkeySettingsChanged,
   isHotkeyActive,
+  isMouseAccelerator,
   isPttReserved,
+  isSideMouseButton,
   isValidAccelerator,
+  parseMouseAccelerator,
 } from '../hotkeys';
 
 /** Pulsación sin modificadores; los tests activan los que necesiten. */
@@ -139,7 +143,80 @@ describe('isPttReserved', () => {
     expect(isPttReserved('Ctrl+F9', 'F9')).toBe(false);
   });
 
-  it('los botones del ratón del PTT no son aceleradores: nunca reservan nada', () => {
+  it('con el PTT en un botón del ratón, ese botón suelto queda reservado', () => {
+    expect(isPttReserved('Mouse4', 'Mouse4')).toBe(true);
+    expect(isPttReserved('Ctrl+Mouse4', 'Mouse4')).toBe(false);
+    expect(isPttReserved('Mouse5', 'Mouse4')).toBe(false);
     expect(isPttReserved('F9', 'Mouse4')).toBe(false);
+  });
+});
+
+/** Botón del ratón sin modificadores; los tests activan los que necesiten. */
+function click(button: number, partial: Partial<MousePress> = {}): MousePress {
+  return { button, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...partial };
+}
+
+describe('accelFromMousePress', () => {
+  it('los botones laterales del DOM (3 atrás, 4 adelante) son Mouse4 y Mouse5', () => {
+    expect(accelFromMousePress(click(3))).toBe('Mouse4');
+    expect(accelFromMousePress(click(4))).toBe('Mouse5');
+  });
+
+  it('lleva los modificadores en el orden de Electron', () => {
+    expect(accelFromMousePress(click(3, { ctrlKey: true }))).toBe('Ctrl+Mouse4');
+    expect(accelFromMousePress(click(4, { shiftKey: true, altKey: true, ctrlKey: true }))).toBe(
+      'Ctrl+Alt+Shift+Mouse5',
+    );
+  });
+
+  it('izquierdo, central y derecho no son atajos', () => {
+    for (const boton of [0, 1, 2]) {
+      expect(accelFromMousePress(click(boton))).toBeNull();
+      expect(isSideMouseButton(boton)).toBe(false);
+    }
+    expect(isSideMouseButton(3)).toBe(true);
+    expect(isSideMouseButton(4)).toBe(true);
+  });
+});
+
+describe('aceleradores de ratón', () => {
+  it('son válidos, solos o con modificadores', () => {
+    expect(isValidAccelerator('Mouse4')).toBe(true);
+    expect(isValidAccelerator('Ctrl+Shift+Mouse5')).toBe(true);
+    expect(isValidAccelerator('Mouse3')).toBe(false);
+    expect(isValidAccelerator('Ctrl+Ctrl+Mouse4')).toBe(false);
+  });
+
+  it('se despiezan con la numeración de libuiohook (4/5) y modificadores exactos', () => {
+    expect(parseMouseAccelerator('Mouse4')).toEqual({
+      button: 4,
+      ctrl: false,
+      alt: false,
+      shift: false,
+      meta: false,
+    });
+    expect(parseMouseAccelerator('Ctrl+Super+Mouse5')).toEqual({
+      button: 5,
+      ctrl: true,
+      alt: false,
+      shift: false,
+      meta: true,
+    });
+  });
+
+  it('una tecla no es acelerador de ratón (va por globalShortcut)', () => {
+    expect(isMouseAccelerator('Mouse4')).toBe(true);
+    expect(isMouseAccelerator('Alt+Mouse5')).toBe(true);
+    expect(isMouseAccelerator('F8')).toBe(false);
+    expect(isMouseAccelerator('Ctrl+M')).toBe(false);
+    expect(parseMouseAccelerator('F8')).toBeNull();
+    expect(parseMouseAccelerator('Mouse6')).toBeNull();
+  });
+
+  it('dos acciones en el mismo botón chocan', () => {
+    const s = { ...DEFAULT_CAPTURE_SETTINGS, replayHotkey: 'Mouse4', recordingHotkey: 'Mouse4' };
+    expect(hotkeyCollisions(s)).toEqual([['replayHotkey', 'recordingHotkey']]);
+    const distintos = { ...s, recordingHotkey: 'Ctrl+Mouse4' };
+    expect(hotkeyCollisions(distintos)).toEqual([]);
   });
 });

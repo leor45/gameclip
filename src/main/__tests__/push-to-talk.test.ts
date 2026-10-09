@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { GlobalHook } from '../capture/global-hook';
 import { PushToTalk, resolvePttHotkey } from '../capture/push-to-talk';
 
 // Hook falso: emite los eventos de uiohook-napi sin tocar el teclado real.
@@ -38,7 +39,7 @@ describe('PushToTalk', () => {
 
   beforeEach(() => {
     hook = new FakeHook();
-    ptt = new PushToTalk({ uIOhook: hook, UiohookKey: KEY_MAP });
+    ptt = new PushToTalk(new GlobalHook({ uIOhook: hook, UiohookKey: KEY_MAP }));
     held = [];
     ptt.on('held', (h: boolean) => held.push(h));
   });
@@ -85,13 +86,21 @@ describe('PushToTalk', () => {
   });
 
   it('sin módulo nativo queda no disponible y configure no rompe', () => {
-    // Sin override, el require real puede existir en esta máquina; forzamos el fallo
-    // inyectando un módulo nulo a través del constructor no es posible — se simula con
-    // una instancia cuyo require ya falló.
-    const roto = new PushToTalk(undefined);
-    // available dispara el require perezoso: si uiohook-napi está instalado será true;
-    // el contrato que importa es que configure() nunca lance.
+    const roto = new PushToTalk(new GlobalHook(null));
+    expect(roto.available).toBe(false);
     expect(() => roto.configure(true, 'F9')).not.toThrow();
-    expect(() => roto.stop()).not.toThrow();
+  });
+
+  it('comparte el hook: apagar el PTT no lo para si otro consumidor lo necesita', () => {
+    const compartido = new GlobalHook({ uIOhook: hook, UiohookKey: KEY_MAP });
+    const conHook = new PushToTalk(compartido);
+    compartido.setNeeded('mouse-hotkeys', true);
+    conHook.configure(true, 'F9');
+    expect(hook.started).toBe(1); // un solo start para los dos
+
+    conHook.configure(false, 'F9');
+    expect(hook.stopped).toBe(0); // los atajos de ratón siguen necesitándolo
+    compartido.setNeeded('mouse-hotkeys', false);
+    expect(hook.stopped).toBe(1);
   });
 });
