@@ -15,7 +15,7 @@ import {
   type SaveAudioEditResult,
 } from '@shared/tracks';
 import type { ExcludedGame, GameIndex, InstalledGameInfo } from '@shared/games';
-import { normalizeExcludedGames } from '@shared/games';
+import { normalizeExcludedGames, normalizeRescanForce } from '@shared/games';
 import { listAudioApps } from './capture/audio-apps';
 import { isPawnIoInstalled } from './perf-metrics/pawnio';
 import { saveClipFrame } from './capture/frame-capture';
@@ -34,7 +34,7 @@ import type { StorageManager } from './library/storage-manager';
  */
 export interface GamesIpcDeps {
   index: () => GameIndex;
-  rescan: () => Promise<GameIndex>;
+  rescan: (force: boolean) => Promise<GameIndex>;
   suggestName: (executable: string) => Promise<string | null>;
   installed: () => InstalledGameInfo[];
   setExcluded: (list: ExcludedGame[]) => Promise<ExcludedGame[]>;
@@ -144,7 +144,9 @@ export function registerIpcHandlers(
   // para proponer uno al dar de alta un juego a mano.
   if (games) {
     ipcMain.handle(IpcChannel.GamesGetIndex, () => games.index());
-    ipcMain.handle(IpcChannel.GamesRescan, () => games.rescan());
+    ipcMain.handle(IpcChannel.GamesRescan, (_event, options: unknown) =>
+      games.rescan(normalizeRescanForce(options)),
+    );
     ipcMain.handle(IpcChannel.GamesSuggestName, (_event, req: { executable?: unknown }) =>
       typeof req?.executable === 'string' ? games.suggestName(req.executable) : null,
     );

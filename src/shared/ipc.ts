@@ -131,8 +131,11 @@ export interface IpcContract {
   [IpcChannel.CaptureSaveReplay]: { request: void; response: CaptureStatus };
   /** Juegos instalados que la app conoce (`pioneergame` → `ARC Raiders`). */
   [IpcChannel.GamesGetIndex]: { request: void; response: GameIndex };
-  /** Relee los launchers y re-escanea; devuelve el índice nuevo. */
-  [IpcChannel.GamesRescan]: { request: void; response: GameIndex };
+  /**
+   * Relee los launchers y re-escanea aunque la caché coincida, salvo con `force: false` (refresco
+   * normal); devuelve el índice nuevo.
+   */
+  [IpcChannel.GamesRescan]: { request: { force?: boolean }; response: GameIndex };
   /** Nombre propuesto para un ejecutable al darlo de alta a mano; null si no se deduce nada. */
   [IpcChannel.GamesSuggestName]: { request: { executable: string }; response: string | null };
   /** Juegos que devolvieron los launchers (también los excluidos), para la lista «no son juegos». */
@@ -213,8 +216,11 @@ export interface CaptureApi {
 export interface GamesApi {
   /** Juegos instalados que la app encontró en los launchers: `ejecutable → nombre`. */
   getIndex(): Promise<GameIndex>;
-  /** Vuelve a leer los launchers (el owner acaba de instalar un juego). */
-  rescan(): Promise<GameIndex>;
+  /**
+   * Vuelve a leer los launchers (el owner acaba de instalar un juego). Por defecto re-escanea las
+   * carpetas aunque la caché coincida; `force: false` se queda en un refresco normal.
+   */
+  rescan(options?: { force?: boolean }): Promise<GameIndex>;
   /**
    * Nombre que la app propone para un ejecutable al darlo de alta a mano: lo saca del índice, de la
    * lista curada o de los metadatos del propio `.exe`. Null si no logra deducir nada decente.

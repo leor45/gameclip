@@ -665,8 +665,9 @@ app.whenReady().then(async () => {
     () => pushToTalk.available,
     {
       index: () => gamesIndex.current(),
-      // «Volver a escanear» del usuario: re-escanea aunque la caché diga que no cambió nada.
-      rescan: () => refreshGameIndex(true),
+      // «Volver a escanear» fuerza (re-escanea aunque la caché diga que no cambió nada); «Sincronizar»
+      // de «no son juegos» pide un refresco normal.
+      rescan: (force) => refreshGameIndex(force),
       suggestName: (executable) => suggestGameName(executable, gameNames()),
       installed: () => {
         const vistos = new Set<string>();

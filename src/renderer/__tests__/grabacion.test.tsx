@@ -159,6 +159,8 @@ describe('Ajustes — Grabación', () => {
     );
 
     expect(mock().games.rescan).toHaveBeenCalledOnce();
+    // Sin opciones: el main lo trata como forzado (re-escanea aunque la caché coincida).
+    expect(mock().games.rescan).toHaveBeenCalledWith();
     expect(await screen.findByText(/1 juegos reconocidos/)).toBeInTheDocument();
   });
 
@@ -329,6 +331,14 @@ describe('Ajustes — Grabación · No son juegos', () => {
     await user.click(screen.getByRole('button', { name: 'Sincronizar' }));
     expect(mock().games.rescan).toHaveBeenCalled();
     expect(await screen.findByLabelText('Excluir Wallpaper Engine')).toBeChecked();
+  });
+
+  it('«Sincronizar» pide un refresco normal, no el re-escaneo forzado (regresión D1-BUG-1)', async () => {
+    // Para sincronizar la lista basta releer los launchers; forzar re-escaneaba el disco en cada clic.
+    const user = await irAGrabacion();
+    await user.click(screen.getByRole('button', { name: 'Sincronizar' }));
+    expect(mock().games.rescan).toHaveBeenCalledOnce();
+    expect(mock().games.rescan).toHaveBeenCalledWith({ force: false });
   });
 
   it('guardar la sección no toca la lista (solo cambia por su IPC)', async () => {

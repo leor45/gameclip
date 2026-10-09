@@ -48,7 +48,7 @@ const capture: CaptureApi = {
 
 const games: GamesApi = {
   getIndex: () => ipcRenderer.invoke(IpcChannel.GamesGetIndex),
-  rescan: () => ipcRenderer.invoke(IpcChannel.GamesRescan),
+  rescan: (options) => ipcRenderer.invoke(IpcChannel.GamesRescan, options ?? {}),
   suggestName: (executable: string) =>
     ipcRenderer.invoke(IpcChannel.GamesSuggestName, { executable }),
   listInstalled: () => ipcRenderer.invoke(IpcChannel.GamesListInstalled),

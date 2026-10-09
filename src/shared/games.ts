@@ -339,3 +339,13 @@ export function normalizeExcludedGames(value: unknown): ExcludedGame[] {
   }
   return out;
 }
+
+/**
+ * ¿Fuerza el re-escaneo el rescan que pide el renderer (no confiable)? Solo un `force: false` explícito
+ * pide un refresco normal («Sincronizar» de «no son juegos»); cualquier otra cosa —sin opciones
+ * incluido, que es lo que manda «Volver a escanear»— fuerza.
+ */
+export function normalizeRescanForce(options: unknown): boolean {
+  if (typeof options !== 'object' || options === null) return true;
+  return (options as { force?: unknown }).force !== false;
+}

@@ -36,3 +36,34 @@ huella.
 - [ ] `refresh({ force: true })` re-escanea con la huella igual; un forzado durante un refresco en curso
       se aplica.
 - [ ] Suite verde.
+
+## Ampliación (tanda D, D1-BUG-1)
+
+**Problema.** Revisión de la tanda D, D1-BUG-1 (confirmado por el árbitro). Esta rama hizo que el IPC
+`games.rescan` forzara siempre el re-escaneo, pero lo usan dos botones: «Volver a escanear los juegos
+instalados» (Grabación, debe forzar) y «Sincronizar» de «No son juegos», que solo necesita releer los
+launchers para sincronizar la lista curada: forzar convertía cada clic en un escaneo completo del disco.
+Peor: `setExcluded` pide un refresco normal (`refreshGameIndex()`), y si llegaba con un rescan forzado en
+curso, una app recién excluida seguía en el índice —se detectaba como juego y en modo auto arrancaba
+grabaciones— hasta el siguiente refresco o reinicio. Antes de esta rama esa ventana era casi nula
+(acierto de caché); con el forzado dura un escaneo entero.
+
+**Causa raíz.** `GameIndexService.refresh()` sin `force` devolvía el refresco en curso tal cual, pero ese
+`doRefresh` ya había leído los launchers y `this.exclusions(...)` antes del cambio del usuario: lo pedido
+después se resolvía con un resultado calculado antes. Y el `rescan` del IPC no distinguía quién lo pedía.
+
+**Dentro:**
+- `refresh()` agrupa lo pedido durante un refresco en curso en UN refresco en cola que arranca cuando el
+  actual termina (bien o mal), forzado si cualquiera de las peticiones lo era.
+- `rescan(options?: { force?: boolean })` de punta a punta; el main valida la carga del renderer (solo
+  un `force: false` literal desactiva el forzado). «Sincronizar» pide `{ force: false }`; «Volver a
+  escanear» no cambia (fuerza).
+
+**Criterios de aceptación:**
+- [x] Una exclusión guardada durante un rescan forzado queda aplicada al terminar (el índice ya no trae
+      la app).
+- [x] Varias peticiones durante un refresco en curso producen UN solo refresco más; un forzado entre
+      ellas lo vuelve forzado; nunca corren dos `doRefresh` a la vez; un fallo del refresco en curso no
+      rompe el de la cola.
+- [x] «Sincronizar» manda `{ force: false }`; «Volver a escanear» sigue forzando.
+- [x] Suite verde.
