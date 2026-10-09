@@ -9,7 +9,7 @@ import {
   hotkeyCollisions,
   isPttReserved,
 } from '@shared/hotkeys';
-import { RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
+import { ESCUCHANDO, RECHAZO_BOTON_RATON, evitarMenu } from './captura-atajo';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -113,9 +113,15 @@ export default function AjustesAtajos() {
   }
 
   return (
-    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()} bloqueo={bloqueo}>
+    <SeccionForm
+      titulo="Atajos"
+      saving={saving}
+      saved={saved}
+      onGuardar={() => void save()}
+      bloqueo={bloqueo}
+    >
       <fieldset>
-        <legend>Atajos de teclado y ratón</legend>
+        <legend className="gc-label">Atajos de teclado y ratón</legend>
         <p className="settings-hint">
           Pulsa «Editar atajo» y teclea la combinación que quieras, o pulsa un botón lateral del
           ratón (Esc cancela). Funcionan también dentro del juego.
@@ -127,51 +133,58 @@ export default function AjustesAtajos() {
             return (
               <li
                 key={action.key}
-                className={`hotkey-row${chocando ? ' hotkey-row-conflicto' : ''}`}
+                className={`hotkey-row${chocando ? ' is-clash' : ''}${escuchando ? ' is-listening' : ''}`}
               >
                 <div className="hotkey-info">
                   <span className="hotkey-label" id={`hotkey-${action.key}`}>
                     {action.label}
                   </span>
-                  <span className="hotkey-desc">{action.description}</span>
+                  {escuchando ? (
+                    <span className="hotkey-listening" role="status">
+                      {ESCUCHANDO}
+                    </span>
+                  ) : (
+                    <span className="hotkey-desc">{action.description}</span>
+                  )}
                 </div>
-                <div className="hotkey-control">
-                  <span className={`hotkey-key${escuchando ? ' hotkey-key-escuchando' : ''}`}>
-                    {escuchando ? 'Pulsa una combinación…' : settings[action.key]}
-                  </span>
-                  <button
-                    type="button"
-                    aria-describedby={`hotkey-${action.key}`}
-                    onClick={() => {
-                      setRechazo(null);
-                      setCapturando(escuchando ? null : action.key);
-                    }}
-                  >
-                    {escuchando ? 'Cancelar' : 'Editar atajo…'}
-                  </button>
-                </div>
+                <span className="gc-kbd hotkey-kbd">{settings[action.key]}</span>
+                <button
+                  type="button"
+                  className="gc-btn ghost sm"
+                  aria-describedby={`hotkey-${action.key}`}
+                  onClick={() => {
+                    setRechazo(null);
+                    setCapturando(escuchando ? null : action.key);
+                  }}
+                >
+                  {escuchando ? 'Cancelar' : 'Editar atajo…'}
+                </button>
               </li>
             );
           })}
         </ul>
-        {rechazo && <p className="settings-warning">{rechazo}</p>}
+        {rechazo && <p className="settings-warning is-error">{rechazo}</p>}
         <p className="settings-hint">
           La tecla del push to talk ({pttHotkey}) está reservada y no se puede usar como atajo.
-          Mouse4 y Mouse5 son los botones laterales del ratón (atrás y adelante).
-          Se cambia en <Link to="/ajustes/audio">Audio</Link>.
+          Mouse4 y Mouse5 son los botones laterales del ratón (atrás y adelante). Se cambia en{' '}
+          <Link to="/ajustes/audio" className="settings-link">
+            Audio
+          </Link>
+          .
         </p>
-        <div className="hotkey-actions">
-          <button type="button" onClick={restablecer}>
+        <div className="settings-row">
+          <button type="button" className="gc-btn ghost sm" onClick={restablecer}>
             Restablecer atajos por defecto
           </button>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>Botón de captura del mando</legend>
+        <legend className="gc-label">Botón de captura del mando</legend>
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.controllerCaptureEnabled}
             onChange={(e) => set('controllerCaptureEnabled', e.target.checked)}
           />
@@ -179,16 +192,17 @@ export default function AjustesAtajos() {
         </label>
         <p className="settings-hint">
           Guarda un clip con el botón dedicado del mando, igual que «{settings.replayHotkey}»: el
-          botón <strong>Create/Share</strong> del DualSense (PS5) o el botón <strong>Compartir</strong>{' '}
-          del mando de Xbox. Funciona con el mando conectado por USB o por Bluetooth.
+          botón <strong>Create/Share</strong> del DualSense (PS5) o el botón{' '}
+          <strong>Compartir</strong> del mando de Xbox. Funciona con el mando conectado por USB o
+          por Bluetooth.
         </p>
-        <p className="settings-hint">
+        <p className="settings-warning">
           <strong>Si el botón Compartir del mando de Xbox por USB no funciona:</strong> necesita el
-          componente <em>GameInput</em> de Windows. Viene incluido en Windows 11 actualizado; si no lo
-          tienes, instala la app <em>Accesorios de Xbox</em> desde Microsoft Store (trae el runtime de
-          GameInput) y reinicia GameClip. El DualSense y el mando de Xbox por Bluetooth no necesitan
-          nada extra. Nota: si en Windows dejaste el botón Compartir asignado a la Xbox Game Bar,
-          puede que se dispare también su propia captura.
+          componente <em>GameInput</em> de Windows. Viene incluido en Windows 11 actualizado; si no
+          lo tienes, instala la app <em>Accesorios de Xbox</em> desde Microsoft Store (trae el
+          runtime de GameInput) y reinicia GameClip. El DualSense y el mando de Xbox por Bluetooth
+          no necesitan nada extra. Nota: si en Windows dejaste el botón Compartir asignado a la Xbox
+          Game Bar, puede que se dispare también su propia captura.
         </p>
       </fieldset>
     </SeccionForm>

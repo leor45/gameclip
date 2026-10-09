@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   AUDIO_APPS_MAX,
   AUDIO_APPS_TRACK_MAX,
@@ -11,6 +11,8 @@ import {
   type AudioDeviceInfo,
 } from '@shared/capture';
 import { hotkeyReservedByPtt } from '@shared/hotkeys';
+import GameIcon from '../../components/GameIcon';
+import { BotonQuitar } from './BotonQuitar';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
 
@@ -22,11 +24,16 @@ interface FilaAudioProps {
   onVolumen: (value: number) => void;
   /** Deshabilita el checkbox (p. ej. al alcanzar el tope de apps con audio). */
   checkDisabled?: boolean;
-  /** Botón de basurero rojo; ausente en las filas fijas. */
+  /** Botón de quitar; ausente en las filas fijas. */
   onQuitar?: () => void;
+  /**
+   * Icono de la fila. «Audio del juego», «Micrófono» y «Audio del escritorio» llevan iconos fijos
+   * (mando, micrófono, monitor), nunca el del juego detectado; las apps, el de su ejecutable.
+   */
+  icono: ReactNode;
 }
 
-/** Fila de la lista de audio: checkbox a la izquierda, slider y basurero opcional. */
+/** Fila de la mezcla: casilla, icono, nombre, volumen con su %, y quitar opcional. */
 function FilaAudio({
   etiqueta,
   checked,
@@ -35,22 +42,28 @@ function FilaAudio({
   onVolumen,
   checkDisabled,
   onQuitar,
+  icono,
 }: FilaAudioProps) {
   return (
-    <li className="audio-app-row">
-      <label className="settings-check audio-app-name">
+    <li className={checked ? 'settings-mix-row' : 'settings-mix-row is-off'}>
+      <label className="settings-mix-main">
         <input
           type="checkbox"
+          className="gc-check"
           checked={checked}
           disabled={checkDisabled}
           onChange={(e) => onCheck(e.target.checked)}
         />
-        {etiqueta}
+        {icono}
+        <span className="settings-mix-name">{etiqueta}</span>
       </label>
-      <label className="audio-app-volume">
-        Volumen de {etiqueta} ({volumen} %)
+      <label className="settings-mix-volume">
+        <span className="settings-sr">
+          Volumen de {etiqueta} ({volumen} %)
+        </span>
         <input
           type="range"
+          className="gc-range"
           min={0}
           max={100}
           value={volumen}
@@ -58,21 +71,13 @@ function FilaAudio({
           onChange={(e) => onVolumen(Number(e.target.value))}
         />
       </label>
-      {onQuitar && (
-        <button
-          type="button"
-          className="audio-app-trash"
-          aria-label={`Quitar ${etiqueta}`}
-          title={`Quitar ${etiqueta}`}
-          onClick={onQuitar}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M6 1h4l.5 1H14v2H2V2h3.5L6 1zm-2.5 4h9L12 15H4L3.5 5zm3 2v6h1V7h-1zm2.5 0v6h1V7h-1z"
-            />
-          </svg>
-        </button>
+      <span className="settings-mix-val" aria-hidden="true">
+        {volumen} %
+      </span>
+      {onQuitar ? (
+        <BotonQuitar nombre={etiqueta} onClick={onQuitar} />
+      ) : (
+        <span className="settings-remove-slot" aria-hidden="true" />
       )}
     </li>
   );
@@ -160,60 +165,71 @@ export default function AjustesAudio() {
   }
 
   return (
-    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()} bloqueo={bloqueo}>
+    <SeccionForm
+      titulo="Audio"
+      saving={saving}
+      saved={saved}
+      onGuardar={() => void save()}
+      bloqueo={bloqueo}
+    >
       <fieldset>
-        <legend>Micrófono</legend>
-        <label>
-          Dispositivo
-          <select
-            value={settings.micDeviceId}
-            onChange={(e) => set('micDeviceId', e.target.value)}
-            disabled={!settings.micEnabled}
-          >
-            <option value="">Por defecto del sistema</option>
-            {micDesconectado && (
-              <option value={settings.micDeviceId} disabled>
-                Micrófono guardado (no conectado)
-              </option>
-            )}
-            {dispositivos.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <legend className="gc-label">Micrófono</legend>
+        <div className="settings-fields">
+          <label>
+            Dispositivo
+            <select
+              className="gc-field"
+              value={settings.micDeviceId}
+              onChange={(e) => set('micDeviceId', e.target.value)}
+              disabled={!settings.micEnabled}
+            >
+              <option value="">Por defecto del sistema</option>
+              {micDesconectado && (
+                <option value={settings.micDeviceId} disabled>
+                  Micrófono guardado (no conectado)
+                </option>
+              )}
+              {dispositivos.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Tecla de push to talk
+            <select
+              className="gc-field"
+              value={settings.pttHotkey}
+              disabled={!settings.pttEnabled || !pttDisponible}
+              onChange={(e) => set('pttHotkey', e.target.value)}
+            >
+              {PTT_HOTKEY_OPTIONS.map((k) => {
+                const ocupada = hotkeyReservedByPtt(settings, k);
+                return (
+                  <option key={k} value={k} disabled={ocupada !== null}>
+                    {ocupada ? `${k} — atajo de «${ocupada.label}»` : k}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        </div>
         {micDesconectado && (
           <p className="settings-warning" data-testid="aviso-mic-desconectado">
-            El micrófono guardado ya no está conectado: mientras tanto se graba con el predeterminado
-            del sistema. Elige otro dispositivo y guarda para quitar este aviso.
+            El micrófono guardado ya no está conectado: mientras tanto se graba con el
+            predeterminado del sistema. Elige otro dispositivo y guarda para quitar este aviso.
           </p>
         )}
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.pttEnabled}
             disabled={!pttDisponible}
             onChange={(e) => set('pttEnabled', e.target.checked)}
           />
           Push to talk (capturar el micrófono solo con la tecla pulsada)
-        </label>
-        <label>
-          Tecla de push to talk
-          <select
-            value={settings.pttHotkey}
-            disabled={!settings.pttEnabled || !pttDisponible}
-            onChange={(e) => set('pttHotkey', e.target.value)}
-          >
-            {PTT_HOTKEY_OPTIONS.map((k) => {
-              const ocupada = hotkeyReservedByPtt(settings, k);
-              return (
-                <option key={k} value={k} disabled={ocupada !== null}>
-                  {ocupada ? `${k} — atajo de «${ocupada.label}»` : k}
-                </option>
-              );
-            })}
-          </select>
         </label>
         {!pttDisponible && (
           <p className="settings-warning">
@@ -224,6 +240,7 @@ export default function AjustesAudio() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.noiseSuppressionEnabled}
             onChange={(e) => set('noiseSuppressionEnabled', e.target.checked)}
           />
@@ -235,34 +252,39 @@ export default function AjustesAudio() {
       </fieldset>
 
       <fieldset>
-        <legend>Audio a grabar</legend>
+        <legend className="gc-label">Audio a grabar</legend>
         <p className="settings-hint">
           Solo aplica a las capturas de juego. Grabando el escritorio siempre se captura todo el
           audio del PC (sus pistas se eligen en Grabación → Grabación de escritorio).
         </p>
-        <label className="settings-check">
-          <input
-            type="radio"
-            name="audioMode"
-            checked={settings.audioMode === 'desktop'}
-            onChange={() => set('audioMode', 'desktop')}
-          />
-          Todo el escritorio
-        </label>
-        <label className="settings-check">
-          <input
-            type="radio"
-            name="audioMode"
-            checked={settings.audioMode === 'apps'}
-            onChange={() => set('audioMode', 'apps')}
-          />
-          Apps específicas
-        </label>
+        <div className="settings-seg" role="radiogroup" aria-label="Audio a grabar">
+          <label className="settings-seg-option">
+            <input
+              type="radio"
+              className="settings-card-input"
+              name="audioMode"
+              checked={settings.audioMode === 'desktop'}
+              onChange={() => set('audioMode', 'desktop')}
+            />
+            Todo el escritorio
+          </label>
+          <label className="settings-seg-option">
+            <input
+              type="radio"
+              className="settings-card-input"
+              name="audioMode"
+              checked={settings.audioMode === 'apps'}
+              onChange={() => set('audioMode', 'apps')}
+            />
+            Apps específicas
+          </label>
+        </div>
 
         {settings.audioMode === 'desktop' && (
-          <ul className="audio-app-list">
+          <ul className="settings-list">
             <FilaAudio
               etiqueta="Audio del escritorio"
+              icono={<GameIcon fixed="desktop" size="md" />}
               checked
               onCheck={() => undefined}
               volumen={settings.desktopAudioVolume}
@@ -270,6 +292,7 @@ export default function AjustesAudio() {
             />
             <FilaAudio
               etiqueta="Micrófono"
+              icono={<GameIcon fixed="mic" size="md" />}
               checked={settings.micEnabled}
               onCheck={(v) => set('micEnabled', v)}
               volumen={settings.micVolume}
@@ -280,9 +303,10 @@ export default function AjustesAudio() {
 
         {settings.audioMode === 'apps' && (
           <>
-            <ul className="audio-app-list">
+            <ul className="settings-list">
               <FilaAudio
                 etiqueta="Audio del juego"
+                icono={<GameIcon fixed="pad" size="md" />}
                 checked={settings.gameAudioEnabled}
                 onCheck={(v) => set('gameAudioEnabled', v)}
                 volumen={settings.gameAudioVolume}
@@ -290,6 +314,7 @@ export default function AjustesAudio() {
               />
               <FilaAudio
                 etiqueta="Micrófono"
+                icono={<GameIcon fixed="mic" size="md" />}
                 checked={settings.micEnabled}
                 onCheck={(v) => set('micEnabled', v)}
                 volumen={settings.micVolume}
@@ -299,6 +324,7 @@ export default function AjustesAudio() {
                 <FilaAudio
                   key={app.executable}
                   etiqueta={app.executable}
+                  icono={<GameIcon exe={app.executable} size="md" />}
                   checked={app.enabled}
                   checkDisabled={!app.enabled && topeAudioAlcanzado}
                   onCheck={(v) => upsertApp({ ...app, enabled: v })}
@@ -310,6 +336,7 @@ export default function AjustesAudio() {
                 <FilaAudio
                   key={app.executable}
                   etiqueta={app.executable}
+                  icono={<GameIcon exe={app.executable} size="md" />}
                   checked={app.enabled}
                   checkDisabled={!app.enabled && topeAudioAlcanzado}
                   onCheck={(v) => upsertApp({ ...app, enabled: v })}
@@ -320,10 +347,11 @@ export default function AjustesAudio() {
               ))}
             </ul>
 
-            <div className="audio-app-add">
+            <div className="settings-addrow is-one">
               <label>
                 Añadir app
                 <select
+                  className="gc-field"
                   value={appSeleccionada}
                   onChange={(e) => setAppSeleccionada(e.target.value)}
                   disabled={limiteAlcanzado}
@@ -338,6 +366,7 @@ export default function AjustesAudio() {
               </label>
               <button
                 type="button"
+                className="gc-btn"
                 onClick={agregarApp}
                 disabled={!appSeleccionada || limiteAlcanzado}
               >
@@ -347,8 +376,8 @@ export default function AjustesAudio() {
             {limiteAlcanzado && <p className="settings-hint">Máximo {AUDIO_APPS_MAX} apps.</p>}
             {topeAudioAlcanzado && (
               <p className="settings-hint">
-                Máximo {AUDIO_APPS_TRACK_MAX} apps con audio a la vez (una pista por app).
-                Desmarcá una para activar otra.
+                Máximo {AUDIO_APPS_TRACK_MAX} apps con audio a la vez (una pista por app). Desmarcá
+                una para activar otra.
               </p>
             )}
             <p className="settings-hint">
@@ -359,10 +388,11 @@ export default function AjustesAudio() {
       </fieldset>
 
       <fieldset>
-        <legend>Pistas</legend>
+        <legend className="gc-label">Pistas</legend>
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.separateAudioTracks}
             onChange={(e) => set('separateAudioTracks', e.target.checked)}
           />
@@ -375,10 +405,11 @@ export default function AjustesAudio() {
       </fieldset>
 
       <fieldset>
-        <legend>Mando</legend>
+        <legend className="gc-label">Mando</legend>
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.hapticMuteEnabled}
             onChange={(e) => set('hapticMuteEnabled', e.target.checked)}
           />

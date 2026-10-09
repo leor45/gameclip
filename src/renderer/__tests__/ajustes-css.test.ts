@@ -1,0 +1,52 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+// jsdom no calcula layout: las regresiones de Ajustes se fijan sobre su hoja de estilos real
+// (styles/settings.css). Devuelve el cuerpo de la regla que aplica al selector (puede estar agrupado
+// con otros). Sin comentarios: si no, el texto previo a una regla se cuela en su lista de selectores.
+const css = readFileSync(join(__dirname, '..', 'styles', 'settings.css'), 'utf8').replace(
+  /\/\*[\s\S]*?\*\//g,
+  '',
+);
+function rule(selector: string): string {
+  const normalizar = (s: string) => s.trim().replace(/\s+/g, ' ');
+  for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const selectores = m[1].split(',').map(normalizar);
+    if (selectores.includes(normalizar(selector))) return m[2];
+  }
+  throw new Error(`No existe la regla '${selector}' en settings.css`);
+}
+
+describe('Ajustes: el alta de juego no desborda (regresión)', () => {
+  // El bug de fondo: un <fieldset> ignora el ancho del padre (su min-width por defecto es
+  // min-content), así que crece con su contenido (la fila de alta de juego) y desborda el form.
+  // min-width:0 en el fieldset es lo que de verdad lo contiene (medido en Chromium real).
+  it('.settings-form fieldset puede encoger al ancho del form (min-width: 0)', () => {
+    expect(rule('.settings-form fieldset')).toMatch(/min-width:\s*0/);
+  });
+
+  // Y el <select> con opciones larguísimas (ejecutable — título de ventana) encoge en su celda.
+  it('.settings-addrow label puede encoger (min-width: 0)', () => {
+    expect(rule('.settings-addrow label')).toMatch(/min-width:\s*0/);
+  });
+});
+
+describe('Ajustes: pie fijo con scroll propio', () => {
+  it('el contenedor de la app no hace scroll con Ajustes abierto (solo el formulario)', () => {
+    const regla = rule('.app-content:has(> .ajustes)');
+    expect(regla).toMatch(/overflow:\s*hidden/);
+    expect(regla).toMatch(/padding:\s*0/);
+  });
+
+  it('el área de campos hace scroll y puede encoger (min-height: 0)', () => {
+    const regla = rule('.settings-scroll');
+    expect(regla).toMatch(/overflow-y:\s*auto/);
+    expect(regla).toMatch(/min-height:\s*0/);
+    expect(regla).toMatch(/flex:\s*1/);
+  });
+
+  it('el pie no encoge: «Guardar ajustes» queda siempre a la vista', () => {
+    expect(rule('.settings-savebar')).toMatch(/flex:\s*none/);
+  });
+});

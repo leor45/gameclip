@@ -46,52 +46,65 @@ export default function AjustesAlmacenamiento() {
     : 0;
 
   return (
-    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()}>
+    <SeccionForm
+      titulo="Almacenamiento"
+      saving={saving}
+      saved={saved}
+      onGuardar={() => void save()}
+    >
       <fieldset>
-        <legend>Carpeta de clips</legend>
-        <label>
-          Carpeta
-          <input
-            type="text"
-            readOnly
-            value={settings.outputDir}
-            placeholder="Videos\GameClip (por defecto)"
-          />
-        </label>
-        <button type="button" onClick={() => void elegirCarpeta()}>
-          Cambiar…
-        </button>
+        <legend className="gc-label">Carpeta de clips</legend>
+        <div className="settings-addrow is-one">
+          <label>
+            Carpeta
+            <input
+              type="text"
+              className="gc-field settings-path"
+              readOnly
+              value={settings.outputDir}
+              placeholder="Videos\GameClip (por defecto)"
+            />
+          </label>
+          <button type="button" className="gc-btn ghost" onClick={() => void elegirCarpeta()}>
+            Cambiar…
+          </button>
+        </div>
       </fieldset>
 
       <fieldset>
-        <legend>Límite de almacenamiento</legend>
-        <label>
-          Límite
-          <select
-            value={settings.storageLimitGb}
-            onChange={(e) => set('storageLimitGb', Number(e.target.value))}
-          >
-            {LIMITE_OPCIONES_GB.map((gb) => (
-              <option key={gb} value={gb}>
-                {gb === 0 ? 'Sin límite' : `${gb} GB`}
-              </option>
-            ))}
-          </select>
-        </label>
+        <legend className="gc-label">Límite de almacenamiento</legend>
+        <div className="settings-fields">
+          <label>
+            Límite
+            <select
+              className="gc-field"
+              value={settings.storageLimitGb}
+              onChange={(e) => set('storageLimitGb', Number(e.target.value))}
+            >
+              {LIMITE_OPCIONES_GB.map((gb) => (
+                <option key={gb} value={gb}>
+                  {gb === 0 ? 'Sin límite' : `${gb} GB`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.autoDeleteOldest}
             onChange={(e) => set('autoDeleteOldest', e.target.checked)}
           />
           Borrar automáticamente lo más viejo al superar el límite
         </label>
         {settings.autoDeleteOldest && (
-          <p className="settings-hint">Los borrados no se pueden deshacer.</p>
+          <p className="settings-warning is-error">Los borrados no se pueden deshacer.</p>
         )}
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.onlyDeleteRecordings}
             onChange={(e) => set('onlyDeleteRecordings', e.target.checked)}
           />
@@ -100,6 +113,7 @@ export default function AjustesAlmacenamiento() {
         <label className="settings-check">
           <input
             type="checkbox"
+            className="gc-switch"
             checked={settings.useRecycleBin}
             onChange={(e) => set('useRecycleBin', e.target.checked)}
           />
@@ -109,7 +123,7 @@ export default function AjustesAlmacenamiento() {
 
       {stats && total > 0 && (
         <fieldset>
-          <legend>Uso de disco</legend>
+          <legend className="gc-label">Uso de disco</legend>
           <div className="storage-bar" role="img" aria-label="Uso de disco">
             <span
               className="storage-seg storage-seg-clips"

@@ -82,96 +82,108 @@ export default function AjustesCalidad() {
   }
 
   return (
-    <SeccionForm saving={saving} saved={saved} onGuardar={() => void save()}>
+    <SeccionForm titulo="Calidad" saving={saving} saved={saved} onGuardar={() => void save()}>
       <fieldset>
-        <legend>Preset de calidad</legend>
-        <div className="quality-presets">
+        <legend className="gc-label">Preset de calidad</legend>
+        <div className="settings-cards is-four">
           {PRESETS.map((preset) => (
             <button
               key={preset.id}
               type="button"
-              className={activo === preset.id ? 'quality-preset active' : 'quality-preset'}
+              className={activo === preset.id ? 'settings-card active' : 'settings-card'}
+              aria-pressed={activo === preset.id}
               onClick={() => aplicarPreset(preset)}
             >
               <strong>{preset.nombre}</strong>
-              <span>{preset.descripcion}</span>
+              <span className="settings-card-desc">{preset.descripcion}</span>
             </button>
           ))}
           <button
             type="button"
-            className={activo === 'personalizada' ? 'quality-preset active' : 'quality-preset'}
+            className={activo === 'personalizada' ? 'settings-card active' : 'settings-card'}
+            aria-pressed={activo === 'personalizada'}
             disabled
           >
             <strong>Personalizada</strong>
-            <span>Ajusta cada valor manualmente</span>
+            <span className="settings-card-desc">Ajusta cada valor manualmente</span>
           </button>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>Ajustes detallados</legend>
-        <label>
-          Resolución
-          <select
-            value={settings.resolution}
-            onChange={(e) => set('resolution', e.target.value as OutputResolution)}
-          >
-            <option value="native">Nativa del monitor</option>
-            <option value="1080p">1080p</option>
-            <option value="720p">720p</option>
-          </select>
-        </label>
-        <label>
-          FPS
-          <select
-            value={settings.fps}
-            onChange={(e) => set('fps', Number(e.target.value) as CaptureFps)}
-          >
-            {CAPTURE_FPS_VALUES.map((fps) => (
-              <option key={fps} value={fps}>
-                {fps}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Bitrate
-          <select
-            value={settings.bitrateMbps}
-            onChange={(e) => set('bitrateMbps', Number(e.target.value))}
-          >
-            <option value={0}>Automático (por calidad)</option>
-            {BITRATE_OPCIONES_MBPS.map((mbps) => (
-              <option key={mbps} value={mbps}>
-                {mbps} Mbps
-              </option>
-            ))}
-          </select>
-        </label>
-        {settings.bitrateMbps === 0 && (
+        <legend className="gc-label">Ajustes detallados</legend>
+        <div className="settings-fields is-three">
           <label>
-            Calidad
+            Resolución
             <select
-              value={settings.quality}
-              onChange={(e) => set('quality', e.target.value as CaptureSettings['quality'])}
+              className="gc-field"
+              value={settings.resolution}
+              onChange={(e) => set('resolution', e.target.value as OutputResolution)}
             >
-              <option value="high">Alta</option>
-              <option value="higher">Muy alta</option>
-              <option value="lossless">Sin pérdida</option>
+              <option value="native">Nativa del monitor</option>
+              <option value="1080p">1080p</option>
+              <option value="720p">720p</option>
             </select>
           </label>
-        )}
-        <label>
-          Encoder
-          <select value={settings.encoderId} onChange={(e) => set('encoderId', e.target.value)}>
-            <option value="">Automático</option>
-            {encoders.map((enc) => (
-              <option key={enc.id} value={enc.id}>
-                {enc.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label>
+            FPS
+            <select
+              className="gc-field"
+              value={settings.fps}
+              onChange={(e) => set('fps', Number(e.target.value) as CaptureFps)}
+            >
+              {CAPTURE_FPS_VALUES.map((fps) => (
+                <option key={fps} value={fps}>
+                  {fps}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Bitrate
+            <select
+              className="gc-field"
+              value={settings.bitrateMbps}
+              onChange={(e) => set('bitrateMbps', Number(e.target.value))}
+            >
+              <option value={0}>Automático (por calidad)</option>
+              {BITRATE_OPCIONES_MBPS.map((mbps) => (
+                <option key={mbps} value={mbps}>
+                  {mbps} Mbps
+                </option>
+              ))}
+            </select>
+          </label>
+          {settings.bitrateMbps === 0 && (
+            <label>
+              Calidad
+              <select
+                className="gc-field"
+                value={settings.quality}
+                onChange={(e) => set('quality', e.target.value as CaptureSettings['quality'])}
+              >
+                <option value="high">Alta</option>
+                <option value="higher">Muy alta</option>
+                <option value="lossless">Sin pérdida</option>
+              </select>
+            </label>
+          )}
+          <label>
+            Encoder
+            <select
+              className="gc-field"
+              value={settings.encoderId}
+              onChange={(e) => set('encoderId', e.target.value)}
+            >
+              <option value="">Automático</option>
+              {encoders.map((enc) => (
+                <option key={enc.id} value={enc.id}>
+                  {enc.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </fieldset>
     </SeccionForm>
   );
