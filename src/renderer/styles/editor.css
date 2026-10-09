@@ -9,7 +9,7 @@
   line-height: 1;
 }
 
-.editor-page > .editor-title {
+.app-content .editor-page > h1.editor-title {
   margin-bottom: 18px;
 }
 
@@ -377,7 +377,8 @@ a.eav-draft-thumb:hover {
   flex: 0 1 auto;
 }
 
-.eav-topbar-name {
+/* Más específico que `.app-content h1` (styles.css), que si no le pone 24 px y 12 px de margen. */
+.app-content h1.eav-topbar-name {
   margin: 0;
   font-size: 22px;
   min-width: 0;
@@ -768,6 +769,16 @@ a.eav-draft-thumb:hover {
 .waveform-canvas {
   display: block;
   width: 100%;
+  /* Color de la onda por rol (lo lee el canvas con getComputedStyle): resto = gris claro de --dim. */
+  --wave: color-mix(in srgb, var(--dim) 65%, white);
+}
+
+.waveform-canvas[data-tone='game'] {
+  --wave: var(--paper);
+}
+
+.waveform-canvas[data-tone='mic'] {
+  --wave: var(--sello);
 }
 
 /* Deslizador de volumen dentro de la cabecera fija (no ocupa el eje de tiempo). */
