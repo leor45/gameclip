@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BuscadorRutas,
   CADUCIDAD_RUTA_MS,
+  MAX_CLAVES_LOTE,
+  MAX_RECORDADAS,
   REINTENTO_RUTA_MS,
   argsRutasProcesos,
   claveConsultable,
@@ -115,6 +117,51 @@ describe('BuscadorRutas', () => {
       esperar: async () => {},
     });
     expect(await buscador.buscar(['game'])).toEqual(['D:\\A\\game.exe', 'E:\\B\\game.exe']);
+  });
+
+  it('una consulta que lanza en síncrono no deja el buscador bloqueado', async () => {
+    let lanzar = true;
+    const consultar = vi.fn((): Promise<string[]> => {
+      if (lanzar) throw new Error('spawn falló');
+      return Promise.resolve(['D:\\B\\otra.exe']);
+    });
+    const buscador = new BuscadorRutas({ consultar, esperar: async () => {} });
+    expect(await buscador.buscar(['una'])).toEqual([]);
+    lanzar = false;
+    // Otra clave (la primera está frenada por el fallo): se vuelve a consultar de verdad.
+    expect(await buscador.buscar(['otra'])).toEqual(['D:\\B\\otra.exe']);
+    expect(consultar).toHaveBeenCalledTimes(2);
+  });
+
+  it('una espera de ventana que rechaza tampoco bloquea', async () => {
+    const consultar = vi.fn(async () => ['C:\\x.exe']);
+    const buscador = new BuscadorRutas({ consultar, esperar: () => Promise.reject(new Error('x')) });
+    expect(await buscador.buscar(['x'])).toEqual(['C:\\x.exe']);
+  });
+
+  it(`como mucho ${MAX_CLAVES_LOTE} claves por consulta; el resto va en la siguiente`, async () => {
+    const tamaños: number[] = [];
+    const buscador = new BuscadorRutas({
+      consultar: async (claves) => {
+        tamaños.push(claves.length);
+        return [];
+      },
+      esperar: async () => {},
+    });
+    const claves = Array.from({ length: MAX_CLAVES_LOTE + 36 }, (_, i) => `app${i}`);
+    expect(await buscador.buscar(claves)).toEqual([]);
+    expect(tamaños).toEqual([MAX_CLAVES_LOTE, 36]);
+  });
+
+  it('lo recordado tiene tope: pasado MAX_RECORDADAS se olvida lo más antiguo', async () => {
+    const consultar = vi.fn(async () => [] as string[]);
+    const buscador = new BuscadorRutas({ consultar, ahora: () => 0, esperar: async () => {} });
+    await buscador.buscar(Array.from({ length: MAX_RECORDADAS + 1 }, (_, i) => `k${i}`));
+    const llamadas = consultar.mock.calls.length;
+    await buscador.buscar([`k${MAX_RECORDADAS}`]); // reciente: sigue frenada
+    expect(consultar).toHaveBeenCalledTimes(llamadas);
+    await buscador.buscar(['k0']); // la más antigua se olvidó: se vuelve a consultar
+    expect(consultar).toHaveBeenCalledTimes(llamadas + 1);
   });
 
   it('un error de la consulta es vacío, no una excepción', async () => {

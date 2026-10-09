@@ -28,8 +28,8 @@ import { tieneControl } from './elegir';
  * ## Freno
  *
  * Como mucho UNA consulta (un `powershell.exe`) en vuelo a la vez. Las claves que llegan mientras
- * tanto se agrupan en la siguiente, que arranca cuando la actual termina (y tras una ventana breve
- * para juntar las peticiones de una misma pantalla). Una clave sin resultado no se vuelve a consultar
+ * tanto se agrupan en la siguiente (hasta `MAX_CLAVES_LOTE` por consulta), que arranca cuando la
+ * actual termina (y tras una ventana breve para juntar las peticiones de una misma pantalla). Una clave sin resultado no se vuelve a consultar
  * en `REINTENTO_RUTA_MS`, y una ruta encontrada caduca a los `CADUCIDAD_RUTA_MS`: otro proceso con el
  * mismo nombre de exe puede aparecer luego.
  */
@@ -118,10 +118,10 @@ export const CADUCIDAD_RUTA_MS = 5 * 60_000;
 /** Ventana para juntar en una sola consulta las claves que llegan casi a la vez. */
 export const VENTANA_LOTE_MS = 50;
 
-interface Lote {
-  claves: Set<string>;
-  promesa: Promise<void>;
-}
+/** Tope de claves por consulta: van en una variable de entorno y el bloque de entorno tiene límite. */
+export const MAX_CLAVES_LOTE = 64;
+/** Tope de claves recordadas (encontradas y fallidas); al pasarlo se olvida la más antigua. */
+export const MAX_RECORDADAS = 1000;
 
 export interface OpcionesBuscador {
   consultar?: ConsultarRutas;
@@ -129,7 +129,25 @@ export interface OpcionesBuscador {
   esperar?: (ms: number) => Promise<void>;
 }
 
-/** Busca rutas de procesos en ejecución con una sola consulta en vuelo y claves agrupadas. */
+/** Mete en un Map con tope: reinserta al final (más reciente) y descarta lo más antiguo. */
+function ponerConTope<V>(mapa: Map<string, V>, clave: string, valor: V): void {
+  mapa.delete(clave);
+  mapa.set(clave, valor);
+  while (mapa.size > MAX_RECORDADAS) {
+    const masAntigua = mapa.keys().next().value;
+    if (masAntigua === undefined) break;
+    mapa.delete(masAntigua);
+  }
+}
+
+/**
+ * Busca rutas de procesos en ejecución con una sola consulta en vuelo y claves agrupadas.
+ *
+ * Una cola de claves y un único «trabajador»: mientras haya claves en cola, espera la ventana, saca
+ * hasta `MAX_CLAVES_LOTE` y las consulta; las demás esperan al siguiente lote. Cada clave en cola o
+ * en vuelo tiene una espera compartida, así que pedirla dos veces no la consulta dos veces. Nada de
+ * esto rechaza nunca: un fallo de la consulta (síncrono o no) cuenta como «no encontrada».
+ */
 export class BuscadorRutas {
   private readonly consultar: ConsultarRutas;
   private readonly ahora: () => number;
@@ -137,8 +155,11 @@ export class BuscadorRutas {
   /** Rutas encontradas por clave, con su fecha (caducan). */
   private readonly conocidas = new Map<string, { rutas: string[]; en: number }>();
   private readonly fallidas = new Map<string, number>();
-  private enCurso: Lote | null = null;
-  private siguiente: Lote | null = null;
+  /** Claves pendientes de consultar, en orden de llegada. */
+  private readonly cola = new Set<string>();
+  /** Espera de cada clave en cola o en vuelo (se resuelve cuando su consulta termina). */
+  private readonly esperas = new Map<string, { promesa: Promise<void>; resolver: () => void }>();
+  private trabajando = false;
 
   constructor(opciones: OpcionesBuscador = {}) {
     this.consultar = opciones.consultar ?? consultarRutasPowerShell;
@@ -161,14 +182,18 @@ export class BuscadorRutas {
     });
 
     if (pendientes.length > 0) {
-      const esperas: Promise<void>[] = [];
-      const fuera = pendientes.filter((c) => !this.enCurso?.claves.has(c));
-      if (this.enCurso && fuera.length < pendientes.length) esperas.push(this.enCurso.promesa);
-      if (fuera.length > 0) {
-        const lote = this.loteSiguiente();
-        for (const c of fuera) lote.claves.add(c);
-        esperas.push(lote.promesa);
-      }
+      const esperas = pendientes.map((c) => {
+        let espera = this.esperas.get(c);
+        if (!espera) {
+          let resolver: () => void = () => {};
+          const promesa = new Promise<void>((r) => (resolver = r));
+          espera = { promesa, resolver };
+          this.esperas.set(c, espera);
+          this.cola.add(c);
+        }
+        return espera.promesa;
+      });
+      if (!this.trabajando) void this.trabajar();
       await Promise.all(esperas);
     }
 
@@ -179,43 +204,56 @@ export class BuscadorRutas {
     });
   }
 
-  /** El lote que aún no ha arrancado (se crea si no hay). Arranca tras la ventana y tras el en curso. */
-  private loteSiguiente(): Lote {
-    if (this.siguiente) return this.siguiente;
-    const lote: Lote = { claves: new Set(), promesa: Promise.resolve() };
-    lote.promesa = (async () => {
-      await this.esperar(VENTANA_LOTE_MS).catch(() => undefined);
-      // Solo existe un «siguiente», y solo él pasa a «en curso»: al terminar de esperar, el anterior
-      // ya liberó su sitio. Nunca hay dos consultas a la vez.
-      while (this.enCurso) await this.enCurso.promesa;
-      this.siguiente = null;
-      this.enCurso = lote;
-      try {
-        await this.ejecutar([...lote.claves]);
-      } finally {
-        this.enCurso = null;
+  /** El único trabajador: un lote a la vez hasta vaciar la cola. Nunca rechaza ni deja esperas colgadas. */
+  private async trabajar(): Promise<void> {
+    this.trabajando = true;
+    try {
+      while (this.cola.size > 0) {
+        try {
+          await this.esperar(VENTANA_LOTE_MS);
+        } catch {
+          // sin ventana: se consulta ya
+        }
+        const lote = [...this.cola].slice(0, MAX_CLAVES_LOTE);
+        for (const c of lote) this.cola.delete(c);
+        try {
+          await this.ejecutar(lote);
+        } catch {
+          // la consulta falló entera: esas claves cuentan como no encontradas
+          const momento = this.ahora();
+          for (const c of lote) ponerConTope(this.fallidas, c, momento);
+        } finally {
+          for (const c of lote) {
+            this.esperas.get(c)?.resolver();
+            this.esperas.delete(c);
+          }
+        }
       }
-    })();
-    this.siguiente = lote;
-    return lote;
+    } finally {
+      this.trabajando = false;
+    }
   }
 
   private async ejecutar(claves: string[]): Promise<void> {
-    const rutas = await this.consultar(claves).catch(() => [] as string[]);
+    // `Promise.resolve().then`: un `consultar` que lanza en síncrono también acaba en el catch.
+    const rutas = await Promise.resolve()
+      .then(() => this.consultar(claves))
+      .catch(() => [] as string[]);
     const momento = this.ahora();
     const porClave = new Map<string, string[]>();
-    for (const ruta of rutas) {
+    for (const ruta of Array.isArray(rutas) ? rutas : []) {
+      if (typeof ruta !== 'string') continue;
       const clave = exeKey(ruta);
       porClave.set(clave, [...(porClave.get(clave) ?? []), ruta]);
     }
     for (const clave of claves) {
       const encontradas = porClave.get(clave);
       if (encontradas) {
-        this.conocidas.set(clave, { rutas: [...new Set(encontradas)], en: momento });
+        ponerConTope(this.conocidas, clave, { rutas: [...new Set(encontradas)], en: momento });
         this.fallidas.delete(clave);
       } else {
         this.conocidas.delete(clave);
-        this.fallidas.set(clave, momento);
+        ponerConTope(this.fallidas, clave, momento);
       }
     }
   }

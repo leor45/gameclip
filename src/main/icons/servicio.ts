@@ -122,11 +122,31 @@ export class IconService {
   /** Carpeta de cada paquete de la Store (una consulta por familia). */
   private readonly paquetes = new Map<string, Promise<string | null>>();
   private cacheDirLista: Promise<void> | null = null;
+  /** Limpieza de temporales huérfanos al arrancar; `guardar` la espera para no pisarse con ella. */
+  private readonly limpieza: Promise<void>;
 
   constructor(deps: DependenciasIconos) {
     this.deps = deps;
     this.log = deps.log ?? (() => {});
     this.ahora = deps.ahora ?? Date.now;
+    this.limpieza = this.borrarTemporales();
+  }
+
+  /**
+   * Borra los `*.tmp` que dejó una escritura cortada (cierre brusco a mitad de `guardar`). Asíncrono y
+   * best-effort: si la carpeta no existe o algo falla, no pasa nada.
+   */
+  private async borrarTemporales(): Promise<void> {
+    try {
+      const archivos = await readdir(this.deps.cacheDir);
+      await Promise.all(
+        archivos
+          .filter((a) => a.toLowerCase().endsWith('.tmp'))
+          .map((a) => rm(join(this.deps.cacheDir, a), { force: true }).catch(() => undefined)),
+      );
+    } catch {
+      // sin carpeta de caché todavía: nada que limpiar
+    }
   }
 
   /** Icono de un juego por su nombre visible. Entrada del IPC: se valida aquí. */
@@ -269,17 +289,21 @@ export class IconService {
   private async rutaDeExe(clave: string): Promise<RutaResuelta | null> {
     await this.deps.indiceListo();
     const nombre = this.deps.index()[clave];
-    if (nombre) {
-      const instalados = this.deps
-        .installed()
-        .filter((j) => claveNombre(j.name) === claveNombre(nombre));
-      for (const juego of instalados) {
-        const ruta = (await this.exesDe(juego.installDir)).find((r) => exeKey(r) === clave);
-        if (ruta) return { ruta, verificada: true };
-      }
+    const instalados = nombre
+      ? this.deps.installed().filter((j) => claveNombre(j.name) === claveNombre(nombre))
+      : [];
+    for (const juego of instalados) {
+      const ruta = (await this.exesDe(juego.installDir)).find((r) => exeKey(r) === clave);
+      if (ruta) return { ruta, verificada: true };
     }
-    const ruta = (await this.deps.rutaDeProceso([clave]))[0];
-    return ruta ? { ruta, verificada: false } : null;
+    const procesos = await this.deps.rutaDeProceso([clave]);
+    if (instalados.length > 0) {
+      // El exe es de un juego instalado (p. ej. su disco no respondió al recorrerlo): solo vale un
+      // proceso que corra desde su carpeta, nunca otro exe que se llame igual.
+      const propia = procesos.find((r) => instalados.some((j) => dentroDe(r, j.installDir)));
+      return propia ? { ruta: propia, verificada: true } : null;
+    }
+    return procesos[0] ? { ruta: procesos[0], verificada: false } : null;
   }
 
   /** Exes de una carpeta, una vez por sesión. Un recorrido vacío (disco sin montar) no se recuerda. */
@@ -417,6 +441,7 @@ export class IconService {
   private async guardar(archivo: string, png: Buffer): Promise<void> {
     const temporal = `${archivo}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
     try {
+      await this.limpieza;
       this.cacheDirLista ??= mkdir(this.deps.cacheDir, { recursive: true }).then(() => undefined);
       await this.cacheDirLista;
       await writeFile(temporal, png);

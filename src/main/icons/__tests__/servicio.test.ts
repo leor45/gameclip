@@ -230,6 +230,24 @@ describe('IconService — ejecutable suelto → icono', () => {
     expect(deps.rutaDeProceso).not.toHaveBeenCalled();
   });
 
+  it('exe de un juego instalado que no está en su carpeta: solo vale un proceso desde ella', async () => {
+    const ajeno = archivo('Otro/game.exe');
+    const { servicio, deps, estado } = crear({
+      index: { game: 'Juego' },
+      installed: [{ name: 'Juego', installDir: join(raiz, 'SinMontar'), source: 'steam' }],
+      procesos: { game: [ajeno] },
+    });
+    expect(await servicio.forExe('game.exe')).toBeNull();
+    expect(deps.iconoDeArchivo).not.toHaveBeenCalled();
+
+    // Corre desde su carpeta: ese sí.
+    const propio = archivo('SinMontar/game.exe');
+    estado.procesos.game = [ajeno, propio];
+    const otro = crear({ ...estado });
+    expect(await otro.servicio.forExe('game.exe')).toBe(url(PNG));
+    expect(otro.deps.iconoDeArchivo).toHaveBeenCalledWith(propio);
+  });
+
   it('exe inexistente en disco → null', async () => {
     const { servicio, deps } = crear({ procesos: { fantasma: join(raiz, 'no-esta.exe') } });
     expect(await servicio.forExe('fantasma.exe')).toBeNull();
@@ -326,6 +344,17 @@ describe('IconService — extracción y cachés', () => {
     const { servicio, deps } = crear({ procesos: { app: exe } }, { pngValido: () => false });
     expect(await servicio.forExe('app.exe')).toBe(url(PNG));
     expect(deps.iconoDeArchivo).toHaveBeenCalledTimes(1);
+  });
+
+  it('al arrancar borra los temporales huérfanos de un cierre brusco', async () => {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(join(cacheDir, 'abc.png.123.x.tmp'), 'a medias');
+    writeFileSync(join(cacheDir, 'bueno.png'), PNG);
+    const exe = archivo('App/app.exe');
+    await crear({ procesos: { app: exe } }).servicio.forExe('app.exe');
+    const archivos = readdirSync(cacheDir);
+    expect(archivos.filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(archivos).toContain('bueno.png');
   });
 
   it('la escritura en disco es atómica: no quedan temporales', async () => {

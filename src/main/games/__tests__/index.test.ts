@@ -176,15 +176,20 @@ describe('GameIndexService', () => {
   });
 
   it('ready() se resuelve al terminar el primer refresco, aunque falle', async () => {
+    exe('J', 'juego.exe');
     const service = new GameIndexService({
       cachePath: join(raiz, 'cache.json'),
-      sources: [{ id: 'steam', listInstalledGames: () => Promise.reject(new Error('roto')) }],
+      sources: [fuente([{ name: 'Juego', installDir: join(raiz, 'J'), source: 'steam' }])],
+      // Falla DENTRO de doRefresh (las fuentes absorben sus propios errores; esto no).
+      exclusions: () => {
+        throw new Error('exclusiones rotas');
+      },
     });
     let listo = false;
     void service.ready().then(() => (listo = true));
     await Promise.resolve();
     expect(listo).toBe(false);
-    await service.refresh();
+    await expect(service.refresh()).rejects.toThrow('exclusiones rotas');
     await service.ready();
     expect(listo).toBe(true);
   });
