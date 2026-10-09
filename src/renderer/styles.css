@@ -2791,3 +2791,119 @@ body.overlay-body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ── Primitivas de formulario (rediseño) ───────────────────────────────────── */
+
+/* Interruptor: un <input type="checkbox" class="gc-switch"> de siempre (mismo valor, mismo evento,
+   mismo rol para los lectores y los tests), dibujado como interruptor. */
+input[type='checkbox'].gc-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  margin: 0;
+  flex: none;
+  border-radius: 9px;
+  background: var(--rule);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+input[type='checkbox'].gc-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease;
+}
+input[type='checkbox'].gc-switch:checked {
+  background: var(--sello);
+}
+input[type='checkbox'].gc-switch:checked::after {
+  transform: translateX(14px);
+  background: var(--on-sello);
+}
+input[type='checkbox'].gc-switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Casilla (listas con varias marcadas: pistas, métricas, «no son juegos»). */
+input[type='checkbox'].gc-check {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  border: 1.5px solid var(--dim);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='checkbox'].gc-check:checked {
+  background: var(--sello);
+  border-color: var(--sello);
+}
+input[type='checkbox'].gc-check:checked::after {
+  content: '';
+  width: 8px;
+  height: 4px;
+  margin-top: -2px;
+  border-left: 2px solid var(--on-sello);
+  border-bottom: 2px solid var(--on-sello);
+  transform: rotate(-45deg);
+}
+input[type='checkbox'].gc-check:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Campo: input de texto/número, select y textarea. */
+.gc-field {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--page);
+  color: var(--paper);
+  font: 400 14px/1.3 var(--font-ui);
+}
+.gc-field:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+.gc-field:focus-visible {
+  outline: none;
+  border-color: var(--sello);
+  box-shadow: 0 0 0 3px var(--sello-soft);
+}
+.gc-field:disabled {
+  opacity: 0.5;
+}
+select.gc-field option {
+  background: var(--page);
+  color: var(--paper);
+}
+
+/* Deslizador (volúmenes, recorte, opacidad). */
+input[type='range'].gc-range {
+  accent-color: var(--sello);
+  width: 100%;
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input[type='checkbox'].gc-switch,
+  input[type='checkbox'].gc-switch::after {
+    transition: none;
+  }
+}
