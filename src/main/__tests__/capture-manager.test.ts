@@ -508,6 +508,65 @@ describe('CaptureManager (modos de buffer y detección de juegos)', () => {
     });
   });
 
+  describe('guardar ajustes solo reconstruye cuando el pipeline lo necesita (auditoría B: BUG-7, BUG-4)', () => {
+    it('regresión: un ajuste ajeno a la captura (perfOverlayVisible) no reconstruye ni vacía el buffer', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const builds = obs.buildCount;
+      obs.llamadas.length = 0;
+
+      await manager.setSettings({ perfOverlayVisible: false });
+      await manager.setSettings({ replayHotkey: 'F11', storageLimitGb: 50, overlayEnabled: false });
+
+      // Antes: cada guardado → buildPipeline → teardown del replay buffer → últimos segundos perdidos.
+      expect(obs.buildCount).toBe(builds);
+      expect(obs.llamadas).not.toContain('stopReplayBuffer');
+      expect(obs.bufferActivo).toBe(true);
+      expect(manager.getStatus().state).toBe('buffering');
+    });
+
+    it('un ajuste de pipeline (calidad) sigue reconstruyendo', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const builds = obs.buildCount;
+
+      await manager.setSettings({ quality: 'lossless' });
+
+      expect(obs.buildCount).toBe(builds + 1);
+      expect(obs.bufferActivo).toBe(true);
+    });
+
+    it('el modo de grabación solo reconcilia el buffer: off lo para y manual lo arranca, sin reconstruir', async () => {
+      const manager = crear({ bufferMode: 'always' });
+      await manager.initialize();
+      const builds = obs.buildCount;
+
+      await manager.setSettings({ recordingMode: 'off' });
+      expect(obs.bufferActivo).toBe(false);
+      expect(manager.getStatus().state).toBe('idle');
+
+      await manager.setSettings({ recordingMode: 'manual' });
+      expect(obs.bufferActivo).toBe(true);
+      expect(manager.getStatus().state).toBe('buffering');
+      expect(obs.buildCount).toBe(builds);
+    });
+
+    it('regresión: apagar el micrófono durante una grabación mutea en el acto, sin tocar el pipeline', async () => {
+      const manager = crear({ bufferMode: 'always', micEnabled: true });
+      await manager.initialize();
+      await manager.startRecording();
+      expect(obs.micMuted).toBe(false);
+      const builds = obs.buildCount;
+
+      await manager.setSettings({ micEnabled: false });
+
+      // Antes: solo pendingRebuild; el micro seguía grabándose hasta parar.
+      expect(obs.micMuted).toBe(true);
+      expect(obs.buildCount).toBe(builds);
+      expect(manager.getStatus().state).toBe('recording');
+    });
+  });
+
   describe('buffer pausado durante la grabación manual', () => {
     it('grabar a mano para el buffer y al parar vuelve a arrancar de cero', async () => {
       const manager = crear({ bufferMode: 'always' });
