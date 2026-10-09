@@ -406,7 +406,7 @@ export class CaptureManager extends EventEmitter {
     // audio son otras, así que hay que reconstruir. Con una grabación en curso se aplaza:
     // cortar el clip a medias sería peor que grabarlo entero con el perfil anterior.
     let rebuilt = false;
-    if (this.profileChanged()) {
+    if (this.pendingRebuild || this.profileChanged()) {
       if (this.status.state === 'recording') {
         this.pendingRebuild = true;
       } else {
@@ -548,7 +548,26 @@ export class CaptureManager extends EventEmitter {
       this.sessionGameName = this.activeGame?.name ?? null;
       this.setStatus({ state: 'recording', error: null });
     } catch (err) {
-      this.setStatus({ error: err instanceof Error ? err.message : String(err) });
+      // El buffer ya se paró y la grabación no arrancó: sin esto quedaba 'buffering' sin buffer.
+      await this.recoverAfterRecordingError();
+      this.setStatus({
+        state: this.bufferRunning ? 'buffering' : 'idle',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Un fallo de libobs al arrancar o parar la grabación manual deja el buffer como estuviera (parado
+   * por la propia grabación) y una sesión a medias. Se realinea el buffer con lo esperado —y se
+   * aplica el rebuild pendiente si lo hay— sin que un segundo fallo tape el error original.
+   */
+  private async recoverAfterRecordingError(): Promise<void> {
+    this.sessionGameName = undefined;
+    try {
+      await this.settleAfterRecording();
+    } catch {
+      // el estado real lo refleja bufferRunning; el error que ve el usuario es el de la grabación
     }
   }
 
@@ -574,6 +593,9 @@ export class CaptureManager extends EventEmitter {
       });
       this.emitClipSaved(file, 'recording', juego);
     } catch (err) {
+      // La grabación manual pausó el buffer: si parar falla, hay que rearrancarlo igual (antes
+      // quedaba 'idle' con el replay muerto hasta el siguiente cambio de juego o de ajustes).
+      await this.recoverAfterRecordingError();
       this.setStatus({
         state: this.bufferRunning ? 'buffering' : 'idle',
         error: err instanceof Error ? err.message : String(err),
@@ -688,6 +710,11 @@ export class CaptureManager extends EventEmitter {
 
   /** Alinea el buffer con lo esperado (el juego pudo abrirse/cerrarse durante la grabación). */
   private async reconcileBuffer(): Promise<void> {
+    // Sin pipeline (el último build falló) no hay salidas que arrancar ni parar: se reconstruye.
+    if (this.pendingRebuild) {
+      await this.rebuildPipeline();
+      return;
+    }
     if (this.shouldBuffer() && !this.bufferRunning) await this.startBuffer();
     else if (!this.shouldBuffer() && this.bufferRunning) await this.stopBuffer();
   }
@@ -706,11 +733,22 @@ export class CaptureManager extends EventEmitter {
     const outputDir = this.outputDir();
     mkdirSync(outputDir, { recursive: true });
     const screen = this.resolveTargetDisplay(settings);
-    this.obs.buildPipeline(settings, screen, outputDir, this.detectedGameExe);
+    // ANTES de construir: buildPipeline destruye las salidas anteriores en su primera línea, así que
+    // si lanza a mitad ya no hay buffer aunque esta marca dijera que sí.
+    this.bufferRunning = false;
+    try {
+      this.obs.buildPipeline(settings, screen, outputDir, this.detectedGameExe);
+    } catch (err) {
+      // Sin pipeline no se puede ni grabar ni bufferizar: el siguiente evento (ajustes, juego)
+      // vuelve a intentarlo, y mientras tanto el estado dice la verdad.
+      this.pendingRebuild = true;
+      this.builtProfile = null;
+      this.setStatus({ state: 'idle' });
+      throw err;
+    }
     this.builtProfile = captureProfile(settings, this.detectedGameExe !== null);
     this.builtDisplay = screen;
     this.pendingRebuild = false;
-    this.bufferRunning = false; // la reconstrucción destruye las salidas anteriores
     this.applyMicMute(); // el rebuild resetea el mute; re-aplicar el estado del PTT
     if (this.shouldBuffer()) {
       await this.startBuffer();
