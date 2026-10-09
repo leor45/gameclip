@@ -55,11 +55,56 @@
 - Coste: medido +35 a +60 ms por sondeo cada 5 s (unos 500 frente a 470 ms).
 - Cada instantánea de procesos incluye ahora el `cmd.exe` del envoltorio, como ya incluía
   `tasklist.exe`: entra en la línea base desde el primer sondeo y no dispara el re-índice por novedad.
-- Con WMI colgado de forma permanente la detección queda congelada hasta que tasklist responda (antes,
-  igual: todos los sondeos vencían). Si la app se cierra en ese momento, ese único tasklist puede
-  sobrevivirla hasta que WMI responda (el job de libuv no incluye nietos).
+- Un tasklist colgado congela la detección hasta que la válvula (ver «Corrección tras revisión») mata
+  su árbol a los 60 s. Si la app se cierra antes, ese único tasklist puede sobrevivirla hasta que WMI
+  responda (el job de libuv no incluye nietos).
 - PowerShell no escribe BOM con `OutputEncoding = UTF8` (medido); aun así `foreground` ya hacía
   `trim()` y `parseAudioApps` ahora también.
+
+## Corrección tras revisión (B3-1, B3-2)
+
+### Enfoque
+
+1. **B3-1 — `customExeMatches` y `findCustomGame` en `src/shared/games.ts`.** Igualdad exacta o, solo
+   si la clave guardada contiene `?` o U+FFFD, comparación posición a posición por puntos de código:
+   cada comodín exige exactamente UN carácter no ASCII del proceso (`codePointAt > 0x7f`) y el resto
+   tiene que ser igual (las dos claves vienen en minúsculas de `exeKey`). `findRunningGamesMatch` busca
+   primero exacto y solo después entre las entradas corruptas, que precalcula una vez por llamada (casi
+   siempre ninguna: el sondeo no paga nada). `findCustomGame` (exacto primero) sustituye a la
+   comparación exacta en `esReconocido` del detector. El nombre sigue saliendo de la entrada guardada
+   (`resolveGameName(manual.executable)`): el nombre propio del owner o, sin él, el mismo que antes del
+   arreglo, así que los clips van a la misma carpeta. `RunningGameMatch.executable` es el exe real,
+   que es lo que necesita OBS para apuntar la captura y el audio del juego.
+2. **B3-2 — válvula en `createTasklistLister`.** `RunCommand` devuelve el proceso lanzado
+   (`ProcesoLanzado`: `pid`, `exitCode`, `signalCode`; un `ChildProcess` vale) y el matador de árboles
+   es inyectable (`KillTree`, por defecto `taskkill /F /T /PID` con `execFile` y timeout de 10 s: es
+   hijo directo, así que ese timeout sí lo mata). Con el sondeo vivo `valveMs` (60 s): un
+   `console.warn` por intento y `taskkill` sobre el pid del `cmd`; el sondeo sigue «en curso» hasta que
+   el callback del `cmd` llega de verdad. Si el `cmd` sigue sin volver, otro intento `valveMs` después de
+   que responda ese taskkill (nunca dos a la vez). Las opciones pasan a un objeto
+   (`{ run, killTree, timeoutMs, valveMs }`).
+
+### Decisiones
+
+- **Comodín solo con `?`/U+FFFD:** son imposibles en un exe real, así que una entrada sin ellos nunca se
+  compara de forma aproximada (`pokemon.exe` no casa con `pokémon.exe`). Las letras que el «best fit»
+  pasaba a ASCII quedan fuera: no se pueden distinguir de una letra ASCII legítima.
+- **Sin reescribir los ajustes:** la entrada se deja como la guardó el owner; el comparador la entiende.
+- **Estado por sondeo (`terminado`) e idempotente:** un callback tardío de un sondeo ya liberado no
+  puede liberar al siguiente (si no, habría dos tasklist a la vez).
+- **No matar por pid un `cmd` que ya salió:** Windows no reutiliza un pid mientras haya un handle
+  abierto, y libuv lo mantiene hasta procesar la salida; pasada esa salida el pid podría ser de otro
+  proceso. Si el `cmd` ya salió pero algo ajeno retiene su salida, la válvula avisa y libera el sondeo
+  en vez de matar.
+- **El reintento cuenta desde que responde el taskkill**, no desde que se lanzó: así nunca hay dos a la
+  vez aunque uno tarde.
+
+### Riesgos
+
+- Con WMI colgado del todo, taskkill (que también usa WMI) tampoco puede: un taskkill cada ~70 s,
+  cada uno muerto por su timeout de 10 s; nada se acumula y la detección vuelve cuando WMI responde.
+- Si se vuelve a añadir el juego desde el selector, conviven la entrada corrupta y la buena; gana la
+  exacta.
 
 ---
 

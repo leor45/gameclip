@@ -6,6 +6,7 @@ import {
   createTasklistLister,
   parseTasklistCsv,
   tasklistCommand,
+  type KillTree,
   type RunCommand,
 } from '../capture/game-detector';
 
@@ -232,6 +233,19 @@ describe('GameDetector — re-índice por novedad (unknown-executable)', () => {
     detector.stop();
   });
 
+  it('un juego manual guardado con el nombre corrupto (antes de 0.9.8) se detecta y no pide re-índice (regresión B3-1)', async () => {
+    const R = String.fromCharCode(0xfffd);
+    const { detector, contar } = crear([['explorer.exe'], ['explorer.exe', 'pokémonñゲ.exe']], {
+      customGames: [{ executable: `pok${R}mon${R}?.exe`, name: 'Pokémon' }],
+    });
+    detector.start();
+    await avanzar(0);
+    await avanzar(1000);
+    expect(detector.running).toEqual([{ name: 'Pokémon', executable: 'pokémonñゲ.exe' }]);
+    expect(contar()).toBe(0);
+    detector.stop();
+  });
+
   it('un desconocido que ya disparó no vuelve a disparar mientras siga corriendo', async () => {
     const { detector, contar } = crear([
       ['explorer.exe'],
@@ -335,6 +349,38 @@ describe('sondeo de procesos con tasklist (regresión D4-BUG-3: ejecutables con 
   );
 });
 
+/** Proceso falso que devuelve el runner: el test decide si ya terminó (exitCode). */
+interface ProcesoFalso {
+  pid: number;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
+}
+
+/** Runner falso: guarda cada llamada para terminarla cuando el test quiera. */
+function runnerFalso() {
+  const llamadas: {
+    file: string;
+    args: string[];
+    done: (err: Error | null, stdout: string) => void;
+    proceso: ProcesoFalso;
+  }[] = [];
+  const run: RunCommand = (file, args, done) => {
+    const proceso: ProcesoFalso = { pid: 4000 + llamadas.length, exitCode: null, signalCode: null };
+    llamadas.push({ file, args, done, proceso });
+    return proceso;
+  };
+  return { run, llamadas };
+}
+
+/** Matador de árboles falso: guarda cada intento para resolverlo cuando el test quiera. */
+function killerFalso() {
+  const kills: { pid: number; done: (err: Error | null) => void }[] = [];
+  const killTree: KillTree = (pid, done) => {
+    kills.push({ pid, done });
+  };
+  return { killTree, kills };
+}
+
 describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -343,22 +389,9 @@ describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
     vi.useRealTimers();
   });
 
-  /** Runner falso: guarda cada llamada para terminarla cuando el test quiera. */
-  function runnerFalso() {
-    const llamadas: {
-      file: string;
-      args: string[];
-      done: (err: Error | null, stdout: string) => void;
-    }[] = [];
-    const run: RunCommand = (file, args, done) => {
-      llamadas.push({ file, args, done });
-    };
-    return { run, llamadas };
-  }
-
   it('lanza el comando de tasklistCommand y parsea su salida', async () => {
     const { run, llamadas } = runnerFalso();
-    const listar = createTasklistLister(run, 10000);
+    const listar = createTasklistLister({ run, timeoutMs: 10000 });
     const p = listar();
     expect(llamadas).toHaveLength(1);
     expect({ file: llamadas[0].file, args: llamadas[0].args }).toEqual(tasklistCommand());
@@ -368,7 +401,7 @@ describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
 
   it('un error del comando rechaza y el siguiente sondeo vuelve a lanzarlo', async () => {
     const { run, llamadas } = runnerFalso();
-    const listar = createTasklistLister(run, 10000);
+    const listar = createTasklistLister({ run, timeoutMs: 10000 });
     const p = listar();
     llamadas[0].done(new Error('exit 1'), '');
     await expect(p).rejects.toThrow('exit 1');
@@ -380,7 +413,7 @@ describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
     // Matar el cmd al vencer el timeout dejaba a tasklist (su hijo) vivo; con WMI colgado, cada sondeo
     // sumaba uno. Ahora el sondeo falla igual a los 10 s, pero el siguiente no lanza otro proceso.
     const { run, llamadas } = runnerFalso();
-    const listar = createTasklistLister(run, 10000);
+    const listar = createTasklistLister({ run, timeoutMs: 10000 });
     const p1 = listar();
     const r1 = expect(p1).rejects.toThrow('sin respuesta en 10000 ms');
     await vi.advanceTimersByTimeAsync(10000);
@@ -400,7 +433,7 @@ describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
 
   it('una respuesta a tiempo cancela el timeout (sin rechazo tardío)', async () => {
     const { run, llamadas } = runnerFalso();
-    const listar = createTasklistLister(run, 10000);
+    const listar = createTasklistLister({ run, timeoutMs: 10000 });
     const p = listar();
     llamadas[0].done(null, '"a.exe","1"\r\n');
     await expect(p).resolves.toEqual(['a.exe']);
@@ -409,13 +442,130 @@ describe('createTasklistLister (timeout sin dejar tasklist huérfanos)', () => {
 
   it('si lanzar el comando falla en síncrono, rechaza y no se queda «en curso» para siempre', async () => {
     let intentos = 0;
-    const listar = createTasklistLister(() => {
-      intentos++;
-      throw new Error('spawn EINVAL');
-    }, 10000);
+    const { killTree, kills } = killerFalso();
+    const listar = createTasklistLister({
+      run: () => {
+        intentos++;
+        throw new Error('spawn EINVAL');
+      },
+      killTree,
+      timeoutMs: 10000,
+    });
     await expect(listar()).rejects.toThrow('spawn EINVAL');
     await expect(listar()).rejects.toThrow('spawn EINVAL');
     expect(intentos).toBe(2);
+    expect(vi.getTimerCount()).toBe(0); // ni timeout ni válvula colgando
+    expect(kills).toHaveLength(0);
+  });
+});
+
+describe('createTasklistLister — válvula de seguridad (regresión B3-2: tasklist colgado para siempre)', () => {
+  // Sin válvula, un tasklist que no vuelve nunca congelaba la detección hasta reiniciar: con un juego en
+  // marcha `running` no se vaciaba y la grabación de sesión automática seguía llenando el disco.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  function montar() {
+    const { run, llamadas } = runnerFalso();
+    const { killTree, kills } = killerFalso();
+    const listar = createTasklistLister({ run, killTree, timeoutMs: 10000, valveMs: 60000 });
+    return { listar, llamadas, kills };
+  }
+
+  it('a los 60 s con el sondeo vivo mata el árbol del cmd por su pid (un aviso por intento)', async () => {
+    const { listar, llamadas, kills } = montar();
+    void listar().catch(() => {});
+    await vi.advanceTimersByTimeAsync(59999);
+    expect(kills).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(kills.map((k) => k.pid)).toEqual([llamadas[0].proceso.pid]);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('mientras el árbol no muera no hay segundo sondeo; cuando el cmd vuelve, se sondea de nuevo', async () => {
+    const { listar, llamadas, kills } = montar();
+    void listar().catch(() => {});
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(kills).toHaveLength(1);
+
+    const enMedio = listar();
+    expect(llamadas).toHaveLength(1);
+    await expect(enMedio).rejects.toThrow('sigue en curso');
+
+    // taskkill mata el árbol: responde taskkill y el cmd sale con error.
+    kills[0].done(null);
+    llamadas[0].done(new Error('cmd terminado por taskkill'), '');
+    const p = listar();
+    expect(llamadas).toHaveLength(2);
+    llamadas[1].done(null, '"cs2.exe","1"\r\n');
+    await expect(p).resolves.toEqual(['cs2.exe']);
+
+    await vi.advanceTimersByTimeAsync(180000);
+    expect(kills).toHaveLength(1); // ni el sondeo terminado ni el nuevo vuelven a disparar la válvula
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('si taskkill falla (WMI colgado), reintenta 60 s después sin lanzar nada más entretanto', async () => {
+    const { listar, llamadas, kills } = montar();
+    void listar().catch(() => {});
+    await vi.advanceTimersByTimeAsync(60000);
+    kills[0].done(new Error('taskkill: sin respuesta'));
+
+    await vi.advanceTimersByTimeAsync(59999);
+    expect(kills).toHaveLength(1);
+    const enMedio = listar();
+    expect(llamadas).toHaveLength(1);
+    await expect(enMedio).rejects.toThrow('sigue en curso');
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(kills.map((k) => k.pid)).toEqual([llamadas[0].proceso.pid, llamadas[0].proceso.pid]);
+    expect(console.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('nunca hay dos taskkill a la vez: el reintento cuenta desde que responde el anterior', async () => {
+    const { listar, kills } = montar();
+    void listar().catch(() => {});
+    await vi.advanceTimersByTimeAsync(60000);
+    await vi.advanceTimersByTimeAsync(300000); // el primer taskkill no ha respondido
+    expect(kills).toHaveLength(1);
+    kills[0].done(new Error('taskkill: sin respuesta'));
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(kills).toHaveLength(2);
+  });
+
+  it('un sondeo que responde antes de los 60 s no arma nada', async () => {
+    const { listar, llamadas, kills } = montar();
+    const p = listar();
+    await vi.advanceTimersByTimeAsync(5000);
+    llamadas[0].done(null, '"a.exe","1"\r\n');
+    await expect(p).resolves.toEqual(['a.exe']);
+    await vi.advanceTimersByTimeAsync(180000);
+    expect(kills).toHaveLength(0);
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('si el cmd ya salió pero su salida sigue abierta, no mata por pid (podría estar reusado) y libera', async () => {
+    const { listar, llamadas, kills } = montar();
+    void listar().catch(() => {});
+    llamadas[0].proceso.exitCode = 1; // p. ej. lo cerró otro proceso; algo retiene la tubería
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(kills).toHaveLength(0);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+
+    const p2 = listar();
+    expect(llamadas).toHaveLength(2);
+    // El callback tardío del primero no puede liberar al segundo, que sigue vivo.
+    llamadas[0].done(null, '"tarde.exe","1"\r\n');
+    const p3 = listar();
+    expect(llamadas).toHaveLength(2);
+    await expect(p3).rejects.toThrow('sigue en curso');
+    llamadas[1].done(null, '"cs2.exe","1"\r\n');
+    await expect(p2).resolves.toEqual(['cs2.exe']);
   });
 });

@@ -5,6 +5,7 @@ import {
   KNOWN_GAME_PROCESSES,
   UNKNOWN_EXE_REFRESH_COOLDOWN_MS,
   exeKey,
+  findCustomGame,
   findRunningGamesMatch,
 } from '@shared/games';
 import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
@@ -164,7 +165,7 @@ export class GameDetector extends EventEmitter {
     return (
       key in this.index ||
       key in KNOWN_GAME_PROCESSES ||
-      this.customGames.some((g) => exeKey(g.executable) === key)
+      findCustomGame(this.customGames, key) !== undefined
     );
   }
 }
@@ -192,21 +193,52 @@ export function parseTasklistCsv(stdout: string): string[] {
     .filter(Boolean);
 }
 
-/** Corre un comando y entrega su stdout; inyectable para tests. */
+/** Lo que la válvula necesita del proceso lanzado: su pid y si ya terminó (un `ChildProcess` vale). */
+export interface ProcesoLanzado {
+  readonly pid?: number;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+}
+
+/** Corre un comando, entrega su stdout y devuelve el proceso lanzado; inyectable para tests. */
 export type RunCommand = (
   file: string,
   args: string[],
   done: (err: Error | null, stdout: string) => void,
-) => void;
+) => ProcesoLanzado;
 
-const execFileUtf8: RunCommand = (file, args, done) => {
+/** Mata el árbol de procesos de `pid`; inyectable para tests. */
+export type KillTree = (pid: number, done: (err: Error | null) => void) => void;
+
+const execFileUtf8: RunCommand = (file, args, done) =>
   execFile(
     file,
     args,
     { windowsHide: true, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' },
     (err, stdout) => done(err, stdout),
   );
+
+/**
+ * `taskkill /F /T` sobre el `cmd`: se lleva también al tasklist (su hijo) y a su conhost. taskkill es
+ * hijo directo, así que su propio timeout sí lo mata a él si también se cuelga (usa WMI).
+ */
+const taskkillTree: KillTree = (pid, done) => {
+  execFile(
+    'taskkill',
+    ['/F', '/T', '/PID', String(pid)],
+    { windowsHide: true, timeout: 10000 },
+    (err) => done(err),
+  );
 };
+
+export interface TasklistListerOptions {
+  run?: RunCommand;
+  killTree?: KillTree;
+  /** El sondeo falla pasado este tiempo sin respuesta (el detector conserva su estado). */
+  timeoutMs?: number;
+  /** Válvula: con el sondeo vivo tanto tiempo, se mata el árbol del `cmd` (y se reintenta). */
+  valveMs?: number;
+}
 
 /**
  * Listador de nombres de proceso vía tasklist (más liviano que arrancar PowerShell cada sondeo).
@@ -216,29 +248,72 @@ const execFileUtf8: RunCommand = (file, args, done) => {
  * cuelga, cada sondeo dejaría un tasklist más. En su lugar, mientras el anterior siga vivo los sondeos
  * fallan sin lanzar otro (nunca hay más de uno a la vez) y el detector conserva su estado, igual que
  * ante un timeout.
+ *
+ * Válvula: si el sondeo sigue vivo a los `valveMs`, se mata el árbol del `cmd` (`taskkill /F /T`), y
+ * el sondeo sigue «en curso» hasta que el `cmd` vuelve de verdad. Si taskkill falla o se cuelga (WMI
+ * colgado del todo), se reintenta `valveMs` después de que responda. Sin ella, un tasklist que no
+ * volviera nunca congelaba la detección hasta reiniciar (con un juego en marcha, la grabación de
+ * sesión no paraba).
  */
-export function createTasklistLister(
-  run: RunCommand = execFileUtf8,
-  timeoutMs = 10000,
-): () => Promise<string[]> {
+export function createTasklistLister(options: TasklistListerOptions = {}): () => Promise<string[]> {
+  const run = options.run ?? execFileUtf8;
+  const killTree = options.killTree ?? taskkillTree;
+  const timeoutMs = options.timeoutMs ?? 10000;
+  const valveMs = options.valveMs ?? 60000;
   let enCurso = false;
   return () => {
     if (enCurso) return Promise.reject(new Error('tasklist: el sondeo anterior sigue en curso'));
     const { file, args } = tasklistCommand();
     return new Promise<string[]>((resolve, reject) => {
       enCurso = true;
+      const inicio = Date.now();
+      // Estado de ESTE sondeo: un callback tardío de uno ya liberado no puede liberar al siguiente.
+      let terminado = false;
+      let valvula: ReturnType<typeof setTimeout> | undefined;
       const timer = setTimeout(
         () => reject(new Error(`tasklist: sin respuesta en ${timeoutMs} ms`)),
         timeoutMs,
       );
       const terminar = (err: Error | null, stdout: string): void => {
+        if (terminado) return;
+        terminado = true;
         clearTimeout(timer);
+        clearTimeout(valvula);
         enCurso = false;
         if (err) reject(err);
         else resolve(parseTasklistCsv(stdout));
       };
+
+      const armarValvula = (proceso: ProcesoLanzado, intento: number, previo: string): void => {
+        valvula = setTimeout(() => {
+          if (terminado) return;
+          const segundos = Math.round((Date.now() - inicio) / 1000);
+          const pid = proceso.pid;
+          if (pid === undefined || proceso.exitCode !== null || proceso.signalCode !== null) {
+            // El cmd ya salió (su pid podría ser ya de otro proceso): no hay árbol que matar. Algo
+            // ajeno retiene su salida; se libera el sondeo para que la detección no quede congelada.
+            console.warn(
+              `[games] tasklist lleva ${segundos} s sin cerrar y su cmd ya salió: se libera`,
+            );
+            terminar(new Error('tasklist: el cmd salió sin cerrar su salida'), '');
+            return;
+          }
+          console.warn(
+            `[games] tasklist lleva ${segundos} s sin responder: se mata el árbol del cmd ` +
+              `(pid ${pid}, intento ${intento}${previo ? `; el anterior falló: ${previo}` : ''})`,
+          );
+          killTree(pid, (err) => {
+            // Si el cmd sigue sin volver, otro intento `valveMs` después de que responda ESTE
+            // taskkill: nunca dos a la vez y nada se acumula.
+            if (!terminado)
+              armarValvula(proceso, intento + 1, err ? err.message.split(/\r?\n/)[0] : '');
+          });
+        }, valveMs);
+      };
+
       try {
-        run(file, args, terminar);
+        const proceso = run(file, args, terminar);
+        if (!terminado) armarValvula(proceso, 1, '');
       } catch (err) {
         // execFile puede lanzar en síncrono (fallo de spawn no recuperable): sin esto quedaría
         // «en curso» para siempre y la detección no volvería a sondear.
