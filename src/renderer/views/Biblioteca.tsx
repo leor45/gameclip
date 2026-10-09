@@ -84,6 +84,9 @@ export default function Biblioteca() {
   const alCerrar = useRef<{ id: number; foco: boolean } | null>(null);
   // Día en curso: «Hoy»/«Ayer» se recalculan al pasar la medianoche aunque no cambien los clips.
   const [dia, setDia] = useState(hoyLocal);
+  // Filtros con los que se ve la lista (para saber al cerrar el panel si sigue siendo la misma).
+  const claveFiltros = useRef('');
+  const filtrosAlAbrir = useRef('');
 
   // El desplegable mezcla juegos con un criterio que NO es un juego (escritorio = sin juego): el
   // centinela se traduce aquí y al catálogo le cruza `withoutGame`, no la cadena.
@@ -165,12 +168,23 @@ export default function Biblioteca() {
 
   // Cambio de día: un temporizador hasta la próxima medianoche local y, por si el equipo durmió
   // (los temporizadores se paran), una comprobación al volver a la ventana.
+  // El temporizador se reprograma SIEMPRE tras saltar, aunque el día no haya cambiado (reloj
+  // atrasado, cambio de zona horaria): no depende de que `setDia` cambie el estado.
   useEffect(() => {
     const comprobar = () => setDia(hoyLocal());
-    const manana = new Date(dia);
-    manana.setDate(manana.getDate() + 1);
-    const espera = Math.max(1000, manana.getTime() - Date.now() + 1000);
-    const temporizador = setTimeout(comprobar, espera);
+    let temporizador: ReturnType<typeof setTimeout>;
+    const programar = () => {
+      const siguiente = new Date();
+      siguiente.setHours(24, 0, 1, 0); // mañana a las 00:00:01 local
+      temporizador = setTimeout(
+        () => {
+          comprobar();
+          programar();
+        },
+        Math.max(1000, siguiente.getTime() - Date.now()),
+      );
+    };
+    programar();
     window.addEventListener('focus', comprobar);
     document.addEventListener('visibilitychange', comprobar);
     return () => {
@@ -178,7 +192,11 @@ export default function Biblioteca() {
       window.removeEventListener('focus', comprobar);
       document.removeEventListener('visibilitychange', comprobar);
     };
-  }, [dia]);
+  }, []);
+
+  useEffect(() => {
+    claveFiltros.current = JSON.stringify([busqueda, soloFavoritos, juego]);
+  }, [busqueda, soloFavoritos, juego]);
 
   useThumbnailer(clips);
 
@@ -199,8 +217,12 @@ export default function Biblioteca() {
 
   const abrir = useCallback((clip: Clip) => {
     setPreview(null); // con el panel abierto no hay cuadrícula ni vista previa
-    // Al abrir desde la cuadrícula se recuerda su scroll (no al cambiar de clip desde las filas).
-    if (rejilla.current && !rejilla.current.hidden) scrollRejilla.current = rejilla.current.scrollTop;
+    // Al abrir desde la cuadrícula se recuerda su scroll y con qué filtros se veía (no al cambiar
+    // de clip desde las filas).
+    if (rejilla.current && !rejilla.current.hidden) {
+      scrollRejilla.current = rejilla.current.scrollTop;
+      filtrosAlAbrir.current = claveFiltros.current;
+    }
     setAbiertoId(clip.id);
   }, []);
 
@@ -211,18 +233,27 @@ export default function Biblioteca() {
     setAbiertoId(null);
   }, []);
 
-  // De vuelta en la cuadrícula: el scroll donde estaba y el foco en la tarjeta del clip que estaba
-  // abierto (si ya no existe, la primera tarjeta).
+  // De vuelta en la cuadrícula:
+  // - Scroll: si la lista se ve con los mismos filtros que al abrir, donde estaba (y, si entraron
+  //   clips nuevos que la desplazaron, con la tarjeta del clip a la vista). Si cambiaron búsqueda,
+  //   filtro o favoritos, es otra lista: arriba del todo.
+  // - Foco (solo × y Esc): en la tarjeta del clip que estaba abierto; si ya no existe, la primera.
   useLayoutEffect(() => {
     const cierre = alCerrar.current;
     if (abiertoId !== null || !cierre) return;
     alCerrar.current = null;
     const el = rejilla.current;
     if (!el) return;
-    el.scrollTop = scrollRejilla.current;
+    const tarjeta = el.querySelector<HTMLElement>(`[data-clip-id="${cierre.id}"]`);
+    if (filtrosAlAbrir.current === claveFiltros.current) {
+      el.scrollTop = scrollRejilla.current;
+      tarjeta?.scrollIntoView?.({ block: 'nearest' });
+    } else {
+      el.scrollTop = 0;
+    }
     if (!cierre.foco) return;
     const destino =
-      el.querySelector<HTMLElement>(`[data-clip-id="${cierre.id}"] .clip-thumb`) ??
+      tarjeta?.querySelector<HTMLElement>('.clip-thumb') ??
       el.querySelector<HTMLElement>('.clip-thumb');
     if (!destino) return;
     // Foco devuelto por código, no por el usuario: la tarjeta no debe arrancar su vista previa
@@ -303,11 +334,12 @@ export default function Biblioteca() {
   }
 
   const hayFiltros = Boolean(busqueda || soloFavoritos || juego);
-  // «N de M» solo con el total a mano: si los contadores fallan o aún no llegan, «N clips».
+  // «N de M» solo con el total a mano: si los contadores fallan o aún no llegan, «N clips». Mientras
+  // llega el refresco (debounce) el total puede ir por detrás: nunca «6 de 5».
   const contador =
     clips === null
       ? null
-      : hayFiltros && stats
+      : hayFiltros && stats && clips.length <= stats.total
         ? `${clips.length} de ${stats.total}`
         : clipsLabel(clips.length);
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Clip } from '@shared/library';
 import { formatDuration, formatFileSize } from '@shared/library';
 import { clipMediaUrl, thumbMediaUrl } from '../lib/media';
+import { focoPorVueltaDeVentana } from '../lib/windowFocus';
 import ClipActions from './library/ClipActions';
 import ClipEditForm from './library/ClipEditForm';
 import GameLine from './library/GameLine';
@@ -52,9 +53,14 @@ export default function ClipCard({
   useEffect(() => cancelarPreview, []);
 
   // Al abrir el panel la tarjeta se oculta sin recibir blur ni mouseleave: un arranque pendiente
-  // (el clic que abrió el clip también la enfocó) saltaría después y sonaría al volver.
+  // (el clic que abrió el clip también la enfocó) saltaría después y sonaría al volver. Y su
+  // formulario de renombrar se cierra.
   useEffect(() => {
-    if (oculta) cancelarPreview();
+    if (!oculta) return;
+    cancelarPreview();
+    // El clip se puede renombrar desde el panel: un formulario abierto aquí volvería con el título
+    // viejo y «Guardar» lo revertiría.
+    setEditando(false);
   }, [oculta]);
 
   function cancelarPreview() {
@@ -87,6 +93,8 @@ export default function ClipCard({
       onFocus={(e) => {
         // Foco devuelto por la Biblioteca al cerrar el panel: sin vista previa (ver Biblioteca).
         if (e.target instanceof HTMLElement && e.target.dataset.gcSinPreview) return;
+        // Ni el foco que Chromium relanza al volver a la ventana (alt-tab desde el juego).
+        if (focoPorVueltaDeVentana()) return;
         entrar();
       }}
       onBlur={salir}

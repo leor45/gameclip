@@ -105,7 +105,9 @@ export default function GameFilter({ value, onChange, stats }: Props) {
       if (visibles.length === 0) return;
       const paso = e.key === 'ArrowDown' ? 1 : -1;
       setActiva((a) => (Math.min(a, visibles.length - 1) + paso + visibles.length) % visibles.length);
-    } else if (e.key === 'Home' || e.key === 'End') {
+    } else if ((e.key === 'Home' || e.key === 'End') && consulta === '') {
+      // Con texto escrito, Inicio/Fin mueven el cursor del buscador (combobox editable, APG); con
+      // el buscador vacío no hay cursor que mover y saltan a la primera/última opción.
       e.preventDefault();
       e.stopPropagation();
       setActiva(e.key === 'Home' ? 0 : Math.max(0, visibles.length - 1));

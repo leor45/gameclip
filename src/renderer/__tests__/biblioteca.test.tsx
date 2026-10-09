@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Biblioteca from '../views/Biblioteca';
 import { crearClip } from './helpers';
+import { resetWindowFocus } from '../lib/windowFocus';
 import { crearGameclipMock } from './setup';
 
 /** jsdom no trae matchMedia: la preview lo consulta para respetar prefers-reduced-motion. */
@@ -1006,7 +1007,7 @@ describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
     expect(screen.getByRole('button', { name: 'Reproducir Uno' })).toHaveFocus();
   });
 
-  it('con el panel abierto no arranca ninguna vista previa en la cuadrícula oculta', async () => {
+  it('un arranque de vista previa pendiente al abrir el panel no suena al cerrarlo', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     matchMediaFalso(false);
@@ -1014,9 +1015,11 @@ describe('Biblioteca — revisión: panel, contadores, día y teclado', () => {
     render(<Biblioteca />);
     const card = (await screen.findByText('Con preview')).closest('.clip-card') as HTMLElement;
 
-    // El cursor entra (arranque pendiente) y el clic abre el panel antes del retardo.
+    // El cursor entra (arranque pendiente), el clic abre el panel y se cierra antes del retardo:
+    // al ocultarse, la tarjeta no recibe mouseleave y el temporizador seguiría vivo.
     fireEvent.mouseEnter(card);
     fireEvent.click(within(card).getByRole('button', { name: 'Reproducir Con preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
     await act(async () => {
       vi.advanceTimersByTime(500);
     });
@@ -1170,7 +1173,8 @@ describe('Biblioteca — foco devuelto al cerrar el panel', () => {
     render(<Biblioteca />);
     await user.click(await screen.findByRole('button', { name: 'Reproducir Cerrado' }));
 
-    await user.keyboard('{Escape}');
+    // Con «×» el foco estaba en el botón de cerrar: devolverlo a la miniatura SÍ dispara focus.
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }));
     expect(screen.getByRole('button', { name: 'Reproducir Cerrado' })).toHaveFocus();
     await new Promise((r) => setTimeout(r, 300));
 
@@ -1188,5 +1192,171 @@ describe('Biblioteca — foco devuelto al cerrar el panel', () => {
     await new Promise((r) => setTimeout(r, 300));
 
     expect(screen.getByTestId('preview-52')).toBeInTheDocument();
+  });
+});
+
+describe('Biblioteca — segunda revisión', () => {
+  afterEach(() => {
+    resetWindowFocus();
+    vi.useRealTimers();
+  });
+
+  function clips3() {
+    return [
+      crearClip({ id: 61, title: 'Alfa' }),
+      crearClip({ id: 62, title: 'Beta' }),
+      crearClip({ id: 63, title: 'Gamma' }),
+    ];
+  }
+
+  /** scrollTop con memoria en la cuadrícula (jsdom no hace scroll). */
+  function scrollFalso(rejilla: HTMLElement) {
+    const estado = { valor: 0 };
+    Object.defineProperty(rejilla, 'scrollTop', {
+      configurable: true,
+      get: () => estado.valor,
+      set: (v: number) => {
+        estado.valor = v;
+      },
+    });
+    return estado;
+  }
+
+  it('si el clip abierto sale del listado por un filtro, la cuadrícula vuelve arriba (no al scroll viejo)', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockImplementation((q: { search?: string }) =>
+      Promise.resolve(q?.search ? [crearClip({ id: 70, title: 'Otro' })] : clips3()),
+    );
+    render(<Biblioteca />);
+    await screen.findByText('Beta');
+    const rejilla = document.querySelector('.library-body') as HTMLElement;
+    const scroll = scrollFalso(rejilla);
+    scroll.valor = 800;
+
+    await user.click(screen.getByRole('button', { name: 'Reproducir Beta' }));
+    await user.type(screen.getByLabelText('Buscar clips'), 'otro');
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Beta' })).not.toBeInTheDocument(),
+    );
+    expect(scroll.valor).toBe(0);
+  });
+
+  it('cerrar con × y los mismos filtros: scroll de antes y la tarjeta del clip a la vista', async () => {
+    const user = userEvent.setup();
+    const vistas: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      vistas.push(this);
+    };
+    try {
+      mock().library.list.mockResolvedValue(clips3());
+      render(<Biblioteca />);
+      await screen.findByText('Beta');
+      const rejilla = document.querySelector('.library-body') as HTMLElement;
+      const scroll = scrollFalso(rejilla);
+      scroll.valor = 300;
+
+      await user.click(screen.getByRole('button', { name: 'Reproducir Beta' }));
+      scroll.valor = 0;
+      await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+
+      expect(scroll.valor).toBe(300);
+      expect(vistas).toContain(rejilla.querySelector('[data-clip-id="62"]'));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('abrir el panel cierra el formulario de renombrar de la tarjeta (no vuelve con datos viejos)', async () => {
+    const user = userEvent.setup();
+    mock().library.list.mockResolvedValue(clips3());
+    render(<Biblioteca />);
+    const card = (await screen.findByText('Alfa')).closest('.clip-card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Renombrar y etiquetar' }));
+    expect(within(card).getByLabelText('Título')).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Reproducir Alfa' }));
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+
+    expect(within(card).queryByLabelText('Título')).not.toBeInTheDocument();
+  });
+
+  it('volver a la ventana (alt-tab) no arranca la vista previa de la tarjeta enfocada', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    matchMediaFalso(false);
+    mock().library.list.mockResolvedValue([crearClip({ id: 64, title: 'Enfocada' })]);
+    render(<Biblioteca />);
+    const thumb = await screen.findByRole('button', { name: 'Reproducir Enfocada' });
+
+    // La ventana pierde el foco (se va al juego) y al volver Chromium relanza focus en la tarjeta.
+    act(() => {
+      window.dispatchEvent(new FocusEvent('blur'));
+    });
+    act(() => {
+      thumb.focus();
+      window.dispatchEvent(new FocusEvent('focus'));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+
+    expect(screen.queryByTestId('preview-64')).not.toBeInTheDocument();
+  });
+
+  it('Inicio/Fin en el buscador del filtro con texto mueven el cursor, no la opción activa', async () => {
+    const user = userEvent.setup();
+    mock().library.gameStats.mockResolvedValue(STATS);
+    render(<Biblioteca />);
+    await abrirFiltro(user);
+    const buscador = screen.getByRole('combobox', { name: 'Buscar juego' });
+    await user.type(buscador, 'a');
+    const antes = buscador.getAttribute('aria-activedescendant');
+
+    // fireEvent devuelve false si alguien hizo preventDefault.
+    expect(fireEvent.keyDown(buscador, { key: 'End' })).toBe(true);
+    expect(fireEvent.keyDown(buscador, { key: 'Home' })).toBe(true);
+    expect(buscador.getAttribute('aria-activedescendant')).toBe(antes);
+  });
+
+  it('el temporizador de medianoche se reprograma aunque al saltar siga siendo el mismo día', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 9, 8, 23, 59, 0));
+    mock().library.list.mockResolvedValue([
+      crearClip({ title: 'Tarde', createdAt: new Date(2026, 9, 8, 22, 0).toISOString() }),
+    ]);
+    render(<Biblioteca />);
+    expect(await screen.findByRole('region', { name: 'Hoy' })).toBeInTheDocument();
+
+    // El reloj se atrasa una hora: el salto de medianoche llega y sigue siendo el día 8.
+    vi.setSystemTime(new Date(2026, 9, 8, 22, 59, 0));
+    await act(async () => {
+      vi.advanceTimersByTime(65 * 1000);
+    });
+    expect(screen.getByRole('region', { name: 'Hoy' })).toBeInTheDocument();
+
+    // Pasa la medianoche de verdad: el temporizador reprogramado la recoge.
+    await act(async () => {
+      vi.advanceTimersByTime(60 * 60 * 1000);
+    });
+    expect(screen.getByRole('region', { name: 'Ayer' })).toBeInTheDocument();
+  });
+
+  it('con el total aún por detrás (debounce) nunca dice «3 de 2»', async () => {
+    const user = userEvent.setup();
+    mock().library.gameStats.mockResolvedValue({ ...STATS, total: 2 });
+    mock().library.list.mockResolvedValue(clips3());
+    render(<Biblioteca />);
+    await screen.findByText('Alfa');
+    await waitFor(() => expect(mock().library.gameStats).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: '★ Favoritos' }));
+
+    await waitFor(() =>
+      expect(mock().library.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ favoritesOnly: true }),
+      ),
+    );
+    expect(document.querySelector('.library-count')?.textContent).toBe('3 clips');
   });
 });
