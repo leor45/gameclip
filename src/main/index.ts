@@ -795,15 +795,39 @@ app.on('will-quit', () => {
 });
 
 // Smoke test de captura sin UI: GAMECLIP_SELFTEST=recording graba unos segundos y sale.
+// GAMECLIP_SELFTEST_DELAY_MS retrasa el arranque de la grabación respecto al del buffer (para
+// medir la pérdida de arranque en función del GOP) y GAMECLIP_SELFTEST_RECORD_MS fija la duración.
 async function runSelfTest(manager: CaptureManager): Promise<void> {
   if (process.env['GAMECLIP_SELFTEST'] !== 'recording') return;
   const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const retardo = Number(process.env['GAMECLIP_SELFTEST_DELAY_MS'] ?? 0);
+  const duracion = Number(process.env['GAMECLIP_SELFTEST_RECORD_MS'] ?? 4000);
+  // GAMECLIP_SELFTEST_REBUILDS=N reconstruye el pipeline N veces antes de grabar (fugas de
+  // encoders/salidas); GAMECLIP_SELFTEST_CLIP=1 guarda un clip retroactivo durante la grabación y
+  // otro después de pararla (el buffer tiene que seguir vivo en ambos casos).
+  const rebuilds = Number(process.env['GAMECLIP_SELFTEST_REBUILDS'] ?? 0);
+  const conClip = process.env['GAMECLIP_SELFTEST_CLIP'] === '1';
   try {
-    console.log('[selftest] iniciando grabación manual…');
+    for (let i = 0; i < rebuilds; i++) {
+      await manager.setSettings({});
+      console.log(`[selftest] rebuild ${i + 1}/${rebuilds}`);
+    }
+    if (retardo > 0) await espera(retardo);
+    console.log(`[selftest] iniciando grabación manual (retardo ${retardo} ms)…`);
     await manager.startRecording();
-    await espera(4000);
+    await espera(duracion / 2);
+    if (conClip) {
+      const s = await manager.saveReplay();
+      console.log('[selftest] clip durante la grabación:', s.lastClipPath, s.error ?? '');
+    }
+    await espera(duracion / 2);
     const status = await manager.stopRecording();
     console.log('[selftest] resultado:', JSON.stringify(status));
+    if (conClip) {
+      await espera(1000);
+      const s = await manager.saveReplay();
+      console.log('[selftest] clip tras la grabación:', s.lastClipPath, s.error ?? '');
+    }
   } catch (err) {
     console.log('[selftest] error:', err);
   } finally {

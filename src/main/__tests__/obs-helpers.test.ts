@@ -6,6 +6,7 @@ import {
   ObsCapture,
   appTrackName,
   audioTrackLayout,
+  buildOutputs,
   computePipelineSizes,
   effectiveCapture,
   encoderFamily,
@@ -531,6 +532,91 @@ describe('computePipelineSizes', () => {
 });
 
 /**
+ * osn falso para `buildOutputs`: cada factoría devuelve objetos planos que registran qué encoder
+ * se creó con qué nombre y ajustes, y las salidas guardan las propiedades tal cual se asignan.
+ */
+function fakeOsnOutputs() {
+  const encoders: { id: string; name: string; settings: unknown }[] = [];
+  const recordings: Record<string, unknown>[] = [];
+  return {
+    encoders,
+    recordings,
+    osn: {
+      VideoEncoderFactory: {
+        types: () => [] as string[],
+        create: (id: string, name: string, settings?: object) => {
+          const enc = { id, name, settings, release: () => {} };
+          encoders.push(enc);
+          return enc;
+        },
+      },
+      AdvancedRecordingFactory: {
+        create: () => {
+          const rec = {} as Record<string, unknown>;
+          recordings.push(rec);
+          return rec as never;
+        },
+        destroy: () => {},
+      },
+      AdvancedReplayBufferFactory: { create: () => ({}) as never, destroy: () => {} },
+    },
+  };
+}
+
+const OUTPUTS_CFG = {
+  encoderId: 'obs_nvenc_h264_tex',
+  encoderSettings: { rate_control: 'CQP', cqp: 20 },
+  context: { destroy: () => {} } as never,
+  outputDir: 'D:\\clips',
+  mixer: 0b111,
+  replaySeconds: 40,
+  onSignal: () => {},
+};
+
+describe('buildOutputs — encoder de vídeo propio para la grabación', () => {
+  it('regresión: la grabación y el replay buffer NO comparten encoder de vídeo', () => {
+    // El bug: con un solo encoder, la grabación se engancha a mitad de GOP y libobs descarta
+    // frames hasta el siguiente keyframe (keyint 250 → hasta ~4 s perdidos; MP4 de 1 frame si la
+    // grabación dura menos que la espera). Con encoder propio arranca con keyframe.
+    const { osn, encoders } = fakeOsnOutputs();
+    const out = buildOutputs(osn, OUTPUTS_CFG);
+
+    expect(encoders).toHaveLength(2);
+    expect(out.recording.videoEncoder).not.toBe(out.replayBuffer.recording.videoEncoder);
+    expect(out.encoders).toHaveLength(2);
+  });
+
+  it('los dos encoders llevan el mismo id y los mismos ajustes de rate control', () => {
+    const { osn, encoders } = fakeOsnOutputs();
+    buildOutputs(osn, OUTPUTS_CFG);
+
+    for (const enc of encoders) {
+      expect(enc.id).toBe('obs_nvenc_h264_tex');
+      expect(enc.settings).toEqual({ rate_control: 'CQP', cqp: 20 });
+    }
+    // Nombres distintos: libobs renumera si se repiten y el log deja de ser legible.
+    expect(new Set(encoders.map((e) => e.name)).size).toBe(2);
+    expect(encoders.map((e) => e.name)).toContain('gameclip-venc');
+  });
+
+  it('el buffer cuelga de una grabación anfitriona distinta de la real, con el mismo mixer', () => {
+    const { osn, recordings } = fakeOsnOutputs();
+    const out = buildOutputs(osn, OUTPUTS_CFG);
+
+    expect(recordings).toHaveLength(2);
+    expect(out.replayBuffer.recording).toBe(out.bufferHost);
+    expect(out.bufferHost).not.toBe(out.recording);
+    // Las pistas de audio sí son comunes: mismo bitmask en las tres salidas.
+    expect(out.recording.mixer).toBe(0b111);
+    expect(out.bufferHost.mixer).toBe(0b111);
+    expect(out.replayBuffer.mixer).toBe(0b111);
+    expect(out.replayBuffer.usesStream).toBe(false);
+    expect(out.recording.path).toBe('D:\\clips');
+    expect(out.replayBuffer.duration).toBe(40);
+  });
+});
+
+/**
  * Estado interno del teardown. Se llega por cast, igual que con `buildAudioSources` arriba:
  * `teardownPipeline` es privado y montar un `buildPipeline` falso entero (contexto de vídeo,
  * encoders, salidas) sería mucho andamiaje para cubrir el mismo comportamiento.
@@ -542,16 +628,22 @@ type TeardownInternals = {
   inputs: { release(): void }[];
   scene: { release(): void } | null;
   outputChannels: number[];
+  recording: unknown;
+  bufferHost: unknown;
+  replayBuffer: unknown;
+  encoders: { release(): void }[];
   teardownPipeline(): void;
 };
 
 describe('teardownPipeline — fuga de fuentes de vídeo', () => {
   /** osn mínimo: el teardown solo necesita Global.setOutputSource y las factorías de salidas. */
-  function fakeOsnTeardown() {
+  function fakeOsnTeardown(orden: string[] = []) {
     return {
       Global: { setOutputSource: () => {} },
-      AdvancedReplayBufferFactory: { destroy: () => {} },
-      AdvancedRecordingFactory: { destroy: () => {} },
+      AdvancedReplayBufferFactory: { destroy: () => orden.push('replayBuffer.destroy') },
+      AdvancedRecordingFactory: {
+        destroy: (r: { nombre?: string }) => orden.push(`${r.nombre ?? 'recording'}.destroy`),
+      },
     };
   }
 
@@ -596,6 +688,39 @@ describe('teardownPipeline — fuga de fuentes de vídeo', () => {
     capture.teardownPipeline();
 
     expect(capture.sceneItems).toEqual([]);
+  });
+
+  it('destruye las dos grabaciones (real y anfitriona) y suelta los dos encoders, salidas primero', () => {
+    const orden: string[] = [];
+    const capture = new ObsCapture() as unknown as TeardownInternals;
+    capture.osn = fakeOsnTeardown(orden);
+    capture.sceneItems = [];
+    capture.sceneSource = null;
+    capture.inputs = [];
+    capture.scene = null;
+    capture.outputChannels = [];
+    capture.replayBuffer = {};
+    capture.recording = { nombre: 'recording' };
+    capture.bufferHost = { nombre: 'bufferHost' };
+    capture.encoders = [
+      { release: () => orden.push('venc.release') },
+      { release: () => orden.push('venc-rec.release') },
+    ];
+
+    capture.teardownPipeline();
+
+    // Las salidas se destruyen ANTES de soltar los encoders (una salida viva con encoder suelto
+    // es un use-after-free en libobs), y la anfitriona también: si se olvida, el encoder del
+    // buffer sobrevive al rebuild y libobs renumera («gameclip-venc 2»…).
+    expect(orden.slice(0, 3).sort()).toEqual([
+      'bufferHost.destroy',
+      'recording.destroy',
+      'replayBuffer.destroy',
+    ]);
+    expect(orden.slice(3)).toEqual(['venc.release', 'venc-rec.release']);
+    expect(capture.recording).toBeNull();
+    expect(capture.bufferHost).toBeNull();
+    expect(capture.encoders).toEqual([]);
   });
 
   it('un remove() que falla no tumba el teardown (best-effort, como el resto)', () => {

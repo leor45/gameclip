@@ -1312,6 +1312,33 @@ de todos los que iban detrás (se reintentaba siempre el primero); y abrir en el
 aún sin duración catalogada creaba una «edición sin terminar» fantasma, dejaba «Restablecer» en 0 s y
 pisaba los cortes de un borrador restaurado.
 
+## Fix de grabación (2026-10-08) — ⏳ pendiente de release (0.9.6)
+
+### 🐞 La grabación manual empezaba tarde (hasta un MP4 de un solo frame) — ✅ entregado (`fix/grabacion-espera-keyframe`, 2026-10-08)
+
+Era el bug «La grabación manual escribe un solo frame (MP4 de 261 bytes)». **Causa real:** la salida
+`recording` compartía el encoder de vídeo `gameclip-venc` con el replay buffer, que lleva codificando
+desde que arranca; al engancharse a mitad de GOP, libobs descarta los frames hasta el siguiente
+keyframe (`interleave_packets`, OBS 31.1.3) y con el `keyint` por defecto de 250 frames la grabación
+empezaba **entre 0 y 4,2 s tarde** (≈2 s de media). El MP4 de un frame era el caso límite: una
+grabación más corta que la espera. No era «intermitente»: en el selftest de 4 s había una carrera
+con el primer paquete del encoder (~170 ms) que a veces lo evitaba. La hipótesis anterior («libobs
+no admite dos salidas con el mismo encoder») queda descartada: lo admite, y hoy se midió al frame
+(predicción 176/81 frames perdidos → observado 177/83).
+
+**Arreglo:** la grabación tiene su propio encoder (`gameclip-venc-rec`), que arranca con ella y cuyo
+primer frame es keyframe; el buffer cuelga de una `AdvancedRecording` anfitriona que nunca se arranca y
+solo le presta `gameclip-venc` (osn toma el encoder de `replayBuffer.recording`). Pistas de audio sin
+cambios. Coste: con buffer y grabación a la vez se codifica dos veces (poco en NVENC/AMF/QSV; con
+x264 por CPU se duplica mientras se graba). Desaparece también el aviso
+`Cannot apply a new video_t object while the encoder is active`.
+
+**Verificado en máquina real:** pérdida de arranque de 177/83 frames → 16/17 (la misma latencia
+inherente que el propio buffer, ~17 frames); 3 rebuilds seguidos sin encoders renumerados; clip
+retroactivo válido durante la grabación y después; MP4 con vídeo + 3 pistas AAC alineadas y tono de
+prueba en las pistas 1 y 2. El selftest admite `GAMECLIP_SELFTEST_DELAY_MS`, `_RECORD_MS`,
+`_REBUILDS` y `_CLIP=1` para repetir estas medidas.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
@@ -1415,63 +1442,6 @@ un clip negro), así que la señal existe y es barata de leer.
 UI. **Ojo con el alcance:** `effectiveCapture` hoy ata el modo de audio al perfil de vídeo
 (`audioMode: 'desktop'` forzado fuera del perfil `game`); un fallback que arrastre eso degradaría el
 audio por app a «todo el PC junto» sin necesidad. Los dos ejes deben desacoplarse.
-
-### 🐞 La grabación manual escribe un solo frame (MP4 de 261 bytes)
-
-**Síntoma:** `startRecording()` → `stopRecording()` deja un MP4 de ~261 bytes (la cabecera, sin
-vídeo). El log de libobs lo dice sin ambigüedad:
-
-```
-Output 'recording': Total frames output: 1
-Output 'recording': Total drawn frames: 263
-```
-
-**Alcance del daño:** solo la grabación manual (hotkey de start/stop, modo escritorio y el corte de
-sesión del modo `auto`, que usa la misma salida). **El clip retroactivo NO está afectado**: la
-salida `replay-buffer` saca sus ~300 frames y produce clips correctos — por eso la app parece
-funcionar en el uso normal.
-
-**Descartado ya:** *no* lo causa el empaquetado (`feature/build-portable`). Se reprodujo idéntico en
-`npm run dev`, así que es previo. Tampoco es de ffmpeg: el archivo ya sale vacío de libobs, antes
-del remux de nombres de pista.
-
-**Pista fuerte para el spec:** en el mismo log, justo antes, aparece
-
-```
-encoder 'gameclip-venc': Cannot apply a new video_t object while the encoder is active
-```
-
-El encoder de vídeo (`gameclip-venc`) es **uno solo y está compartido** entre la salida
-`replay-buffer` (activa siempre, por `bufferMode: always`) y la salida `recording`. La hipótesis a
-verificar primero es que libobs no admite el mismo encoder alimentando dos salidas activas y la
-segunda se queda sin frames. Mirar `src/main/capture/obs.ts` (creación de las Advanced*Output y el
-encoder) y `src/main/capture/manager.ts` (arranque de la grabación con el buffer ya corriendo).
-
-**Cómo reproducirlo (sin UI):** `GAMECLIP_SELFTEST=recording npm run dev` — graba 4 s y sale; el
-clip queda en la carpeta de salida configurada. Comprobar el tamaño del MP4 y `Total frames output`
-en el log de libobs (`userData/obs-data/node-obs/logs/`).
-
-**Recordatorio del flujo:** es un Fix, así que va con **test de regresión primero** (rojo → verde) y
-la causa raíz en el `spec.md`.
-
-> ⚠️ **NO está obsoleto: es intermitente (2026-07-19).** El 2026-07-18 se anotó aquí que
-> «posiblemente ya estaba arreglado» porque tres selftests seguidos dieron un MP4 válido. Esa
-> lectura era **errónea**, y conviene no repetirla: el bug volvió a aparecer tal cual durante la
-> verificación de `fix/game-capture-ventana-sin-ejecutable` (`Total frames output: 1` frente a
-> `Total drawn frames: 262`, clip de 261 bytes).
->
-> **Frecuencia medida ese día:** 2 fallos en ~10 ejecuciones, y con **severidad variable**: una vez
-> `Total frames output: 1` (MP4 de 261 bytes) y otra `13` de ~240 esperados (MP4 de 0.2 MB con
-> imagen, pero entrecortado). O sea que no es «graba o no graba»: la salida de grabación se queda
-> sin frames en distinta medida cada vez. En las mismas ejecuciones el `replay-buffer` sacó sus
-> ~285 frames sin despeinarse, lo que refuerza que el problema es del encoder compartido entre las
-> dos salidas y no del pipeline. No se encontró disparador: la detección del
-> juego a mitad de la grabación ocurrió en **todas** las ejecuciones, incluidas las 7 correctas, así
-> que no es eso. El aviso `Cannot apply a new video_t object while the encoder is active` también
-> sale en las ejecuciones que funcionan, o sea que por sí solo no distingue.
->
-> **Consecuencia para quien lo coja:** un puñado de ejecuciones verdes **no** demuestra nada aquí.
-> Hace falta una tanda larga y contar la tasa, no repetir hasta que salga bien.
 
 ## Futuro (fuera de alcance por ahora)
 

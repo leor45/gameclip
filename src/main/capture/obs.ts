@@ -588,6 +588,95 @@ export interface ObsPaths {
   appVersion: string;
 }
 
+/** Lo que `buildOutputs` necesita de osn (acotado para poder probarlo con un módulo falso). */
+export type OsnOutputFactories = Pick<
+  OsnModule,
+  'VideoEncoderFactory' | 'AdvancedRecordingFactory' | 'AdvancedReplayBufferFactory'
+>;
+
+export interface OutputsConfig {
+  encoderId: string;
+  encoderSettings: Record<string, string | number>;
+  context: OsnVideoContext;
+  outputDir: string;
+  mixer: number;
+  replaySeconds: number;
+  onSignal: (signal: OutputSignal) => void;
+}
+
+/** Salidas y encoders de vídeo de un pipeline. */
+export interface PipelineOutputs {
+  /** La grabación real: la que arrancan el atajo, el modo escritorio y la sesión del modo auto. */
+  recording: OsnAdvancedRecording;
+  /**
+   * Grabación «anfitriona» del replay buffer: nunca se arranca, solo le presta su encoder. En osn
+   * el buffer toma `recording.videoEncoder` al arrancar, así que es la única forma de darle un
+   * encoder distinto del de la grabación real.
+   */
+  bufferHost: OsnAdvancedRecording;
+  replayBuffer: OsnAdvancedReplayBuffer;
+  /** Los dos encoders de vídeo, para soltarlos en el teardown (después de las salidas). */
+  encoders: OsnEncoder[];
+}
+
+/**
+ * Crea las dos salidas con **un encoder de vídeo cada una**.
+ *
+ * Compartir el encoder (como se hacía antes) hace que la grabación arranque a mitad de un GOP:
+ * libobs descarta todo hasta el siguiente keyframe (`interleave_packets`) y, con el `keyint` de
+ * 250 frames por defecto, la grabación empezaba entre 0 y ~4 s tarde (hasta un MP4 de un solo
+ * frame si duraba menos que la espera). Con encoder propio, el de la grabación arranca con ella y
+ * su primer frame ya es keyframe. Las pistas de audio sí se comparten (son del mixer), igual que
+ * antes.
+ */
+export function buildOutputs(osn: OsnOutputFactories, cfg: OutputsConfig): PipelineOutputs {
+  const bufferEncoder = osn.VideoEncoderFactory.create(
+    cfg.encoderId,
+    'gameclip-venc',
+    cfg.encoderSettings,
+  );
+  const recordingEncoder = osn.VideoEncoderFactory.create(
+    cfg.encoderId,
+    'gameclip-venc-rec',
+    cfg.encoderSettings,
+  );
+
+  const configureRecording = (rec: OsnAdvancedRecording, encoder: OsnEncoder): void => {
+    rec.path = cfg.outputDir;
+    rec.format = 'mp4';
+    rec.video = cfg.context;
+    rec.videoEncoder = encoder;
+    rec.mixer = cfg.mixer;
+    rec.rescaling = false;
+    rec.useStreamEncoders = false;
+    rec.overwrite = false;
+    rec.noSpace = false;
+  };
+
+  const recording = osn.AdvancedRecordingFactory.create();
+  configureRecording(recording, recordingEncoder);
+  // Solo la grabación real escucha señales: en el cliente de osn cada `signalHandler` arranca un
+  // worker de polling por IPC, y la anfitriona nunca emitirá nada.
+  recording.signalHandler = cfg.onSignal;
+
+  const bufferHost = osn.AdvancedRecordingFactory.create();
+  configureRecording(bufferHost, bufferEncoder);
+
+  const replayBuffer = osn.AdvancedReplayBufferFactory.create();
+  replayBuffer.path = cfg.outputDir;
+  replayBuffer.format = 'mp4';
+  replayBuffer.duration = cfg.replaySeconds;
+  replayBuffer.video = cfg.context;
+  replayBuffer.mixer = cfg.mixer;
+  replayBuffer.usesStream = false;
+  replayBuffer.overwrite = false;
+  replayBuffer.noSpace = false;
+  replayBuffer.recording = bufferHost;
+  replayBuffer.signalHandler = cfg.onSignal;
+
+  return { recording, bufferHost, replayBuffer, encoders: [bufferEncoder, recordingEncoder] };
+}
+
 /**
  * Wrapper de obs-studio-node: init falible, escena de captura (juego + monitor + audio),
  * grabación manual y buffer de repetición. Emite 'signal' con cada señal de salida.
@@ -606,6 +695,8 @@ export class ObsCapture extends EventEmitter {
   /** Wrapper de la fuente de la escena (el que se cuelga del canal 1); se suelta en el teardown. */
   private sceneSource: OsnSource | null = null;
   private recording: OsnAdvancedRecording | null = null;
+  /** Grabación anfitriona del replay buffer (nunca se arranca; ver `buildOutputs`). */
+  private bufferHost: OsnAdvancedRecording | null = null;
   private replayBuffer: OsnAdvancedReplayBuffer | null = null;
   private encoders: OsnEncoder[] = [];
   private outputChannels: number[] = [];
@@ -777,41 +868,22 @@ export class ObsCapture extends EventEmitter {
 
     const mixer = this.buildAudioSources(osn, settings, eff, gameExecutable, setSource);
 
-    // Salidas advanced: comparten encoder de video y las pistas de audio (bitmask mixer).
+    // Salidas advanced: cada una con su encoder de vídeo; las pistas de audio (bitmask mixer) sí
+    // son comunes.
     const encoderId = this.pickEncoder(settings.encoderId);
-    const encSettings = encoderRateControlSettings(
+    const outputs = buildOutputs(osn, {
       encoderId,
-      settings.quality,
-      settings.bitrateMbps,
-    );
-    const videoEncoder = osn.VideoEncoderFactory.create(encoderId, 'gameclip-venc', encSettings);
-    this.encoders = [videoEncoder];
-
-    const recording = osn.AdvancedRecordingFactory.create();
-    recording.path = outputDir;
-    recording.format = 'mp4';
-    recording.video = context;
-    recording.videoEncoder = videoEncoder;
-    recording.mixer = mixer;
-    recording.rescaling = false;
-    recording.useStreamEncoders = false;
-    recording.overwrite = false;
-    recording.noSpace = false;
-    recording.signalHandler = (s) => this.emit('signal', s);
-    this.recording = recording;
-
-    const replayBuffer = osn.AdvancedReplayBufferFactory.create();
-    replayBuffer.path = outputDir;
-    replayBuffer.format = 'mp4';
-    replayBuffer.duration = settings.replaySeconds;
-    replayBuffer.video = context;
-    replayBuffer.mixer = mixer;
-    replayBuffer.usesStream = false;
-    replayBuffer.overwrite = false;
-    replayBuffer.noSpace = false;
-    replayBuffer.recording = recording;
-    replayBuffer.signalHandler = (s) => this.emit('signal', s);
-    this.replayBuffer = replayBuffer;
+      encoderSettings: encoderRateControlSettings(encoderId, settings.quality, settings.bitrateMbps),
+      context,
+      outputDir,
+      mixer,
+      replaySeconds: settings.replaySeconds,
+      onSignal: (s) => this.emit('signal', s),
+    });
+    this.encoders = outputs.encoders;
+    this.recording = outputs.recording;
+    this.bufferHost = outputs.bufferHost;
+    this.replayBuffer = outputs.replayBuffer;
   }
 
   startReplayBuffer(): Promise<void> {
@@ -857,6 +929,7 @@ export class ObsCapture extends EventEmitter {
     try {
       if (this.replayBuffer) osn.AdvancedReplayBufferFactory.destroy(this.replayBuffer);
       if (this.recording) osn.AdvancedRecordingFactory.destroy(this.recording);
+      if (this.bufferHost) osn.AdvancedRecordingFactory.destroy(this.bufferHost);
       for (const enc of this.encoders) enc.release();
       for (const channel of this.outputChannels) osn.Global.setOutputSource(channel, null);
       for (const filter of this.micFilters) {
@@ -880,6 +953,7 @@ export class ObsCapture extends EventEmitter {
     }
     this.replayBuffer = null;
     this.recording = null;
+    this.bufferHost = null;
     this.encoders = [];
     this.outputChannels = [];
     this.sceneItems = [];
