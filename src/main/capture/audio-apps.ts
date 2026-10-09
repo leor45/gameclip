@@ -1,15 +1,17 @@
 import { execFile } from 'node:child_process';
 import type { AudioAppInfo } from '@shared/capture';
+import { recordarRutaProceso } from '../icons/rutas-procesos';
 
 // Procesos que no tiene sentido ofrecer como fuente de audio por app.
 const EXCLUDED = new Set(['electron', 'gameclip', 'explorer', 'textinputhost', 'systemsettings']);
 
 // Salida forzada a UTF-8 (como en games/powershell.ts): sin ello PowerShell escribe en la codepage
 // OEM de la consola (850 en español) y los nombres/títulos con acentos, ñ o CJK llegaban corruptos.
+// `Path` va de paso para el servicio de iconos: así el icono de cada app sale sin otra consulta.
 const PS_COMMAND =
   '[Console]::OutputEncoding = [Text.Encoding]::UTF8; ' +
   'Get-Process | Where-Object { $_.MainWindowTitle } | ' +
-  'Select-Object ProcessName, MainWindowTitle | ConvertTo-Json -Compress';
+  'Select-Object ProcessName, MainWindowTitle, Path | ConvertTo-Json -Compress';
 
 // Caché corto: cada montaje de la sección Audio pide la lista; sin caché, cada
 // navegación de Ajustes spawnearía un powershell.exe nuevo.
@@ -59,6 +61,7 @@ export function parseAudioApps(stdout: string): AudioAppInfo[] {
     const raw = item as Record<string, unknown>;
     if (typeof raw.ProcessName !== 'string' || !raw.ProcessName.trim()) continue;
     const name = raw.ProcessName.trim();
+    if (typeof raw.Path === 'string') recordarRutaProceso(raw.Path);
     const key = name.toLowerCase();
     if (EXCLUDED.has(key) || seen.has(key)) continue;
     seen.add(key);

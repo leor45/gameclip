@@ -11,7 +11,7 @@ describe('audioAppsArgs (procesos con ventana vía PowerShell)', () => {
       '-Command',
       '[Console]::OutputEncoding = [Text.Encoding]::UTF8; ' +
         'Get-Process | Where-Object { $_.MainWindowTitle } | ' +
-        'Select-Object ProcessName, MainWindowTitle | ConvertTo-Json -Compress',
+        'Select-Object ProcessName, MainWindowTitle, Path | ConvertTo-Json -Compress',
     ]);
   });
 });

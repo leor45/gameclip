@@ -59,6 +59,7 @@ import { createElevatedAutoLaunch, createElevationRelaunch } from './elevated-la
 import type { PerfSnapshot } from '@shared/perf';
 import { createTray } from './tray';
 import type { AppTray } from './tray';
+import { createIconService } from './icons';
 import { registerIpcHandlers } from './ipc';
 import { UiPrompts } from './ui-prompts';
 
@@ -707,6 +708,13 @@ app.whenReady().then(async () => {
         }),
     },
     (config) => perfOverlay?.preview(config),
+    // Iconos: perezosos (solo cuando la UI los pide) y una vez por ejecutable.
+    createIconService({
+      index: () => gamesIndex.current(),
+      installed: () => gamesIndex.installed(),
+      customGames: () => capture?.getSettings().customGames ?? [],
+      runningGames: () => capture?.getRunningGames() ?? [],
+    }),
   );
 
   // Los launchers, en background: no bloquea la ventana, y hasta que termine la detección funciona

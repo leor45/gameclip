@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GameIndexService, huellaDe, indexarEjecutables } from '..';
-import { executablesIn } from '../scan';
+import { exePathsIn, executablesIn } from '../scan';
 import type { GameSource, InstalledGame } from '../types';
 
 let raiz: string;
@@ -28,6 +28,18 @@ function fuente(juegos: InstalledGame[], id: GameSource['id'] = 'steam'): GameSo
 }
 
 describe('executablesIn', () => {
+  it('exePathsIn da las rutas completas de los mismos exes (mismas reglas)', async () => {
+    // Las usa el servicio de iconos: el índice guarda solo claves, la ruta se calcula aparte.
+    exe('Juego', 'Binaries', 'Win64', 'Juego-Win64-Shipping.exe');
+    exe('Juego', 'JuegoLauncher.exe');
+    exe('Juego', 'EasyAntiCheat', 'EasyAntiCheat_EOS_Setup.exe');
+    const dir = join(raiz, 'Juego');
+    expect(await exePathsIn(dir)).toEqual([
+      join(dir, 'Binaries', 'Win64', 'Juego-Win64-Shipping.exe'),
+    ]);
+    expect(await executablesIn(dir)).toEqual(['juego-win64-shipping']);
+  });
+
   it('encuentra los ejecutables aunque estén enterrados en subcarpetas', async () => {
     // El caso Fortnite: el proceso real no es el que declara el manifiesto, vive en Binaries/Win64.
     exe('FortniteGame', 'Binaries', 'Win64', 'FortniteClient-Win64-Shipping.exe');
@@ -161,6 +173,17 @@ describe('GameIndexService', () => {
       sources: [{ id: 'steam', listInstalledGames: listar }],
     });
     expect(segundo.current()).toEqual({ milesmorales: 'Miles' });
+  });
+
+  it('una caché escrita por versiones anteriores (solo claves, sin rutas) sigue cargando', () => {
+    // Los iconos no cambiaron el formato del índice: la caché vieja vale tal cual.
+    const cachePath = join(raiz, 'cache.json');
+    writeFileSync(
+      cachePath,
+      JSON.stringify({ huella: 'reglas:2x', index: { pioneergame: 'ARC Raiders' } }),
+    );
+    const service = new GameIndexService({ cachePath, sources: [] });
+    expect(service.current()).toEqual({ pioneergame: 'ARC Raiders' });
   });
 
   it('el mismo juego por dos fuentes se cuenta una vez', async () => {
