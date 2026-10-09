@@ -725,4 +725,414 @@ describe('LibraryManager.reconcile — la misma carpeta por dos caminos (Bug 6 d
 
     expect(manager.list().map((c) => c.title).sort()).toEqual(['b', 'clip']);
   });
+
+  describe('lo que depende del archivo se unifica al fusionar', () => {
+    /** Mismo archivo por dos caminos: la fila de fuera es la más antigua (menor id), la de dentro la duplicada. */
+    function duplicado(
+      manager: LibraryManager,
+      antigua: Partial<ClipFixture>,
+      nueva: Partial<ClipFixture>,
+    ) {
+      const ruta = archivo('Fortnite', 'a.mp4');
+      enlazar(enlace);
+      const filaAntigua = insertar(ruta, antigua.title ?? 'a');
+      manager.updateClip(filaAntigua.id, { favorite: antigua.favorite ?? false });
+      if (antigua.mutedTracks) manager.setAudioEdit(filaAntigua.id, antigua.mutedTracks);
+      const filaNueva = insertar(join(enlace, 'Fortnite', 'a.mp4'), nueva.title ?? 'a');
+      if (nueva.mutedTracks) manager.setAudioEdit(filaNueva.id, nueva.mutedTracks);
+      return { filaAntigua, filaNueva };
+    }
+
+    it('el tamaño de la fila conservada es el real del archivo (el de la DB estaba desfasado)', () => {
+      const manager = crearManager();
+      const { filaAntigua } = duplicado(manager, {}, {});
+      db.prepare('UPDATE clips SET size_bytes = 1234').run(); // desfasado: el archivo pesa 18
+
+      manager.reconcile(enlace);
+
+      expect(manager.getClip(filaAntigua.id)?.sizeBytes).toBe(18);
+    });
+
+    it('el título personalizado de la fila descartada gana al derivado del nombre del archivo', () => {
+      const manager = crearManager();
+      const { filaAntigua } = duplicado(manager, { title: 'a' }, { title: 'jugadón' });
+
+      expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 1 });
+
+      expect(manager.getClip(filaAntigua.id)?.title).toBe('jugadón');
+    });
+
+    it('si los dos títulos son personalizados gana el de la conservada', () => {
+      const manager = crearManager();
+      const { filaAntigua } = duplicado(manager, { title: 'mi jugada' }, { title: 'jugadón' });
+
+      manager.reconcile(enlace);
+
+      expect(manager.getClip(filaAntigua.id)?.title).toBe('mi jugada');
+    });
+
+    it('las pistas muteadas no vacías ganan; si las dos tienen, las de la conservada', () => {
+      const a = crearManager();
+      const { filaAntigua } = duplicado(a, {}, { mutedTracks: ['mic'] });
+      a.reconcile(enlace);
+      expect(a.getClip(filaAntigua.id)?.mutedTracks).toEqual(['mic']);
+
+      db.exec('DELETE FROM clips;');
+      real.rmdirSync(enlace);
+      const b = crearManager();
+      const otra = duplicado(b, { mutedTracks: ['juego'] }, { mutedTracks: ['mic'] });
+      b.reconcile(enlace);
+      expect(b.getClip(otra.filaAntigua.id)?.mutedTracks).toEqual(['juego']);
+    });
+
+    it('al re-apuntar una sola fila también se escribe el tamaño real', () => {
+      const ruta = archivo('Fortnite', 'a.mp4');
+      enlazar(enlace);
+      const manager = crearManager();
+      const fila = insertar(ruta); // 1234 en la DB, 18 en disco
+
+      manager.reconcile(enlace);
+
+      expect(manager.getClip(fila.id)?.sizeBytes).toBe(18);
+    });
+  });
+
+  describe('identidad física: sistemas de archivos sin índice fiable', () => {
+    /** Pone `ino`/`birthtimeNs` de los `stat` bigint de los archivos bajo cada carpeta. */
+    function identidadFalsa(porCarpeta: Record<string, { ino: bigint; birth: bigint }>): void {
+      vi.mocked(statSync).mockImplementation(((path: fs.PathLike, opts?: unknown) => {
+        const st = real.statSync(path, opts as never);
+        if (!(opts as { bigint?: boolean })?.bigint) return st;
+        for (const [carpeta, id] of Object.entries(porCarpeta)) {
+          if (String(path).startsWith(carpeta)) {
+            return { ...st, ino: id.ino, birthtimeNs: id.birth };
+          }
+        }
+        return st;
+      }) as typeof statSync);
+    }
+
+    /** Original en la carpeta vieja (con fila) y una COPIA con el mismo nombre y tamaño en la de clips. */
+    function originalYCopia() {
+      const original = join(viejaDir, 'Fortnite', 'a.mp4');
+      mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+      writeFileSync(original, 'contenido-de-video');
+      mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+      real.copyFileSync(original, join(outputDir, 'Fortnite', 'a.mp4'));
+      const manager = crearManager();
+      insertar(original, 'original');
+      return manager;
+    }
+
+    it('mismo índice y tamaño pero otra fecha de creación (copia del Explorador en ReFS): no se fusionan', () => {
+      identidadFalsa({
+        [viejaDir]: { ino: 7n, birth: 1n },
+        [outputDir]: { ino: 7n, birth: 2n },
+      });
+      const manager = originalYCopia();
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+      expect(manager.list()).toHaveLength(2);
+    });
+
+    it('control: con la misma fecha de creación sí es el mismo archivo', () => {
+      identidadFalsa({
+        [viejaDir]: { ino: 7n, birth: 1n },
+        [outputDir]: { ino: 7n, birth: 1n },
+      });
+      const manager = originalYCopia();
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+      expect(manager.list()).toHaveLength(1);
+    });
+
+    it('un índice FILE_INVALID_FILE_ID (0xFFFFFFFFFFFFFFFF) no identifica', () => {
+      const invalido = 0xffffffffffffffffn;
+      identidadFalsa({
+        [viejaDir]: { ino: invalido, birth: 1n },
+        [outputDir]: { ino: invalido, birth: 1n },
+      });
+      const manager = originalYCopia();
+
+      expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+      expect(manager.list()).toHaveLength(2);
+    });
+
+    it('medido: por un junction y por un hard link la fecha de creación es la del original', () => {
+      const original = archivo('Fortnite', 'a.mp4');
+      enlazar(enlace);
+      real.linkSync(original, join(outputDir, 'duro.mp4'));
+      const nacimiento = (p: string) => real.statSync(p, { bigint: true }).birthtimeNs;
+
+      expect(nacimiento(join(enlace, 'Fortnite', 'a.mp4'))).toBe(nacimiento(original));
+      expect(nacimiento(join(outputDir, 'duro.mp4'))).toBe(nacimiento(original));
+    });
+  });
+});
+
+interface ClipFixture {
+  title: string;
+  favorite: boolean;
+  mutedTracks: string[];
+}
+
+describe('LibraryManager.reconcile — rescate de filas muertas que cambiaron de ruta', () => {
+  // Las bajas se aplican al final del escaneo: una fila cuyo archivo falta puede ser un archivo que
+  // se movió y que el escaneo está a punto de encontrar. Sin esto, deshacer un re-apuntado (volver a
+  // la ruta real tras un junction, o a \\nas tras un Z: que no se reconectó) o renombrar la carpeta de
+  // clips daba de baja la fila con todos sus datos y la daba de alta de nuevo vacía.
+  const enlace = join(dir, 'enlace-rescate');
+  const otroEnlace = join(dir, 'otro-enlace-rescate');
+  const renombrada = join(dir, 'salida-renombrada');
+  const otraCarpeta = join(dir, 'otra-carpeta-rescate');
+
+  function limpiar(): void {
+    for (const e of [enlace, otroEnlace]) {
+      if (real.existsSync(e)) real.rmdirSync(e); // quita solo el junction, no su destino
+    }
+    rmSync(renombrada, { recursive: true, force: true });
+    rmSync(otraCarpeta, { recursive: true, force: true });
+  }
+  beforeEach(limpiar);
+  afterEach(limpiar);
+
+  /** Fila de un archivo que existe, con el tamaño real y todo lo que el usuario pudo ponerle. */
+  function clipEditado(manager: LibraryManager, ruta: string) {
+    const fila = repo.insert({
+      filePath: ruta,
+      title: 'mi jugada',
+      game: 'Fortnite',
+      sizeBytes: real.statSync(ruta).size,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+    manager.updateClip(fila.id, { favorite: true, tags: ['final', 'clutch'] });
+    manager.setClipMedia(fila.id, { durationSeconds: 12.5, thumbnailDataUrl: dataUrl });
+    return fila;
+  }
+
+  function conservaTodo(manager: LibraryManager, id: number, ruta: string): void {
+    const clip = manager.getClip(id);
+    expect(clip?.filePath).toBe(ruta);
+    expect(clip?.title).toBe('mi jugada');
+    expect(clip?.favorite).toBe(true);
+    expect(clip?.tags.sort()).toEqual(['clutch', 'final']);
+    expect(clip?.durationSeconds).toBe(12.5);
+    expect(existsSync(clip!.thumbnailPath!)).toBe(true);
+  }
+
+  it('el escenario del revisor: re-apuntar a un junction, borrarlo y volver a la ruta real conserva la fila', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const fila = clipEditado(manager, ruta);
+    real.symlinkSync(outputDir, enlace, 'junction');
+    expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 0 }); // re-apunta al junction
+    real.rmdirSync(enlace); // el owner borra el junction y vuelve a la ruta real
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list()).toHaveLength(1);
+    conservaTodo(manager, fila.id, ruta);
+  });
+
+  it('la variante Z:/UNC: el camino por el que se re-apuntó desaparece y se vuelve por otro', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const fila = clipEditado(manager, ruta);
+    real.symlinkSync(outputDir, enlace, 'junction'); // «Z:»
+    manager.reconcile(enlace);
+    real.rmdirSync(enlace); // «Z:» no se reconecta al iniciar sesión
+    real.symlinkSync(outputDir, otroEnlace, 'junction'); // el owner vuelve por «\\nas\…»
+
+    expect(manager.reconcile(otroEnlace)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list()).toHaveLength(1);
+    conservaTodo(manager, fila.id, join(otroEnlace, 'Fortnite', 'a.mp4'));
+  });
+
+  it('carpeta de clips renombrada: sus filas, muertas, siguen a los archivos y conservan todo', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const otro = archivo('Terraria', 'b.mp4');
+    const manager = crearManager();
+    const fila = clipEditado(manager, ruta);
+    const filaB = clipEditado(manager, otro);
+    real.renameSync(outputDir, renombrada); // el owner mueve la carpeta y apunta GameClip a la nueva
+
+    expect(manager.reconcile(renombrada)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list()).toHaveLength(2);
+    conservaTodo(manager, fila.id, join(renombrada, 'Fortnite', 'a.mp4'));
+    conservaTodo(manager, filaB.id, join(renombrada, 'Terraria', 'b.mp4'));
+  });
+
+  it('la copia con el USB ya quitado: la fila muerta del USB sigue al archivo copiado', () => {
+    const copia = archivo('Fortnite', 'a.mp4');
+    const unidad = unidadAusente();
+    const manager = crearManager();
+    const fila = repo.insert({
+      filePath: `${unidad}Clips\\Fortnite\\a.mp4`,
+      title: 'mi jugada',
+      game: 'Fortnite',
+      sizeBytes: real.statSync(copia).size,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+    manager.updateClip(fila.id, { favorite: true });
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list()).toHaveLength(1);
+    expect(manager.getClip(fila.id)?.filePath).toBe(copia);
+    expect(manager.getClip(fila.id)?.favorite).toBe(true);
+  });
+
+  it('ambigüedad: dos filas muertas con el mismo nombre → no se rescata ninguna', () => {
+    archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const unidad = unidadAusente();
+    for (const juego of ['Fortnite', 'Terraria']) {
+      repo.insert({
+        filePath: `${unidad}Clips\\${juego}\\a.mp4`,
+        title: juego,
+        game: null,
+        sizeBytes: 18,
+        createdAt: '2026-07-01T10:00:00.000Z',
+        source: 'replay',
+      });
+    }
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 2 });
+    expect(manager.list().map((c) => c.title)).toEqual(['a']);
+  });
+
+  it('ambigüedad: dos archivos sin fila con el mismo nombre → no se rescata nada', () => {
+    archivo('Fortnite', 'a.mp4');
+    archivo('Terraria', 'a.mp4');
+    const manager = crearManager();
+    repo.insert({
+      filePath: `${unidadAusente()}Clips\\a.mp4`,
+      title: 'muerto',
+      game: null,
+      sizeBytes: 18,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 2, removed: 1 });
+    expect(manager.list().map((c) => c.title)).toEqual(['a', 'a']);
+  });
+
+  it('un tamaño distinto no es el mismo archivo: no se rescata', () => {
+    archivo('Fortnite', 'a.mp4'); // 18 bytes
+    const manager = crearManager();
+    const muerto = repo.insert({
+      filePath: `${unidadAusente()}Clips\\a.mp4`,
+      title: 'muerto',
+      game: null,
+      sizeBytes: 999,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 1 });
+    expect(manager.getClip(muerto.id)).toBeNull();
+  });
+
+  it('un archivo de dentro que ya tiene fila no se toca: la muerta del mismo nombre se da de baja', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const vivo = clipEditado(manager, ruta);
+    const muerto = repo.insert({
+      filePath: `${unidadAusente()}Clips\\a.mp4`,
+      title: 'muerto',
+      game: null,
+      sizeBytes: 18,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+    const miniatura = manager.setClipMedia(muerto.id, {
+      thumbnailDataUrl: dataUrl,
+    }).thumbnailPath!;
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 1 });
+
+    conservaTodo(manager, vivo.id, ruta);
+    expect(manager.getClip(muerto.id)).toBeNull();
+    expect(existsSync(miniatura)).toBe(false); // la baja sigue limpiando la miniatura
+  });
+
+  it('una fila muerta sin pareja se da de baja como siempre, con su miniatura', () => {
+    const manager = crearManager();
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const muerto = clipEditado(manager, ruta);
+    const miniatura = manager.getClip(muerto.id)!.thumbnailPath!;
+    rmSync(ruta);
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 1 });
+    expect(manager.getClip(muerto.id)).toBeNull();
+    expect(existsSync(miniatura)).toBe(false);
+  });
+
+  it('la unidad de la carpeta de clips sin montar sigue como estaba: no hay filas muertas', () => {
+    const salida = `${unidadAusente()}Clips`;
+    const manager = crearManager();
+    const fila = repo.insert({
+      filePath: `${salida}\\Fortnite\\a.mp4`,
+      title: 'en el USB',
+      game: null,
+      sizeBytes: 18,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+
+    expect(manager.reconcile(salida)).toEqual({ added: 0, removed: 0 });
+    expect(manager.getClip(fila.id)?.title).toBe('en el USB');
+  });
+
+  it('un archivo que aparece entre la comprobación de la fila y el escaneo no pierde su fila', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const fila = clipEditado(manager, ruta);
+    let primera = true;
+    vi.mocked(existsSync).mockImplementation((p) => {
+      if (String(p) === ruta && primera) {
+        primera = false;
+        return false; // todavía no estaba (p. ej. un remux que lo acaba de renombrar)
+      }
+      return real.existsSync(p);
+    });
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+
+    conservaTodo(manager, fila.id, ruta);
+  });
+
+  it('un fallo al re-apuntar no corta el escaneo: se comporta como antes (baja + alta)', () => {
+    archivo('Fortnite', 'a.mp4');
+    archivo('Terraria', 'b.mp4');
+    const manager = crearManager();
+    const muerto = repo.insert({
+      filePath: `${unidadAusente()}Clips\\a.mp4`,
+      title: 'muerto',
+      game: null,
+      sizeBytes: 18,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+    const rota = vi.spyOn(repo, 'setPath').mockImplementation(() => {
+      throw new Error('DB bloqueada');
+    });
+    const errores = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    let resultado: { added: number; removed: number } | undefined;
+    try {
+      resultado = manager.reconcile(outputDir);
+    } finally {
+      rota.mockRestore();
+      errores.mockRestore();
+    }
+
+    expect(resultado).toEqual({ added: 2, removed: 1 });
+    expect(manager.getClip(muerto.id)).toBeNull();
+  });
 });

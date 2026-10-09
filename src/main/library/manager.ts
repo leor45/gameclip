@@ -109,17 +109,28 @@ export class LibraryManager extends EventEmitter {
    * anterior) sí se dan de baja: si el owner copió esa carpeta a la nueva y quitó el USB, conservarlas
    * duplicaba la biblioteca para siempre.
    *
+   * **Rescate de filas muertas.** Las bajas se aplican al FINAL del escaneo, no antes: una fila cuyo
+   * archivo falta (muerta) puede ser un archivo que cambió de ruta —la carpeta de clips movida o
+   * renombrada, o re-apuntada tras un junction o una unidad que ya no se reconecta— y que el escaneo va
+   * a encontrar en su sitio nuevo. Si un archivo de dentro sin fila se llama como UNA sola fila muerta
+   * (sin distinguir mayúsculas), tiene su mismo tamaño y es el único archivo sin fila con ese nombre,
+   * se re-apunta esa fila (no es alta ni baja) y conserva título, favorito, etiquetas, miniatura,
+   * duración y pistas muteadas. Con ambigüedad no se rescata nada de ese nombre; una fila muerta sin
+   * pareja se da de baja como siempre (y una fila muerta nunca protege nada por sí misma). El rescate
+   * usa el `stat` que ya se hace para el alta: ninguna consulta nueva al disco.
+   *
    * **La misma carpeta por dos caminos.** Una unidad de red vista como `Z:\Clips` y como
    * `\\nas\recurso\Clips`, un junction o un volumen montado en una carpeta: si la carpeta de clips pasa de
    * una forma a la otra, las filas de la forma vieja (su archivo existe, por la otra ruta) no cuelgan de
    * la carpeta nueva y el escaneo daba de alta los mismos archivos otra vez. Esas «filas de fuera» se
-   * reconocen por la identidad física del archivo (volumen + índice de archivo + tamaño, `stat`):
+   * reconocen por la identidad física del archivo (volumen + índice de archivo + tamaño + fecha de
+   * creación, `stat`):
    * - un archivo de dentro sin fila cuyo archivo ES el de una fila de fuera **re-apunta** esa fila (no es
    *   alta ni baja; conserva título, favorito, etiquetas, miniatura, duración y pistas muteadas);
    * - si ya tenía fila (el duplicado que dejó la v0.9.7) se **fusionan** en la de menor id, y cada fila
    *   que sobra cuenta como baja.
    * Dos archivos distintos con el mismo nombre y tamaño (la carpeta copiada con el Explorador) tienen
-   * identidad distinta: siguen siendo dos filas.
+   * identidad distinta (otro índice y otra fecha de creación): siguen siendo dos filas.
    *
    * **Coste:** `stat` es una ida y vuelta al servidor en un NAS y esto corre en el hilo principal en cada
    * guardado de Ajustes y al arrancar, así que la identidad solo se pide donde puede haber pareja, y
@@ -127,7 +138,9 @@ export class LibraryManager extends EventEmitter {
    * el nombre. Solo se mira la identidad de las filas de fuera cuyo nombre coincide con el de algún
    * archivo de dentro y, luego, la de los archivos de dentro que se llaman como alguna de ellas. Sin
    * filas de fuera, o con una carpeta anterior de clips distintos —lo más común—, no se hace ninguna
-   * consulta más al disco. Queda fuera, a propósito, el hard link con otro nombre.
+   * consulta más al disco. **Con una carpeta anterior que contiene los mismos nombres** (la copia del
+   * Explorador mientras la vieja sigue existiendo) esas consultas se repiten en cada escaneo mientras
+   * la vieja exista. Queda fuera, a propósito, el hard link con otro nombre.
    */
   reconcile(outputDir: string): { added: number; removed: number } {
     let added = 0;
@@ -136,6 +149,8 @@ export class LibraryManager extends EventEmitter {
 
     const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
     const filasDeFuera: { id: number; filePath: string }[] = [];
+    // Las que hoy se darían de baja; se borran al final, tras intentar rescatarlas.
+    const muertas = new Map<number, { id: number; filePath: string }>();
     for (const { id, filePath } of this.repo.allPaths()) {
       // En la unidad de la salida se mira la unidad antes que el archivo: sin montar, sus clips se
       // conservan sin preguntar por cada uno.
@@ -146,35 +161,50 @@ export class LibraryManager extends EventEmitter {
         }
         continue;
       }
-      this.removeThumbnail(this.repo.get(id));
-      this.repo.delete(id);
-      removed++;
+      muertas.set(id, { id, filePath });
+    }
+    const muertasPorNombre = new Map<string, number[]>();
+    for (const { id, filePath } of muertas.values()) {
+      const nombre = nombreEnMinusculas(filePath);
+      muertasPorNombre.set(nombre, [...(muertasPorNombre.get(nombre) ?? []), id]);
     }
 
     // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…` y las capturas en
     // `<Juego>/Capturas/`. La carpeta es la única pista del juego que tiene un archivo escaneado.
-    const archivos = mediaFilesIn(outputDir);
+    const archivos = mediaFilesIn(outputDir).map((filePath) => ({
+      filePath,
+      existente: this.repo.getByPath(filePath),
+    }));
+    // Archivos sin fila por nombre: el rescate exige que sea el único con ese nombre.
+    const sinFilaPorNombre = new Map<string, number>();
+    for (const { filePath, existente } of archivos) {
+      if (existente) continue;
+      const nombre = nombreEnMinusculas(filePath);
+      sinFilaPorNombre.set(nombre, (sinFilaPorNombre.get(nombre) ?? 0) + 1);
+    }
+
     // Prefiltro por nombre de archivo, sin tocar el disco: el mismo archivo visto por otro camino
     // conserva su nombre, así que solo se pide la identidad de las filas de fuera que se llaman como
     // algún archivo de dentro y, después, de los archivos de dentro que se llaman como alguna de ellas.
     // Una carpeta anterior con clips distintos —lo más común— no cuesta ni un `stat`.
-    const nombresDeDentro = new Set(archivos.map(nombreEnMinusculas));
+    const nombresDeDentro = new Set(archivos.map((a) => nombreEnMinusculas(a.filePath)));
     const candidatas = filasDeFuera.filter((f) =>
       nombresDeDentro.has(nombreEnMinusculas(f.filePath)),
     );
     const { porIdentidad, nombres: nombresConIdentidad } = idsPorIdentidad(candidatas);
-    for (const filePath of archivos) {
-      const existente = this.repo.getByPath(filePath);
+    for (const { filePath, existente } of archivos) {
+      // El archivo apareció entre la comprobación de la fila y el escaneo: la fila no está muerta.
+      if (existente) muertas.delete(existente.id);
 
-      const huella =
+      const identidad =
         porIdentidad.size > 0 && nombresConIdentidad.has(nombreEnMinusculas(filePath))
           ? identidadDe(filePath)
           : null;
-      const idsDeFuera = huella === null ? undefined : porIdentidad.get(huella);
-      if (huella !== null && idsDeFuera) {
-        porIdentidad.delete(huella); // cada fila de fuera se usa una sola vez
+      const idsDeFuera = identidad === null ? undefined : porIdentidad.get(identidad.huella);
+      if (identidad !== null && idsDeFuera) {
+        porIdentidad.delete(identidad.huella); // cada fila de fuera se usa una sola vez
         try {
-          removed += this.unificar(filePath, existente, idsDeFuera);
+          removed += this.unificar(filePath, existente, idsDeFuera, identidad.size);
           unificadas++;
         } catch (err) {
           // Una fila que no se deja no corta el escaneo: queda como estaba y se reintenta en el próximo.
@@ -193,6 +223,11 @@ export class LibraryManager extends EventEmitter {
       } catch {
         continue; // borrado o ilegible entre el listado y el stat: lo verá el próximo escaneo
       }
+
+      if (this.rescatar(filePath, stats.size, muertas, muertasPorNombre, sinFilaPorNombre)) {
+        unificadas++;
+        continue;
+      }
       this.repo.insert({
         filePath,
         title: titleFromFileName(fileName(filePath)),
@@ -204,23 +239,71 @@ export class LibraryManager extends EventEmitter {
       added++;
     }
 
+    // Las que no se rescataron: su archivo no está en ninguna parte de la carpeta de clips.
+    for (const { id } of muertas.values()) {
+      this.removeThumbnail(this.repo.get(id));
+      this.repo.delete(id);
+      removed++;
+    }
+
     if (added || removed || unificadas) this.emit('changed');
     return { added, removed };
   }
 
   /**
-   * El archivo `filePath` (de dentro de la carpeta de clips) es el mismo que el de las filas `idsDeFuera`,
-   * que lo catalogaron por otro camino. Si no tenía fila propia, la primera se re-apunta a esta ruta y
-   * conserva todo; si la tenía (el duplicado de la v0.9.7) o hay varias de fuera, se fusionan en la de
-   * menor id y la miniatura que sobra se borra. Devuelve cuántas filas desaparecen (las bajas).
+   * ¿Es el archivo nuevo `filePath` (sin fila, de `size` bytes) el de una fila muerta que cambió de
+   * ruta? Solo si hay exactamente UNA fila muerta con su nombre, es el único archivo sin fila con ese
+   * nombre y la fila tiene su tamaño: entonces la re-apunta (y la saca de las muertas). Con cualquier
+   * ambigüedad, o un fallo al escribir, no rescata y el archivo se da de alta como siempre.
    */
-  private unificar(filePath: string, existente: Clip | null, idsDeFuera: number[]): number {
+  private rescatar(
+    filePath: string,
+    size: number,
+    muertas: Map<number, unknown>,
+    muertasPorNombre: Map<string, number[]>,
+    sinFilaPorNombre: Map<string, number>,
+  ): boolean {
+    const nombre = nombreEnMinusculas(filePath);
+    const ids = muertasPorNombre.get(nombre);
+    if (ids?.length !== 1 || !muertas.has(ids[0]) || sinFilaPorNombre.get(nombre) !== 1) {
+      return false;
+    }
+    const fila = this.repo.get(ids[0]);
+    if (!fila || fila.sizeBytes !== size) return false;
+    try {
+      this.repo.setPath(fila.id, filePath);
+    } catch (err) {
+      console.error('[library] no se pudo re-apuntar una fila cuyo archivo cambió de ruta:', err);
+      return false;
+    }
+    muertas.delete(fila.id);
+    return true;
+  }
+
+  /**
+   * El archivo `filePath` (de dentro de la carpeta de clips, de `sizeBytes` bytes) es el mismo que el de
+   * las filas `idsDeFuera`, que lo catalogaron por otro camino. Si no tenía fila propia, la primera se
+   * re-apunta a esta ruta y conserva todo; si la tenía (el duplicado de la v0.9.7) o hay varias de
+   * fuera, se fusionan en la de menor id y la miniatura que sobra se borra. En ambos casos el tamaño
+   * queda el real, y al fusionar el título y las pistas muteadas son los personalizados (las filas son
+   * el mismo archivo: lo que se hizo sobre cualquiera de las tarjetas vale). Devuelve cuántas filas
+   * desaparecen (las bajas).
+   */
+  private unificar(
+    filePath: string,
+    existente: Clip | null,
+    idsDeFuera: number[],
+    sizeBytes: number,
+  ): number {
     const ids = [...new Set(existente ? [existente.id, ...idsDeFuera] : idsDeFuera)];
     if (ids.length === 1) {
-      this.repo.setPath(ids[0], filePath);
+      this.repo.setPath(ids[0], filePath, sizeBytes);
       return 0;
     }
-    this.repo.mergeRows(ids, filePath);
+    this.repo.mergeRows(ids, filePath, {
+      sizeBytes,
+      defaultTitle: titleFromFileName(fileName(filePath)),
+    });
     this.removeOrphanThumbnails();
     return ids.length - 1;
   }
@@ -356,23 +439,33 @@ function fileName(filePath: string): string {
 }
 
 /**
- * Identidad física de un archivo: volumen + índice de archivo + tamaño (en Windows, el número de serie
- * del volumen y el índice NTFS/SMB del archivo). Dos rutas que llevan al mismo archivo —`Z:\` y
- * `\\nas\recurso\`, un junction, un hard link— dan la misma; dos copias, no, aunque tengan el mismo
- * nombre, tamaño y fecha. `null` si no se puede saber: el `stat` falla (permisos, archivo que
- * desapareció), el servidor no da índice de archivo (`ino` 0, algunos SMB) o el archivo está vacío
- * (en FAT/exFAT no ocupa clúster y su índice no lo distingue de otro vacío): no hay forma de afirmar
- * que dos rutas son el mismo archivo y se tratan como distintos.
+ * Identidad física de un archivo: volumen + índice de archivo + tamaño + fecha de creación (en
+ * Windows, el número de serie del volumen, el índice NTFS/SMB y la fecha de creación del archivo).
+ * Dos rutas que llevan al mismo archivo —`Z:\` y `\\nas\recurso\`, un junction, un hard link— dan la
+ * misma (medido: también por `\\localhost\C$\…`); dos copias, no, aunque tengan el mismo nombre,
+ * tamaño y fecha de modificación: la copia del Explorador conserva el mtime pero tiene fecha de
+ * creación nueva. Esa fecha es la red de seguridad de los sistemas de archivos donde el índice de 64
+ * bits no es único (ReFS, Dev Drive) o es constante. `null` si no se puede saber: el `stat` falla
+ * (permisos, archivo que desapareció), el índice es 0 (algunos SMB) o `0xFFFFFFFFFFFFFFFF`
+ * (`FILE_INVALID_FILE_ID`) o el archivo está vacío (en FAT/exFAT no ocupa clúster y su índice no lo
+ * distingue de otro vacío): no hay forma de afirmar que dos rutas son el mismo archivo y se tratan como
+ * distintos. Devuelve también el tamaño real, que el escaneo escribe en la fila.
  */
-function identidadDe(filePath: string): string | null {
+function identidadDe(filePath: string): { huella: string; size: number } | null {
   try {
     const stats = statSync(filePath, { bigint: true });
-    if (stats.ino === 0n || stats.size === 0n) return null;
-    return `${stats.dev}:${stats.ino}:${stats.size}`;
+    if (stats.ino === 0n || stats.ino === INDICE_INVALIDO || stats.size === 0n) return null;
+    return {
+      huella: `${stats.dev}:${stats.ino}:${stats.size}:${stats.birthtimeNs}`,
+      size: Number(stats.size),
+    };
   } catch {
     return null;
   }
 }
+
+/** `FILE_INVALID_FILE_ID`: lo que devuelven algunos sistemas de archivos virtuales como índice. */
+const INDICE_INVALIDO = 0xffffffffffffffffn;
 
 /** Nombre del archivo en minúsculas (NTFS no distingue mayúsculas): la clave del prefiltro. */
 function nombreEnMinusculas(filePath: string): string {
@@ -390,12 +483,12 @@ function idsPorIdentidad(filas: { id: number; filePath: string }[]): {
   const porIdentidad = new Map<string, number[]>();
   const nombres = new Set<string>();
   for (const { id, filePath } of filas) {
-    const huella = identidadDe(filePath);
-    if (huella === null) continue;
+    const identidad = identidadDe(filePath);
+    if (identidad === null) continue;
     nombres.add(nombreEnMinusculas(filePath));
-    const ids = porIdentidad.get(huella);
+    const ids = porIdentidad.get(identidad.huella);
     if (ids) ids.push(id);
-    else porIdentidad.set(huella, [id]);
+    else porIdentidad.set(identidad.huella, [id]);
   }
   return { porIdentidad, nombres };
 }

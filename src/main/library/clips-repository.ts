@@ -219,11 +219,19 @@ export class ClipsRepository {
     return this.mustGet(id);
   }
 
-  /** Nueva ruta del archivo (lo mueve la migración de layout); se guarda canonicalizada. */
-  setPath(id: number, filePath: string): Clip {
-    this.db
-      .prepare('UPDATE clips SET file_path = ? WHERE id = ?')
-      .run(canonicalClipPath(filePath), id);
+  /**
+   * Nueva ruta del archivo (lo mueve la migración de layout o lo re-apunta el escaneo); se guarda
+   * canonicalizada. Con `sizeBytes`, también el tamaño real del archivo (el escaneo lo acaba de medir).
+   */
+  setPath(id: number, filePath: string, sizeBytes?: number): Clip {
+    const path = canonicalClipPath(filePath);
+    if (sizeBytes === undefined) {
+      this.db.prepare('UPDATE clips SET file_path = ? WHERE id = ?').run(path, id);
+    } else {
+      this.db
+        .prepare('UPDATE clips SET file_path = ?, size_bytes = ? WHERE id = ?')
+        .run(path, sizeBytes, id);
+    }
     return this.mustGet(id);
   }
 
@@ -238,8 +246,19 @@ export class ClipsRepository {
    * filas en ella), y si algo falla —una ruta ya ocupada por otra fila, un id que no existe— no cambia
    * nada, ni se anotan miniaturas huérfanas. Las miniaturas de las descartadas que sobran quedan para
    * `takeOrphanThumbnails`.
+   *
+   * Con `mismoArchivo` las filas se sabe que son el MISMO archivo físico (lo garantiza quien llama), y
+   * lo que depende del archivo se unifica en vez de quedarse con lo de la conservada, que puede estar
+   * desfasado si el renombrado o el edit de audio se hizo sobre la tarjeta descartada: el tamaño es el
+   * real; el título es el personalizado (el que no es `defaultTitle`, el derivado del nombre del
+   * archivo), y si los dos lo son, el de la conservada; las pistas muteadas, las no vacías, y si las dos
+   * tienen, las de la conservada. Sin él se aplica solo la semántica de la migración de rutas.
    */
-  mergeRows(ids: number[], filePath: string): Clip {
+  mergeRows(
+    ids: number[],
+    filePath: string,
+    mismoArchivo?: { sizeBytes: number; defaultTitle: string },
+  ): Clip {
     const huerfanas: string[] = [];
     const conservada = this.db.transaction(() => {
       const leer = this.db.prepare('SELECT * FROM clips WHERE id = ?');
@@ -260,6 +279,17 @@ export class ClipsRepository {
       const borrar = this.db.prepare('DELETE FROM clips WHERE id = ?');
       for (const otro of descartados) borrar.run(otro.id);
       guardarFusion(this.db.prepare(SQL_GUARDAR_FUSION), fusionado);
+      if (mismoArchivo) {
+        const titulo =
+          [principal, ...descartados].find((f) => f.title !== mismoArchivo.defaultTitle)?.title ??
+          principal.title;
+        const pistas =
+          [principal, ...descartados].find((f) => parseMutedTracks(f.muted_tracks).length > 0)
+            ?.muted_tracks ?? principal.muted_tracks;
+        this.db
+          .prepare('UPDATE clips SET title = ?, size_bytes = ?, muted_tracks = ? WHERE id = ?')
+          .run(titulo, mismoArchivo.sizeBytes, pistas, principal.id);
+      }
       return principal.id;
     })();
     this.orphanThumbnails.push(...huerfanas);

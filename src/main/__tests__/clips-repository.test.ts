@@ -437,6 +437,70 @@ describe('ClipsRepository — mergeRows (filas que son el mismo archivo por ruta
     expect(clip.title).toBe('mi jugada');
   });
 
+  it('mismoArchivo: tamaño real, título personalizado y pistas muteadas no vacías', () => {
+    const { antigua, nueva } = dosFilas();
+    repo.update(nueva.id, { title: 'jugadón' });
+    repo.setAudioEdit(nueva.id, ['mic'], 5555);
+
+    const clip = repo.mergeRows([antigua.id, nueva.id], 'D:\\Clips\\Fortnite\\a.mp4', {
+      sizeBytes: 777,
+      defaultTitle: 'a',
+    });
+
+    expect(clip.id).toBe(antigua.id);
+    expect(clip.title).toBe('mi jugada'); // la conservada ya es personalizada: gana
+    expect(clip.sizeBytes).toBe(777);
+    expect(clip.mutedTracks).toEqual(['mic']); // la conservada no tenía
+  });
+
+  it('mismoArchivo: si la conservada tiene el título derivado del nombre, gana el personalizado', () => {
+    const antigua = repo.insert(nuevo({ filePath: 'E:\\Clips\\a.mp4', title: 'a' }));
+    const nueva = repo.insert(nuevo({ filePath: 'D:\\Clips\\a.mp4', title: 'jugadón' }));
+
+    const clip = repo.mergeRows([antigua.id, nueva.id], 'D:\\Clips\\a.mp4', {
+      sizeBytes: 1,
+      defaultTitle: 'a',
+    });
+
+    expect(clip.title).toBe('jugadón');
+  });
+
+  it('mismoArchivo: con pistas en las dos se quedan las de la conservada', () => {
+    const antigua = repo.insert(nuevo({ filePath: 'E:\\Clips\\a.mp4' }));
+    const nueva = repo.insert(nuevo({ filePath: 'D:\\Clips\\a.mp4' }));
+    repo.setAudioEdit(antigua.id, ['juego'], 1);
+    repo.setAudioEdit(nueva.id, ['mic'], 1);
+
+    const clip = repo.mergeRows([antigua.id, nueva.id], 'D:\\Clips\\a.mp4', {
+      sizeBytes: 1,
+      defaultTitle: 'a',
+    });
+
+    expect(clip.mutedTracks).toEqual(['juego']);
+  });
+
+  it('sin mismoArchivo el título, el tamaño y las pistas son los de la conservada', () => {
+    const { antigua, nueva } = dosFilas();
+    repo.update(nueva.id, { title: 'jugadón' });
+    repo.setAudioEdit(nueva.id, ['mic'], 5555);
+
+    const clip = repo.mergeRows([antigua.id, nueva.id], 'D:\\Clips\\Fortnite\\a.mp4');
+
+    expect(clip.title).toBe('mi jugada');
+    expect(clip.sizeBytes).toBe(antigua.sizeBytes);
+    expect(clip.mutedTracks).toEqual([]);
+  });
+
+  it('setPath con tamaño escribe el real; sin él deja el que había', () => {
+    const fila = repo.insert(nuevo({ filePath: 'E:\\Clips\\b.mp4' }));
+
+    expect(repo.setPath(fila.id, 'D:\\Clips\\b.mp4').sizeBytes).toBe(fila.sizeBytes);
+    const conTamano = repo.setPath(fila.id, 'D:\\Clips\\c.mp4', 42);
+
+    expect(conTamano.filePath).toBe('D:\\Clips\\c.mp4');
+    expect(conTamano.sizeBytes).toBe(42);
+  });
+
   it('una fila que no existe lanza sin tocar las demás', () => {
     const { antigua } = dosFilas();
 

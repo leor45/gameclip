@@ -25,6 +25,14 @@
 - [x] Repositorio: `mergeRows` (suma de datos, menor id, miniatura huérfana, tres filas, atómica, una
       sola fila, id inexistente); los tests de la migración de rutas siguen verdes sin tocarlos.
 
+- [x] Rescate (en rojo antes): el escenario del revisor con junction, la variante `Z:`/UNC, carpeta
+      renombrada, copia con el USB quitado, archivo que aparece a mitad; ambigüedad (dos muertas / dos
+      archivos), tamaño distinto, archivo con fila intacto, baja con miniatura, unidad sin montar, fallo
+      de `setPath`.
+- [x] Fusión: tamaño real, título personalizado, pistas no vacías (y las de la conservada si las dos);
+      `setPath` con tamaño; sin `mismoArchivo` todo como antes.
+- [x] Identidad: misma fecha de creación fusiona, otra no; `0xFFFFFFFFFFFFFFFF` no identifica.
+
 ## Implementación
 
 - [x] 1. `isInsideDir` en `clip-path.ts`.
@@ -32,12 +40,16 @@
 - [x] 3. Repositorio: `fusionarFilas` extraída de la migración y `mergeRows`.
 - [x] 4. `reconcile`: filas de fuera, identidad física, re-apuntar/fusionar, contadores y `'changed'`.
 - [x] 4b. Prefiltro por nombre de archivo (auditoría: coste de `stat` en NAS en cada `reconcile`).
+- [x] 4c. Rescate de filas muertas: bajas al final del escaneo, re-apuntado por nombre + tamaño sin
+      ambigüedad (junction deshecho, `Z:`/UNC, carpeta renombrada, copia con el USB quitado).
+- [x] 4d. `mergeRows`/`setPath` unifican tamaño real, título personalizado y pistas muteadas.
+- [x] 4e. Huella con `birthtimeNs` y sin `0xFFFFFFFFFFFFFFFF`; medido por junction, hard link y UNC.
 - [x] 5. Verificadas las vías de alta (todas guardan dentro de la carpeta de clips) y que `relabelGames`
       corre después del escaneo (guardado de Ajustes y arranque).
 
 ## Verificación (gates)
 
-- [x] Type-check verde · Lint verde · Tests verdes (92 archivos, 1253 tests; 1212 antes).
+- [x] Type-check verde · Lint verde · Tests verdes (92 archivos, 1282 tests; 1212 antes).
 - [x] Medido con junctions y hard links reales en Windows: `stat` bigint (`dev`/`ino`) da la misma
       identidad por el junction y por la ruta real; una copia (`copyFileSync`) da otra.
 
