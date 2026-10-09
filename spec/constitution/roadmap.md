@@ -1406,6 +1406,77 @@ del fabricante como teclas, que ya sirven como atajo de teclado. Acordes de mand
 segundo plano, `Ctrl+Mouse5` captura y `Mouse5` solo no, sin navegación con historial disponible,
 PTT encendido y apagado sin perder el hook) y ratón físico del owner.
 
+## Tandas C y D de bug-hunter (2026-10-09) — ✅ integradas en `main`, pendientes de publicar (v0.9.8)
+
+Dos auditorías seguidas: la **C** sobre `src/` completo tras la v0.9.7 y la **D**, sobre la integración
+de la C y con el alcance ampliado al repo entero (`src/`, `server/`, `native/`, scripts y configs). 25
+bugs confirmados por Referee independiente, una rama `fix/` por causa, todas con test de regresión en
+rojo antes del arreglo. Suite: 1056 → **1212 tests**.
+
+**Proceso «mano dura» (tanda D):** un agente por rama en worktree aislado; cada diff leído entero
+antes de aceptarlo; y revisores independientes cuyo único trabajo era buscar bugs **introducidos** por
+los arreglos. Cazaron, antes de integrar: filas duplicadas que el límite de almacenamiento contaba
+doble (podía borrar clips reales), juegos manuales con acentos guardados antes que dejaban de
+detectarse, un `tasklist` colgado que congelaba la detección para siempre, la raíz de un recurso de
+red no reconocida, `existsSync` de NAS caídos en el hilo principal (hasta 42 s) y un fallo síncrono en
+la válvula de `tasklist`. Todo corregido y re-revisado hasta «cerrado, nada nuevo». También se arregló
+un error propio de la tanda C: `games/index.ts` y su test quedaron en CRLF (llevaban bytes de control
+crudos y git los trataba como binarios); ahora usan escapes `\u0000` y son texto normal.
+
+### 🔍 Tanda C — 10 bugs (`src/`)
+
+- 🐞 **Push-to-talk en la tecla de un atajo** (`fix/ptt-colision-atajos`): Audio dejaba elegir de PTT
+  una tecla que ya era atajo y cada vez que hablabas se disparaba la acción; «Restablecer» tampoco
+  miraba el PTT. `hotkeyReservedByPtt` cierra el otro sentido de la reserva.
+- 🐞 **Un rebuild encolado al empezar a grabar destruía la grabación** (`fix/rebuild-durante-grabacion`):
+  `setSettings`/`displaysChanged` decidían con el estado antes de encolar; ahora decide la tarea.
+- 🐞 **Cancelar el UAC del auto-inicio elevado se daba por aplicado** (`fix/uac-cancelado-tarea-elevada`):
+  el fallo de `Start-Process` es no terminante y `exit $null` salía con 0.
+- 🐞 **La caché del índice de juegos ignoraba las reglas de escaneo** (`fix/cache-indice-juegos-reglas`):
+  `SCAN_RULES_VERSION` en la huella; «Volver a escanear» fuerza.
+- 🐞 **La migración del layout viejo movía archivos del usuario** (`fix/migracion-layout-archivos-ajenos`):
+  solo migra lo que creó GameClip.
+- 🐞 **Parar PresentMon dejaba su sesión ETW huérfana** (`fix/presentmon-sesion-huerfana`):
+  `--terminate_existing_session` tras el kill.
+- 🐞 **Miniaturas en bucle con vídeos sin duración** (`fix/miniatura-duracion-infinita`).
+- 🐞 **Ediciones de Ajustes perdidas** durante un guardado y al renombrar con Enter (`fix/ajustes-ediciones-perdidas`).
+- 🐞 **El filtro por juego se quedaba pegado** al desaparecer el juego (`fix/filtro-juego-desaparecido`).
+
+### 🔍 Tanda D — 15 bugs (repo completo)
+
+- 🐞 **Regresión de la tanda C** (D1, en `fix/cache-indice-juegos-reglas`): un refresco pedido durante
+  otro se perdía (una app recién excluida seguía detectándose) y «Sincronizar» forzaba un escaneo
+  completo en cada clic. Cola de un refresco; `rescan({ force: false })` para «Sincronizar».
+- 🐞 **Escaneo de la biblioteca** (`fix/biblioteca-escaneo-robusto`, D5-1/2/3): una carpeta de clips
+  en la raíz de una unidad rompía la biblioteca y todos los guardados de ajustes (EPERM en `System
+  Volume Information`) y catalogaba la papelera; guardar ajustes grabando dejaba una fila fantasma; una
+  unidad sin montar al arrancar borraba del catálogo todos sus clips con sus datos.
+- 🐞 **Un helper nativo que no arranca tumbaba el proceso principal** (`fix/helpers-spawn-seguro`, D5-4):
+  `safeSpawn` para sensores, PresentMon, silenciado de apps y botón del mando.
+- 🐞 **Texto no ASCII de Windows** (`fix/texto-no-ascii-windows`, D4-2/3/4, D5-5): PowerShell a UTF-8
+  (títulos y apps de audio), `tasklist` con `chcp 65001` (juegos con ñ, tildes o CJK en el exe), y
+  «Copiar» con la ruta por variable de entorno (rutas con ’). Con válvula anti-cuelgue de `tasklist` y
+  compatibilidad con juegos manuales guardados antes con el nombre corrupto.
+- 🐞 **La captura no seguía al juego al pasar del lanzador al exe real** (`fix/juego-cambia-de-exe`, D4-1).
+- 🐞 **Editor avanzado** (`fix/editor-avanzado-reproduccion`, D6-1/2): salir durante «Cargando audio…»
+  dejaba el clip sonando de fondo; ▶ no funcionaba tras llegar al final recortado.
+- 🐞 **Servidor de cuentas** (`fix/servidor-email-y-errores`, D2-1/2): email de 100 kB congelaba el main
+  ~8 s (regex cuadrática); los errores devolvían la traza con rutas del usuario.
+- 🐞 **Un segundo DualSense no se detectaba** con otro conectado (`fix/mando-segundo-dualsense`, D3-1).
+
+**Verificado en la máquina del owner:** selftest de grabación (17 frames de latencia, sin avisos de
+libobs); carrera grabar + cambio de ajustes con libobs real (clip completo de 4,02 s); juego manual
+`pingñé.exe` detectado; relevo `gcstub.exe` → `gcreal.exe` re-apuntado en caliente (log de libobs);
+sin fila fantasma al guardar ajustes grabando; servidor (400/413 JSON sin traza, email largo en 2 ms);
+arranque con la biblioteca real (229 clips intactos) y la caché de juegos byte a byte igual.
+
+**Pendiente de verificar en real:** dos DualSense conectados a la vez (no hay hardware); que
+`GameClipPerf` desaparezca de `logman query -ets` al apagar el overlay (exige consola elevada).
+
+**Para las notas de la v0.9.8:** los juegos añadidos a mano antes de esta versión con letras fuera del
+español (ź, ł…) en el nombre del exe hay que volver a elegirlos en **Ajustes → Grabación**; los acentos
+españoles y los nombres en japonés/chino siguen funcionando.
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)
@@ -1509,6 +1580,44 @@ un clip negro), así que la señal existe y es barata de leer.
 UI. **Ojo con el alcance:** `effectiveCapture` hoy ata el modo de audio al perfil de vídeo
 (`audioMode: 'desktop'` forzado fuera del perfil `game`); un fallback que arrastre eso degradaría el
 audio por app a «todo el PC junto» sin necesidad. Los dos ejes deben desacoplarse.
+
+### 🐞 Hallazgos preexistentes de la tanda D (pendientes, 2026-10-09)
+
+Salieron al revisar los arreglos de la tanda D. **No los introdujo ningún arreglo**: pasan igual en la
+v0.9.7. Se trabajan desde `main` (que ya integra las tandas C y D), cada uno en su rama `fix/`.
+
+1. **Repuntar la carpeta de clips con el USB viejo aún conectado puede borrar clips reales** (Medio,
+   pérdida de datos). Si el owner copia su carpeta (`E:\Clips` → `D:\Clips`) y cambia la carpeta en
+   **Ajustes** con el USB todavía conectado, el guardado escanea la carpeta nueva y da de alta las
+   copias (`scan`) mientras las filas del USB siguen vivas (sus archivos existen); `aplicarLimite`
+   corre justo después y cuenta las dos copias. Con el auto-borrado activo puede borrar clips reales,
+   incluidos los originales del USB. Dónde: `syncLibraryAfterSettings` → `reconcile` +
+   `StorageManager.enforceLimit`. Ideas: no aplicar el límite en el mismo guardado que cambia
+   `outputDir`; contar/borrar solo filas bajo la carpeta de clips actual; detectar duplicados por
+   nombre + tamaño.
+2. **Editor avanzado: un volumen cambiado durante «Cargando audio…» no se aplica** (Bajo). Al acabar la
+   carga, `ensureAudioLoaded` aplica los volúmenes y pistas quitadas del momento del clic (cierre
+   viejo): el motor suena al 100 % con el deslizador en 30 %. Dónde: `EditorAvanzado.tsx`
+   (`ensureAudioLoaded`/`togglePlay`). Idea: leer volúmenes desde refs.
+3. **Editor avanzado: ■ durante «Cargando audio…» no cancela el ▶ pendiente** (Bajo): al terminar la
+   carga, la reproducción arranca igual. Idea: un contador de «intento de reproducción» que ■ invalide.
+4. **Editor avanzado: ▶ desde un hueco suena ~1 frame de lo recortado** antes de que el bucle salte
+   (Bajo, cosmético).
+5. **«No son juegos»: guardar la lista puede pisar la recién sincronizada** (Bajo). `setExcluded`
+   devuelve la lista calculada antes del refresco del índice, y puede sobrescribir la que ese refresco
+   acaba de auto-sincronizar y mandar por `SettingsChanged`. Dónde: `setExcluded` en
+   `src/main/index.ts` y `NoSonJuegos.tsx`.
+6. **La misma carpeta por dos caminos se cataloga dos veces** (Bajo): una unidad de red vista como
+   `Z:\…` y como `\\nas\recurso\…`, o una carpeta de clips detrás de un junction o de un volumen
+   montado en carpeta (la comprobación de unidad ve `C:\`). Duplica la biblioteca mientras ambas
+   formas existen.
+7. **Auto-inicio elevado con una ruta que lleva ’** (Bajo): `powershellElevatedArgs` y
+   `powershellRelaunchElevatedArgs` (`src/main/elevated-launch.ts`) solo escapan la `'` ASCII;
+   PowerShell también trata ‘ ’ ‚ ‛ como comillas, así que una ruta del portable con ’ da error de
+   sintaxis y el ajuste se revierte. Arreglo: pasar la ruta por variable de entorno, como «Copiar»
+   (`src/main/export/clipboard.ts`).
+8. **Rechazo no capturado improbable en el auto-switcher** (Muy bajo): `getForegroundWindowTitle().then(...)`
+   sin `.catch` en `src/main/index.ts`; solo si `execFile` lanzara en síncrono.
 
 ## Futuro (fuera de alcance por ahora)
 

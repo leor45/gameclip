@@ -77,9 +77,9 @@
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado
 - [ ] Notas de la versión: los juegos manuales con acentos, ñ o caracteres japoneses/chinos/coreanos
       dados de alta antes siguen detectándose; si alguno con letras de Europa central (ł, ź, č…) dejara
       de detectarse, basta volver a elegirlo en Ajustes → Grabación.

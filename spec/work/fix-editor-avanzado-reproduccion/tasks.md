@@ -25,8 +25,8 @@
 
 ## Cierre
 
-- [ ] Aprobación del owner
+- [x] Aprobación del owner
 - [ ] Comprobación manual en la app: salir durante «Cargando audio…» (clip largo) y ▶ tras llegar al
       final recortado (con y sin principio recortado)
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado

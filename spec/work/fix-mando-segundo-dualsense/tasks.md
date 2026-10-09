@@ -50,6 +50,6 @@ abierto con lectura armada, `GetOverlappedResult` solo se llama sobre una lectur
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
-- [ ] `spec/constitution/roadmap.md` actualizado
+- [x] Aprobación del owner
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] `spec/constitution/roadmap.md` actualizado
