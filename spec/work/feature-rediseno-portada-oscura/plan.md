@@ -34,8 +34,11 @@ Se hace en dos fases para poder repartir el trabajo sin pisarse:
      cierran, bloquea el fondo, devuelve el foco al cerrar) y `<ConfirmDialog>` encima.
    - **Pregunta de reinicio por HDR:** el main envía `ui:ask-hdr-restart` con un id y espera la
      respuesta por `ui:hdr-restart-answer` (`'now' | 'later'`). Si la ventana principal no existe o
-     no está visible, o no hay respuesta en 60 s, se usa el `showMessageBox` nativo de hoy (sin
-     reinicio silencioso).
+     no está visible, se usa el `showMessageBox` nativo de hoy; si la ventana se cierra con la
+     pregunta abierta, cuenta como «Al próximo arranque» (igual que cancelar el nativo). Sin tiempo
+     límite: un temporizador mostraría el diálogo nativo encima del modal que el usuario aún lee.
+   - **Contadores del filtro:** `library.gameStats()` (`library:game-stats`) → total, escritorio y
+     clips por juego ordenados, calculado con `computeGameStats` sobre el catálogo.
 
 **Fase 2 — áreas en paralelo** (un agente por rama `feature/rediseno-<área>` creada desde la rama de
 la feature, en worktree aislado; cada uno con su CSS y sus componentes, tests propios y suite

@@ -20,6 +20,9 @@
     "postinstall": "node scripts/rebuild-sqlite-electron.mjs"
   },
   "dependencies": {
+    "@fontsource/anton": "^5.3.0",
+    "@fontsource/barlow": "^5.3.0",
+    "@fontsource/geist-mono": "^5.3.0",
     "@streamlabs/obs-studio-node": "https://s3-us-west-2.amazonaws.com/obsstudionodes3.streamlabs.com/osn-0.26.29b18-release-win64.tar.gz",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.10.0",

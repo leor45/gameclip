@@ -194,3 +194,24 @@ export function formatDuration(seconds: number | null): string {
   const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
   return `${h > 0 ? `${h}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
 }
+
+/**
+ * Clips por juego para el filtro de la Biblioteca: total, de escritorio (sin juego) y por juego, de
+ * más a menos clips (empate: por nombre). Mismo criterio que el filtro: «sin juego» es `game` null.
+ */
+export function computeGameStats(clips: readonly Pick<Clip, 'game'>[]): {
+  total: number;
+  desktop: number;
+  games: { name: string; count: number }[];
+} {
+  const porJuego = new Map<string, number>();
+  let desktop = 0;
+  for (const clip of clips) {
+    if (clip.game === null) desktop++;
+    else porJuego.set(clip.game, (porJuego.get(clip.game) ?? 0) + 1);
+  }
+  const games = [...porJuego]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return { total: clips.length, desktop, games };
+}

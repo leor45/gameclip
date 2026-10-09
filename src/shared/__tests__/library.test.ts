@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLIP_TAGS_LIMIT,
   TEMP_FILE_PREFIX,
+  computeGameStats,
   formatDuration,
   formatFileSize,
   isTempMediaFile,
@@ -103,5 +104,32 @@ describe('formatFileSize', () => {
     expect(formatFileSize(0)).toBe('0 B');
     expect(formatFileSize(-5)).toBe('0 KB');
     expect(formatFileSize(NaN)).toBe('0 KB');
+  });
+});
+
+describe('computeGameStats (contadores del filtro de juego)', () => {
+  it('cuenta total, escritorio (sin juego) y por juego, de más a menos clips', () => {
+    const stats = computeGameStats([
+      { game: 'Hades' },
+      { game: 'Rocket League' },
+      { game: null },
+      { game: 'Rocket League' },
+      { game: 'Monster Hunter Wilds' },
+      { game: 'Rocket League' },
+      { game: null },
+    ]);
+    expect(stats).toEqual({
+      total: 7,
+      desktop: 2,
+      games: [
+        { name: 'Rocket League', count: 3 },
+        { name: 'Hades', count: 1 },
+        { name: 'Monster Hunter Wilds', count: 1 },
+      ],
+    });
+  });
+
+  it('catálogo vacío', () => {
+    expect(computeGameStats([])).toEqual({ total: 0, desktop: 0, games: [] });
   });
 });

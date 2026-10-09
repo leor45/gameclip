@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, dialog, globalShortcut, protocol, shell } from 'electron';
+import { BrowserWindow, app, dialog, globalShortcut, ipcMain, protocol, shell } from 'electron';
 import Database from 'better-sqlite3-electron';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { SERVER_PORT } from '@shared/config';
@@ -60,11 +60,14 @@ import type { PerfSnapshot } from '@shared/perf';
 import { createTray } from './tray';
 import type { AppTray } from './tray';
 import { registerIpcHandlers } from './ipc';
+import { UiPrompts } from './ui-prompts';
 
 // El ffmpeg que ya trae osn (ver paths.ts): ffmpeg-static duplicaba 79 MB del mismo binario.
 const ffmpegBin = ffmpegPath();
 
 let mainWindow: BrowserWindow | null = null;
+/** Preguntas del main que se hacen con un modal de la app (con el diálogo nativo de respaldo). */
+const uiPrompts = new UiPrompts();
 let api: ApiHandle | null = null;
 let capture: CaptureManager | null = null;
 let library: LibraryManager | null = null;
@@ -612,17 +615,22 @@ async function applyScreenshotHdrChange(prev: boolean, next: CaptureSettings): P
     return;
   }
 
-  const { response } = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Reiniciar ahora', 'Al próximo arranque'],
-    defaultId: 0,
-    cancelId: 1,
-    title: 'Compatibilidad HDR en capturas',
-    message: 'Hay que reiniciar GameClip para aplicar este ajuste.',
-    detail:
-      'Es una opción del capturador de pantalla y solo puede cambiarse al arrancar. Al reiniciar se pierde el búfer de repetición de los últimos segundos.',
-  });
-  if (response !== 0) return;
+  // Primero con el modal de la app; si la ventana no está a la vista, con el diálogo nativo de siempre.
+  let respuesta = await uiPrompts.askHdrRestart(mainWindow);
+  if (respuesta === null) {
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Reiniciar ahora', 'Al próximo arranque'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Compatibilidad HDR en capturas',
+      message: 'Hay que reiniciar GameClip para aplicar este ajuste.',
+      detail:
+        'Es una opción del capturador de pantalla y solo puede cambiarse al arrancar. Al reiniciar se pierde el búfer de repetición de los últimos segundos.',
+    });
+    respuesta = response === 0 ? 'now' : 'later';
+  }
+  if (respuesta !== 'now') return;
 
   app.releaseSingleInstanceLock();
   app.relaunch({ execPath: currentExecutablePath(), args: currentAppArgs() });
@@ -667,6 +675,7 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send(IpcEvent.ExportProgress, progress),
   );
   registerMediaProtocol();
+  uiPrompts.register(ipcMain);
   registerIpcHandlers(
     capture,
     library,

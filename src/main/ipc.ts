@@ -6,7 +6,7 @@ import type { CaptureFrameResult, IpcContract } from '@shared/ipc';
 import { normalizeCaptureSettings, type CaptureSettings } from '@shared/capture';
 import { normalizePerfOverlay, type PerfOverlayConfig } from '@shared/perf';
 import { normalizeExportRequest, type ExportRequest, type ExportResult } from '@shared/export';
-import type { ClipsQuery } from '@shared/library';
+import { computeGameStats, type ClipsQuery } from '@shared/library';
 import {
   activeTrackIndexes,
   hasRoleTracks,
@@ -140,6 +140,11 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.CaptureStopRecording, () => capture.stopRecording());
   ipcMain.handle(IpcChannel.CaptureSaveReplay, () => capture.saveReplay());
 
+  // Iconos de juegos y apps. Contrato fijado; la extracción real llega con el servicio de iconos.
+  // Mientras tanto responde null y el renderer pone el logo de GameClip.
+  ipcMain.handle(IpcChannel.IconsForGame, () => null);
+  ipcMain.handle(IpcChannel.IconsForExe, () => null);
+
   // El índice de juegos instalados: lo consulta la UI de ajustes para mostrar los nombres reales y
   // para proponer uno al dar de alta un juego a mano.
   if (games) {
@@ -166,6 +171,7 @@ export function registerIpcHandlers(
     lib.getClip(mustId(req?.id)),
   );
   ipcMain.handle(IpcChannel.LibraryGames, () => library.games());
+  ipcMain.handle(IpcChannel.LibraryGameStats, () => computeGameStats(lib.list({})));
   ipcMain.handle(IpcChannel.LibraryUpdate, (_event, req: { id: number; patch: unknown }) =>
     library.updateClip(mustId(req?.id), req?.patch),
   );
