@@ -1283,6 +1283,13 @@ activa sin pararla. Ahora `before-quit` cancela el cierre, para la grabación (`
 tope de 10 s) y vuelve a salir. De paso, la grabación manual se etiqueta con el juego con el que
 empezó (antes, con el activo al pararla). Limitación: el apagado de Windows no se puede demorar.
 
+### 🐞 Juegos mal etiquetados en la biblioteca — ✅ entregado (`fix/etiquetado-biblioteca`, 2026-10-08)
+
+Cambiar la carpeta de clips re-etiquetaba los clips antiguos como `..` o `E:` (primer segmento de una
+ruta relativa que salía de la carpeta), y los clips de escritorio se catalogaban con el título de la
+ventana en primer plano (confirmado por el owner). Ahora el re-etiquetado ignora los clips de fuera de
+la carpeta actual y el juego de un clip guardado sale solo de la detección (sin ella, «Sin juego»).
+
 ## Bugs abiertos (pendientes de su propia rama `fix/`)
 
 ### 🔑 Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2)

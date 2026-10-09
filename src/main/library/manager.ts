@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { gameFromFolderName } from '@shared/clip-naming';
 import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
@@ -20,8 +20,6 @@ const BLOQUEADO = new Set(['EPERM', 'EACCES', 'EBUSY']);
 export interface LibraryOptions {
   /** Carpeta donde se guardan los thumbnails (userData/thumbnails). */
   thumbnailsDir: string;
-  /** Ventana activa al guardar un clip; inyectable en tests. */
-  getForegroundTitle?: () => Promise<string | null>;
   /** Borra el archivo del clip; inyectable en tests para simular un archivo bloqueado. */
   removeFile?: (filePath: string) => void;
   /** Espera entre reintentos de borrado; inyectable en tests. */
@@ -69,7 +67,8 @@ export class LibraryManager extends EventEmitter {
 
   /**
    * Registra un clip recién guardado por la captura (replay o grabación manual).
-   * `gameHint` (detección de juegos) tiene prioridad sobre la ventana en primer plano.
+   * El juego es el que dice la detección (`gameHint`); sin él (escritorio) el clip no tiene juego. Ya no
+   * se usa el título de la ventana en primer plano: contradecía a la carpeta en la que se guarda.
    */
   async registerSavedClip(
     filePath: string,
@@ -78,9 +77,7 @@ export class LibraryManager extends EventEmitter {
   ): Promise<Clip | null> {
     if (!existsSync(filePath) || this.repo.getByPath(filePath)) return null;
     const stats = statSync(filePath);
-    const game =
-      gameHint ??
-      (await (this.opts.getForegroundTitle?.() ?? Promise.resolve(null)).catch(() => null));
+    const game = gameHint ?? null;
     const clip = this.repo.insert({
       filePath,
       title: titleFromFileName(fileName(filePath)),
@@ -114,7 +111,7 @@ export class LibraryManager extends EventEmitter {
       this.repo.insert({
         filePath,
         title: titleFromFileName(fileName(filePath)),
-        game: gameFromPath(outputDir, filePath, this.gameNames()),
+        game: gameFromPath(outputDir, filePath, this.gameNames()) ?? null, // mediaFilesIn solo da archivos de dentro
         sizeBytes: stats.size,
         createdAt: stats.mtime.toISOString(),
         source: 'scan',
@@ -142,6 +139,7 @@ export class LibraryManager extends EventEmitter {
     const cambios: { id: number; game: string | null }[] = [];
     for (const clip of this.repo.allGames()) {
       const game = gameFromPath(outputDir, clip.filePath, ctx);
+      if (game === undefined) continue; // fuera de la carpeta actual: su carpeta no dice nada
       if (game !== clip.game) cambios.push({ id: clip.id, game });
     }
     if (cambios.length === 0) return 0;
@@ -274,12 +272,17 @@ function mediaFilesIn(dir: string): string[] {
 /**
  * Juego de un archivo escaneado, según la carpeta en la que está: el primer segmento bajo la carpeta
  * de clips (`Terraria/…`, `Desktop/Capturas/…`). Un archivo suelto en la raíz no tiene juego.
+ *
+ * `undefined` = el archivo no cuelga de `outputDir` (carpeta de salida anterior u otra unidad): ahí
+ * `relative` empieza por `..` o es absoluta, y su primer segmento NO es un juego.
  */
 function gameFromPath(
   outputDir: string,
   filePath: string,
   ctx: GameNameContext = {},
-): string | null {
-  const segmentos = relative(outputDir, filePath).split(sep);
+): string | null | undefined {
+  const rel = relative(outputDir, filePath);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
+  const segmentos = rel.split(sep);
   return segmentos.length > 1 ? gameFromFolderName(segmentos[0], ctx) : null;
 }
