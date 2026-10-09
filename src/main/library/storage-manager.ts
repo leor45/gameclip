@@ -22,17 +22,17 @@ export class StorageManager {
 
   /**
    * Uso de la carpeta de clips y espacio del disco. Mide lo mismo que el límite (ver
-   * `enforceLimit`): solo cuentan los clips que cuelgan de `outputDir` y no están en su unidad sin
-   * montar. Si no, el indicador de la barra lateral y de Ajustes → Almacenamiento marcaría «por
+   * `enforceLimit`): solo cuentan los clips que cuelgan de `outputDir`, no están en su unidad sin
+   * montar y no los retuvo la red de seguridad del último escaneo (`heldIds()`). Si no, el indicador de la barra lateral y de Ajustes → Almacenamiento marcaría «por
    * encima del límite» sin que el auto-borrado hiciera nada.
    */
   getStats(outputDir: string): StorageStats {
     let clipsBytes = 0;
     let recordingsBytes = 0;
     let screenshotsBytes = 0;
-    const cuenta = clipsDeLaCarpeta(outputDir);
+    const cuenta = clipsDeLaCarpeta(outputDir, this.library.heldIds());
     for (const clip of this.library.list()) {
-      if (!cuenta(clip.filePath)) continue;
+      if (!cuenta(clip)) continue;
       if (clip.kind === 'image') screenshotsBytes += clip.sizeBytes;
       else if (clip.source === 'recording') recordingsBytes += clip.sizeBytes;
       else clipsBytes += clip.sizeBytes;
@@ -70,7 +70,11 @@ export class StorageManager {
    * borran: son las filas sin archivo que el escaneo conserva (D5-BUG-3), «borrarlos» no libera nada
    * (el archivo sigue en el USB) y destruye sus ediciones. Esa unidad es la única a la que se le
    * pregunta al disco; el resto se juzga por la ruta (una unidad de red caída bloquea el hilo
-   * principal segundos). Sin `outputDir` no se deja fuera nada.
+   * principal segundos). Tampoco cuentan ni se borran las filas que la red de seguridad del último
+   * escaneo retuvo (`LibraryManager.heldIds()`: el escaneo no vio ningún archivo en la carpeta, p. ej.
+   * un junction borrado con la app cerrada): se ignora si sus archivos existen, contarlas borraría
+   * clips reales para bajar de un uso que no existe y «borrarlas» perdería los datos que la red
+   * conserva. Sin `outputDir` no se deja fuera nada.
    */
   async enforceLimit(
     settings: CaptureSettings,
@@ -79,12 +83,12 @@ export class StorageManager {
     if (settings.storageLimitGb <= 0 || !settings.autoDeleteOldest) return [];
 
     const limitBytes = settings.storageLimitGb * 1024 ** 3;
-    const cuenta = clipsDeLaCarpeta(opts.outputDir);
+    const cuenta = clipsDeLaCarpeta(opts.outputDir, this.library.heldIds());
     // Ascendente por fecha: recorremos del más viejo al más nuevo, saltando los no elegibles
     // (equivale a "parar si no quedan elegibles" sin tener que re-consultar el repositorio).
     const clips = this.library
       .list()
-      .filter((c) => cuenta(c.filePath))
+      .filter((c) => cuenta(c))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     let used = clips.reduce((sum, c) => sum + c.sizeBytes, 0);
     const deleted: string[] = [];
@@ -125,15 +129,24 @@ export class StorageManager {
 }
 
 /**
- * ¿Cuenta este clip para el uso y el límite? Sí si cuelga de la carpeta de clips y no vive en su
- * unidad sin montar. Sin carpeta (o vacía) cuenta todo. El orden importa: lo de fuera se descarta por
+ * ¿Cuenta este clip para el uso y el límite? Sí si cuelga de la carpeta de clips, no lo retuvo la red
+ * de seguridad del último escaneo (`LibraryManager.heldIds()`: filas cuyo archivo no se pudo ver
+ * porque el escaneo no encontró ningún archivo; contarlas borraría clips reales para bajar de un uso
+ * que no existe y «borrarlas» perdería los datos que la red conserva) y no vive en su unidad sin
+ * montar. Sin carpeta (o vacía) cuenta todo. El orden importa: lo de fuera se descarta por
  * la ruta, sin tocar el disco; la comprobación de la unidad (una sola consulta por pasada) solo se
  * hace para lo que está dentro.
  */
-function clipsDeLaCarpeta(outputDir: string | undefined): (filePath: string) => boolean {
+function clipsDeLaCarpeta(
+  outputDir: string | undefined,
+  retenidas: ReadonlySet<number>,
+): (clip: Clip) => boolean {
   if (!outputDir?.trim()) return () => true;
   const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
-  return (filePath) => isInsideDir(outputDir, filePath) && !enSalidaSinMontar(filePath);
+  return (clip) =>
+    isInsideDir(outputDir, clip.filePath) &&
+    !retenidas.has(clip.id) &&
+    !enSalidaSinMontar(clip.filePath);
 }
 
 /** Sube por los padres hasta encontrar un directorio existente, o la raíz de la unidad. */

@@ -39,6 +39,9 @@ export interface LibraryOptions {
  * thumbnails y gestión. Emite 'changed' en cada mutación para push al renderer.
  */
 export class LibraryManager extends EventEmitter {
+  /** Filas que la red de seguridad del último `reconcile` retuvo sin poder ver sus archivos. */
+  private retenidas: ReadonlySet<number> = new Set();
+
   constructor(
     private readonly repo: ClipsRepository,
     private readonly opts: LibraryOptions,
@@ -60,6 +63,15 @@ export class LibraryManager extends EventEmitter {
         // best-effort: una miniatura huérfana no rompe nada
       }
     }
+  }
+
+  /**
+   * Ids de las filas que el último `reconcile` retuvo porque el escaneo no vio ningún archivo (ver la
+   * red de seguridad de `reconcile`). Solo lectura; vacío si la red no actuó. El almacenamiento los deja
+   * fuera del uso y del auto-borrado: no se sabe si sus archivos existen.
+   */
+  heldIds(): ReadonlySet<number> {
+    return this.retenidas;
   }
 
   list(query: ClipsQuery = {}): Clip[] {
@@ -126,8 +138,12 @@ export class LibraryManager extends EventEmitter {
    * que se desmontó, una carpeta renombrada o movida con la app cerrada; el arranque escanea antes de que
    * la captura cree la carpeta). Las filas muertas de fuera de la carpeta sí se dan de baja. **Coste
    * aceptado:** si el usuario vacía a mano toda la carpeta desde el Explorador, sus tarjetas se quedan
-   * hasta que haya al menos un archivo en ella (el siguiente clip guardado y el siguiente escaneo) o
-   * hasta que las borre desde la app; el auto-borrado por límite solo les quita la fila.
+   * hasta que haya al menos un archivo en ella (el siguiente clip guardado y el siguiente escaneo, que
+   * entonces las da de baja si no tienen pareja) o hasta que las borre desde la app. Mientras tanto no cuentan para el uso ni son elegibles para el
+   * auto-borrado (igual que las de la unidad sin montar, D5-BUG-3): contarlas borraría clips reales
+   * para bajar de un uso que no existe, y 'borrar' las fantasma perdería justo los datos que la red
+   * conserva. Lo que retuvo el ÚLTIMO `reconcile` se expone en `heldIds()` (se reemplaza en cada
+   * pasada, vacío si la red no actuó, y no consulta el disco).
    *
    * **La misma carpeta por dos caminos.** Una unidad de red vista como `Z:\Clips` y como
    * `\\nas\recurso\Clips`, un junction o un volumen montado en una carpeta: si la carpeta de clips pasa de
@@ -253,14 +269,24 @@ export class LibraryManager extends EventEmitter {
     // escaneo no haya visto NINGÚN archivo (carpeta inexistente, ilegible o vacía): sin poder ver los
     // archivos no se da de baja lo que cuelga de ella (como D5-BUG-3). Lo de fuera de la carpeta, sí.
     const sinVerNada = archivos.length === 0;
+    const retenidas = new Set<number>();
     for (const { id, filePath } of muertas.values()) {
-      if (sinVerNada && isInsideDir(outputDir, filePath)) continue;
+      if (sinVerNada && isInsideDir(outputDir, filePath)) {
+        retenidas.add(id);
+        continue;
+      }
       this.removeThumbnail(this.repo.get(id));
       this.repo.delete(id);
       removed++;
     }
+    // Se reemplaza en cada pasada: vacío si la red no actuó. Si cambia lo que cuenta para el uso, el
+    // renderer debe releerlo.
+    const cambioLaRetencion =
+      retenidas.size !== this.retenidas.size ||
+      [...retenidas].some((id) => !this.retenidas.has(id));
+    this.retenidas = retenidas;
 
-    if (added || removed || unificadas) this.emit('changed');
+    if (added || removed || unificadas || cambioLaRetencion) this.emit('changed');
     return { added, removed };
   }
 
@@ -404,6 +430,11 @@ export class LibraryManager extends EventEmitter {
     await this.removeClipFile(clip.filePath);
     this.removeThumbnail(clip);
     this.repo.delete(id);
+    if (this.retenidas.has(id)) {
+      const resto = new Set(this.retenidas);
+      resto.delete(id);
+      this.retenidas = resto;
+    }
     this.emit('changed');
   }
 

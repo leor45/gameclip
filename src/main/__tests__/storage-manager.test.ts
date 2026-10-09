@@ -587,10 +587,9 @@ describe('StorageManager — clips fuera de la carpeta de clips (Bug 1 de la tan
     expect(new StorageManager(manager).getStats(raiz.toLowerCase()).clipsBytes).toBe(123);
   });
 
-  it('una fila fantasma (archivo que ya no está) dentro de la carpeta cuenta, y borrarla por límite solo quita la fila', async () => {
-    // `reconcile` conserva las filas muertas de dentro cuando el escaneo no ve ningún archivo (carpeta
-    // inexistente o vacía): el límite las cuenta y, si les toca, `deleteClip` no tropieza con el archivo
-    // inexistente (`rmSync` con `force`) ni con la papelera que lo rechaza.
+  it('una fila cuyo archivo desapareció (y que el escaneo no retuvo) cuenta, y borrarla por límite solo quita la fila', async () => {
+    // `deleteClip` no tropieza con el archivo inexistente (`rmSync` con `force`) ni con la papelera que
+    // lo rechaza.
     const unidad = 1000;
     const fantasma = repo.insert({
       filePath: join(outputDir, 'fantasma.mp4'),
@@ -612,6 +611,89 @@ describe('StorageManager — clips fuera de la carpeta de clips (Bug 1 de la tan
     expect(borrados).toEqual([fantasma.filePath]);
     expect(manager.getClip(fantasma.id)).toBeNull();
     expect(manager.list().map((c) => c.title)).toEqual(['real']);
+  });
+
+  describe('filas que la red de seguridad del escaneo retuvo (carpeta sin ningún archivo a la vista)', () => {
+    // El junction se borra con la app cerrada: al arrancar, `reconcile` ve la carpeta vacía y retiene
+    // las filas muertas (no sabe si sus archivos existen). Si el límite las contara, borraría clips
+    // reales nuevos para bajar de un uso que no existe; y «borrar» las fantasma perdería sus datos.
+    const unidad = 1000;
+    const limiteGb = (bytes: number) => bytes / 1024 ** 3;
+
+    /** Fantasmas dentro de la carpeta (dos favoritas) y un arranque que las retiene. */
+    function fantasmasRetenidas() {
+      const fila = (nombre: string, favorite: boolean, createdAt: string) => {
+        const f = repo.insert({
+          filePath: join(outputDir, 'Fortnite', nombre),
+          title: nombre,
+          game: 'Fortnite',
+          sizeBytes: unidad,
+          createdAt,
+          source: 'replay',
+        });
+        if (favorite) manager.updateClip(f.id, { favorite: true });
+        return f;
+      };
+      const fantasmas = [
+        fila('f1.mp4', true, '2025-12-01T00:00:00.000Z'),
+        fila('f2.mp4', true, '2025-12-02T00:00:00.000Z'),
+        fila('f3.mp4', false, '2025-12-03T00:00:00.000Z'),
+      ];
+      expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+      expect([...manager.heldIds()].sort()).toEqual(fantasmas.map((f) => f.id).sort());
+      return fantasmas;
+    }
+
+    it('el escenario exacto: con un límite que solo las fantasma superan, no se borra ningún clip real', async () => {
+      const fantasmas = fantasmasRetenidas();
+      const viejo = await clip('viejo.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
+      const nuevo = await clip('nuevo.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+      const sm = new StorageManager(manager);
+
+      // Uso real: 2 unidades; las 3 fantasma sumarían 5. Límite: 3.
+      const borrados = await sm.enforceLimit(
+        settings({ storageLimitGb: limiteGb(unidad * 3), autoDeleteOldest: true }),
+        { outputDir, protectPath: nuevo.filePath },
+      );
+
+      expect(borrados).toEqual([]);
+      expect(real.existsSync(viejo.filePath)).toBe(true);
+      expect(real.existsSync(nuevo.filePath)).toBe(true);
+      for (const f of fantasmas) expect(manager.getClip(f.id)).not.toBeNull();
+    });
+
+    it('las fantasma no se borran por límite aunque se supere de verdad: caen los reales', async () => {
+      const fantasmas = fantasmasRetenidas();
+      const viejo = await clip('viejo.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
+      await clip('nuevo.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
+
+      const borrados = await new StorageManager(manager).enforceLimit(
+        settings({ storageLimitGb: limiteGb(unidad), autoDeleteOldest: true }),
+        { outputDir },
+      );
+
+      expect(borrados).toEqual([viejo.filePath]);
+      for (const f of fantasmas) expect(manager.getClip(f.id)).not.toBeNull(); // incluida la no favorita f3
+    });
+
+    it('getStats no las cuenta', async () => {
+      fantasmasRetenidas();
+      await clip('real.mp4', 100);
+
+      expect(new StorageManager(manager).getStats(outputDir).clipsBytes).toBe(100);
+    });
+
+    it('cuando la red deja de actuar (hay archivos en la carpeta) el conjunto se vacía y todo cuenta como hoy', async () => {
+      const [f1] = fantasmasRetenidas();
+      await clip('real.mp4', 100); // un archivo a la vista: el siguiente escaneo ya no retiene
+      const sm = new StorageManager(manager);
+
+      manager.reconcile(outputDir);
+
+      expect(manager.heldIds().size).toBe(0);
+      expect(manager.getClip(f1.id)).toBeNull(); // sin pareja, se da de baja como siempre
+      expect(sm.getStats(outputDir).clipsBytes).toBe(100);
+    });
   });
 
   it('combinado con la unidad sin montar: lo de la unidad ausente y lo de otras carpetas, fuera', async () => {

@@ -44,6 +44,8 @@
       ambigüedad (junction deshecho, `Z:`/UNC, carpeta renombrada, copia con el USB quitado).
 - [x] 4c2. Sin ver ningún archivo no se borran las muertas de dentro (junction borrado con la app
       cerrada, carpeta inexistente o recreada vacía, renombrada, ilegible); las de fuera sí.
+- [x] 4c3. `heldIds()` (ids retenidos por el último escaneo) fuera del uso y del límite en
+      `getStats`/`enforceLimit`; `deleteClip` los saca; se vacía cuando la red no actúa.
 - [x] 4d. `mergeRows`/`setPath` unifican tamaño real, título personalizado y pistas muteadas.
 - [x] 4e. Huella con `birthtimeNs` y sin `0xFFFFFFFFFFFFFFFF`; medido por junction, hard link y UNC.
 - [x] 5. Verificadas las vías de alta (todas guardan dentro de la carpeta de clips) y que `relabelGames`
@@ -51,7 +53,7 @@
 
 ## Verificación (gates)
 
-- [x] Type-check verde · Lint verde · Tests verdes (92 archivos, 1289 tests; 1212 antes).
+- [x] Type-check verde · Lint verde · Tests verdes (92 archivos, 1294 tests; 1212 antes).
 - [x] Medido con junctions y hard links reales en Windows: `stat` bigint (`dev`/`ino`) da la misma
       identidad por el junction y por la ruta real; una copia (`copyFileSync`) da otra.
 

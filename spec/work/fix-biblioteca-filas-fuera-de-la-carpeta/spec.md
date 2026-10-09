@@ -57,8 +57,10 @@ raíz: el catálogo conserva filas cuyo archivo existe pero **no cuelga de la ca
   sobrevive y, al apuntar a la carpeta nueva, el rescate la recupera. **Coste aceptado:** si el
   usuario vacía a mano toda la carpeta desde el Explorador, las tarjetas se quedan hasta que haya al
   menos un archivo en ella (el siguiente clip guardado y el siguiente escaneo) o hasta que las borre
-  desde la app. Esas filas fantasma cuentan su `size_bytes` en el límite; borrarlas por límite solo
-  quita la fila (`deleteClip` → `rmSync` con `force`; la papelera que lo rechaza cae al borrado).
+  desde la app. Mientras están retenidas no cuentan para el uso ni son elegibles para el
+  auto-borrado (`LibraryManager.heldIds()`, el conjunto del último escaneo, usado por `getStats` y
+  `enforceLimit`): contarlas borraba clips reales nuevos para bajar de un uso que no existe, y
+  «borrarlas» perdía los datos que la red conserva.
 - Al fusionar o re-apuntar por identidad, lo que depende del archivo se unifica: tamaño real, título
   personalizado y pistas muteadas no vacías (solo en `mergeRows`/`unificar`; la migración de rutas
   queda igual).
@@ -103,6 +105,9 @@ raíz: el catálogo conserva filas cuyo archivo existe pero **no cuelga de la ca
       con una carpeta de clips renombrada y con la variante `Z:`/UNC. Con ambigüedad (dos filas muertas o
       dos archivos con el mismo nombre) o tamaño distinto no se rescata nada; una fila muerta sin pareja
       se da de baja como siempre.
+- [ ] Con la carpeta sin ningún archivo a la vista, las filas muertas de dentro se conservan y no
+      cuentan para el uso ni para el límite (aunque sean favoritas o no): el límite no borra clips
+      reales por ellas. Con archivos a la vista, vuelve todo a contar como antes.
 - [ ] Al fusionar el tamaño es el real, el título el personalizado y las pistas las no vacías.
 - [ ] Sin filas de fuera no hay ninguna consulta de identidad al disco.
 - [ ] Un fallo al unificar una fila no corta el escaneo.

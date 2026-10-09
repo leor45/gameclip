@@ -1041,6 +1041,45 @@ describe('LibraryManager.reconcile — rescate de filas muertas que cambiaron de
       expect(manager.getClip(muerta.id)).toBeNull();
     });
 
+    it('heldIds: solo las retenidas de la última pasada; se vacía si la red no actúa y deleteClip la saca', async () => {
+      const manager = crearManager();
+      const ruta = archivo('Fortnite', 'a.mp4');
+      const dentro = clipEditado(manager, ruta);
+      rmSync(ruta);
+      const fuera = repo.insert({
+        filePath: `${unidadAusente()}Clips\\b.mp4`,
+        title: 'otra carpeta',
+        game: null,
+        sizeBytes: 18,
+        createdAt: '2026-07-01T10:00:00.000Z',
+        source: 'replay',
+      });
+      expect(manager.heldIds().size).toBe(0); // antes de cualquier escaneo
+      const cambios = vi.fn();
+      manager.on('changed', cambios);
+
+      manager.reconcile(outputDir); // carpeta vacía
+
+      expect([...manager.heldIds()]).toEqual([dentro.id]); // la de fuera se borró, no se retiene
+      expect(manager.getClip(fuera.id)).toBeNull();
+      expect(cambios).toHaveBeenCalled(); // el uso cambia: el renderer debe releerlo
+      cambios.mockClear();
+      manager.reconcile(outputDir); // misma situación: nada nuevo que avisar
+      expect(cambios).not.toHaveBeenCalled();
+
+      await manager.deleteClip(dentro.id);
+      expect(manager.heldIds().size).toBe(0);
+
+      const otra = clipEditado(manager, archivo('Fortnite', 'c.mp4'));
+      rmSync(join(outputDir, 'Fortnite', 'c.mp4'));
+      manager.reconcile(outputDir);
+      expect([...manager.heldIds()]).toEqual([otra.id]);
+      archivo('Terraria', 'otro.mp4'); // aparece un archivo: la red deja de actuar
+      manager.reconcile(outputDir);
+      expect(manager.heldIds().size).toBe(0);
+      expect(manager.getClip(otra.id)).toBeNull();
+    });
+
     it('la carpeta ilegible entera tampoco borra lo de dentro', () => {
       const ruta = archivo('Fortnite', 'a.mp4');
       const manager = crearManager();

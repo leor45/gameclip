@@ -98,10 +98,17 @@
   `mediaFilesIn` devolvió vacío, las muertas que cuelgan de `outputDir` (`isInsideDir`) se conservan
   esa pasada; las de fuera se borran como hoy; con al menos un archivo visto, rescate y bajas como
   antes. Misma filosofía que D5-BUG-3. **Coste aceptado:** vaciar a mano toda la carpeta deja las
-  tarjetas hasta el siguiente archivo y escaneo, o hasta borrarlas desde la app. Las fantasma cuentan
-  su tamaño en el límite y borrarlas solo quita la fila (leído `deleteClip`/`removeClipFile`:
-  `rmSync({ force: true })` no lanza con un archivo inexistente; `trashItem` que falla cae al
-  borrado; test en `storage-manager.test.ts`).
+  tarjetas hasta el siguiente archivo y escaneo, o hasta borrarlas desde la app.
+  **Las retenidas no cuentan ni se borran por límite** (auditoría de 4f23703: contarlas borraba clips
+  reales nuevos para bajar de un uso que no existe —las favoritas se saltan y siguen contando— y
+  «borrar» las fantasma perdía los datos que la red conserva): `LibraryManager` guarda en memoria los
+  ids retenidos por el ÚLTIMO `reconcile` (`heldIds()`, solo lectura; se reemplaza en cada pasada,
+  vacío si la red no actuó; `deleteClip` saca el id; si cambia, emite `'changed'`), sin consultas
+  nuevas al disco, y `StorageManager` (`clipsDeLaCarpeta`) los deja fuera de `getStats` y
+  `enforceLimit`, igual que la unidad sin montar. En el arranque el `reconcile` de `setupLibrary`
+  corre antes del primer `aplicarLimite` (diferido 5 s con `setTimeout`), así que el conjunto ya está
+  calculado. Se vacía en cuanto un escaneo ve algún archivo (y entonces las muertas sin pareja se dan
+  de baja, ver «Riesgos»).
 - **Unificar lo que depende del archivo (revisión, Baja):** `mergeRows(ids, filePath, mismoArchivo?)` y
   `setPath(id, path, sizeBytes?)` reciben el tamaño real y, al fusionar, el título personalizado (el que
   no es el derivado del nombre del archivo; si los dos, el de la conservada) y las pistas muteadas no
@@ -134,6 +141,10 @@
   (copia del Explorador), cada `reconcile` repite los `stat` de esas filas de fuera y de sus archivos
   gemelos mientras la vieja exista. Es el precio de poder distinguir copia de mismo archivo; no pasa
   con una carpeta vieja de clips distintos.
+- **La red de seguridad dura lo que dure la carpeta vacía:** en cuanto un escaneo ve algún archivo
+  (p. ej. un clip nuevo guardado en la carpeta recreada y un guardado de Ajustes), las muertas sin
+  pareja se dan de baja como siempre; para conservarlas hay que volver a la ruta real antes de eso
+  (entonces el rescate las recupera).
 - **Guardar Ajustes grabando** con un cambio de forma de la carpeta no escanea (D5-BUG-2) pero aplica el
   límite: las filas de la forma vieja están «fuera» y no cuentan hasta el siguiente guardado sin grabar
   o arranque. Transitorio; nunca borra de más.
