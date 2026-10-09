@@ -165,6 +165,30 @@ describe('Ajustes — Audio', () => {
     expect(screen.getByTestId('aviso-mic-desconectado')).toBeInTheDocument();
   });
 
+  it('regresión: la tecla de push to talk no ofrece teclas que ya son atajos', async () => {
+    // Antes se podía poner F8 de PTT con F8 de «Guardar clip»: cada vez que hablabas, un clip.
+    mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, pttEnabled: true });
+    await irAAudio();
+
+    const select = (await screen.findByLabelText('Tecla de push to talk')) as HTMLSelectElement;
+    const f8 = [...select.options].find((o) => o.value === 'F8')!;
+    expect(f8.disabled).toBe(true);
+    expect(f8.textContent).toContain('Guardar clip');
+    expect([...select.options].find((o) => o.value === 'F9')!.disabled).toBe(false);
+  });
+
+  it('regresión: un push to talk guardado que choca con un atajo avisa y bloquea el guardado', async () => {
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      pttEnabled: true,
+      pttHotkey: 'F8',
+    });
+    await irAAudio();
+
+    expect(await screen.findByText(/también el atajo de «Guardar clip»/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Guardar ajustes' })).toBeDisabled();
+  });
+
   it('con el micrófono guardado presente no hay aviso de desconexión', async () => {
     mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, micDeviceId: 'device-2' });
     await irAAudio();

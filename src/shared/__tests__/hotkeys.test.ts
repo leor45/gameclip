@@ -9,6 +9,7 @@ import {
   hotkeySettingsChanged,
   isHotkeyActive,
   isMouseAccelerator,
+  hotkeyReservedByPtt,
   isPttReserved,
   isSideMouseButton,
   isValidAccelerator,
@@ -148,6 +149,31 @@ describe('isPttReserved', () => {
     expect(isPttReserved('Ctrl+Mouse4', 'Mouse4')).toBe(false);
     expect(isPttReserved('Mouse5', 'Mouse4')).toBe(false);
     expect(isPttReserved('F9', 'Mouse4')).toBe(false);
+  });
+});
+
+describe('hotkeyReservedByPtt (auditoría C: C1-BUG-1)', () => {
+  it('devuelve la acción cuyo atajo es la misma pulsación que la tecla del PTT', () => {
+    expect(hotkeyReservedByPtt(DEFAULT_CAPTURE_SETTINGS, 'F8')?.key).toBe('replayHotkey');
+    expect(hotkeyReservedByPtt(DEFAULT_CAPTURE_SETTINGS, 'F7')?.key).toBe('recordingHotkey');
+    expect(hotkeyReservedByPtt(DEFAULT_CAPTURE_SETTINGS, 'F9')).toBeNull(); // el PTT por defecto
+  });
+
+  it('una combinación con esa tecla no choca, y un botón del ratón sí', () => {
+    const s = { ...DEFAULT_CAPTURE_SETTINGS, replayHotkey: 'Ctrl+F8', screenshotHotkey: 'Mouse4' };
+    expect(hotkeyReservedByPtt(s, 'F8')).toBeNull();
+    expect(hotkeyReservedByPtt(s, 'Mouse4')?.key).toBe('screenshotHotkey');
+  });
+
+  it('cuenta también las acciones apagadas: encenderlas luego no puede crear el choque', () => {
+    const s = { ...DEFAULT_CAPTURE_SETTINGS, perfOverlayEnabled: false, perfOverlayHotkey: 'F11' };
+    expect(hotkeyReservedByPtt(s, 'F11')?.key).toBe('perfOverlayHotkey');
+  });
+
+  it('sin segundo argumento usa la tecla de PTT de los ajustes', () => {
+    expect(hotkeyReservedByPtt({ ...DEFAULT_CAPTURE_SETTINGS, pttHotkey: 'F6' })?.key).toBe(
+      'screenshotHotkey',
+    );
   });
 });
 

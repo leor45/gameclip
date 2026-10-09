@@ -294,3 +294,22 @@ export function isPttReserved(accel: string, pttHotkey: string): boolean {
   if (!ptt) return false;
   return accel.trim().toLowerCase() === ptt.toLowerCase();
 }
+
+/**
+ * La otra mitad de `isPttReserved`: qué acción tiene como atajo la misma pulsación que la tecla del
+ * PTT, o null. Sin esto, la protección iba en un solo sentido: Atajos no dejaba usar la tecla del PTT,
+ * pero Audio sí dejaba poner de PTT una tecla que ya era atajo (F8 de PTT con F8 de «Guardar clip»:
+ * un clip cada vez que hablabas). Cuenta también las acciones apagadas, igual que `isPttReserved`
+ * reserva la tecla aunque el PTT esté apagado: encender una luego no puede crear el choque.
+ */
+export function hotkeyReservedByPtt(
+  settings: CaptureSettings,
+  pttHotkey: string = settings.pttHotkey,
+): HotkeyAction | null {
+  return (
+    HOTKEY_ACTIONS.find((action) => {
+      const accel = settings[action.key].trim();
+      return accel !== '' && isPttReserved(accel, pttHotkey);
+    }) ?? null
+  );
+}

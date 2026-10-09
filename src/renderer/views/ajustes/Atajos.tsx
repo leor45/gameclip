@@ -93,11 +93,23 @@ export default function AjustesAtajos() {
     : null;
 
   function restablecer() {
+    // Un default que coincide con la tecla del PTT no se restablece (sería el mismo choque que la
+    // captura ya rechaza): se deja el atajo actual y se explica.
+    const saltados: string[] = [];
     for (const action of HOTKEY_ACTIONS) {
-      set(action.key, DEFAULT_CAPTURE_SETTINGS[action.key]);
+      const porDefecto = DEFAULT_CAPTURE_SETTINGS[action.key];
+      if (isPttReserved(porDefecto, pttHotkey)) {
+        saltados.push(`«${action.label}» (${porDefecto})`);
+        continue;
+      }
+      set(action.key, porDefecto);
     }
     setCapturando(null);
-    setRechazo(null);
+    setRechazo(
+      saltados.length
+        ? `No se restableció ${saltados.join(', ')}: es la tecla del push to talk.`
+        : null,
+    );
   }
 
   return (
