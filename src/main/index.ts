@@ -285,6 +285,8 @@ function setupCapture(): CaptureManager {
     mainWindow?.webContents.send(IpcEvent.SettingsChanged, settings),
   );
   manager.on('clip-saved', () => overlay?.showToast('Clip guardado ✓'));
+  // Atajo de replay (o botón del mando) durante una grabación manual: el buffer está parado.
+  manager.on('replay-skipped', () => overlay?.showToast('Ya estás grabando'));
 
   registerHotkeys(manager);
   watchDisplayChanges(screen, manager);
@@ -803,10 +805,11 @@ async function runSelfTest(manager: CaptureManager): Promise<void> {
   const retardo = Number(process.env['GAMECLIP_SELFTEST_DELAY_MS'] ?? 0);
   const duracion = Number(process.env['GAMECLIP_SELFTEST_RECORD_MS'] ?? 4000);
   // GAMECLIP_SELFTEST_REBUILDS=N reconstruye el pipeline N veces antes de grabar (fugas de
-  // encoders/salidas); GAMECLIP_SELFTEST_CLIP=1 guarda un clip retroactivo durante la grabación y
-  // otro después de pararla (el buffer tiene que seguir vivo en ambos casos).
+  // encoders/salidas); GAMECLIP_SELFTEST_CLIP=1 pide un clip retroactivo durante la grabación (debe
+  // saltarse: el buffer se pausa al grabar a mano) y otro después de pararla (debe guardarse).
   const rebuilds = Number(process.env['GAMECLIP_SELFTEST_REBUILDS'] ?? 0);
   const conClip = process.env['GAMECLIP_SELFTEST_CLIP'] === '1';
+  manager.on('replay-skipped', () => console.log('[selftest] replay saltado: grabación manual en curso'));
   try {
     for (let i = 0; i < rebuilds; i++) {
       await manager.setSettings({});
