@@ -52,6 +52,14 @@ const EXES_IGNORADOS = [
   /prereq/i,
   /^cef/i,
   /cefsubprocess/i,
+  // Runtimes que comparten muchas apps: nunca son el proceso que dibuja el juego, y como la detección
+  // compara solo el nombre, cualquier otra app que los lance pasaría por el juego. QtWebEngineProcess
+  // lo lanza GOG Galaxy (era el "REDlauncher" fantasma); 7z/7za, createdump y los crs-* son
+  // herramientas que el índice real asignaba a Witcher 3, Lossless Scaling y Stellar Blade.
+  /^qtwebengineprocess$/i,
+  /^7za?$/i,
+  /^createdump$/i,
+  /^crs-(handler|uploader)$/i,
 ];
 
 export function ignorarCarpeta(nombre: string): boolean {

@@ -145,6 +145,29 @@ describe('registro de desinstalación (Ubisoft · EA · Battle.net)', () => {
     expect(parseUninstallEntries(entradas, existe)).toEqual([]);
   });
 
+  it('descarta REDlauncher aunque lo publique una editora de juegos (regresión: GOG Galaxy detectado como juego)', () => {
+    // Entrada real de la máquina del owner. Su carpeta trae QtWebEngineProcess.exe, el mismo exe
+    // que lanza GOG Galaxy: indexarla hacía que GOG Galaxy abierto contara como "REDlauncher".
+    const entradas = [
+      {
+        name: 'REDlauncher',
+        path: 'C:\\Users\\Leo\\AppData\\Local\\Programs\\CD Projekt RED\\REDlauncher\\',
+        publisher: 'CD Projekt RED',
+      },
+    ];
+    expect(parseUninstallEntries(entradas, existe)).toEqual([]);
+  });
+
+  it('descarta launchers, actualizadores y el Social Club por patrón, no solo por nombre exacto', () => {
+    const entradas = [
+      { name: 'Rockstar Games Social Club', path: 'C:\\Rockstar\\Social Club', publisher: 'Rockstar Games' },
+      { name: 'Bethesda.net Launcher', path: 'C:\\Bethesda', publisher: 'Bethesda Softworks' },
+      { name: 'Herramienta X', path: 'C:\\Ubisoft\\Updater', publisher: 'Ubisoft' },
+      { name: 'Cyberpunk 2077', path: 'C:\\Games\\Cyberpunk 2077', publisher: 'CD PROJEKT RED' },
+    ];
+    expect(parseUninstallEntries(entradas, existe).map((j) => j.name)).toEqual(['Cyberpunk 2077']);
+  });
+
   it('descarta el software que no es de una editora de juegos', () => {
     const entradas = [{ name: 'Notepad++', path: 'C:\\npp', publisher: 'Don Ho' }];
     expect(parseUninstallEntries(entradas, existe)).toEqual([]);
