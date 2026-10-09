@@ -1,4 +1,4 @@
-import type { Database } from 'better-sqlite3';
+import type { Database, Statement } from 'better-sqlite3';
 import type { Clip, ClipPatch, ClipSource, ClipsQuery, MediaKind } from '@shared/library';
 import { mediaKindForFile, normalizeTags } from '@shared/library';
 import { normalizeMutedTracks } from '@shared/tracks';
@@ -227,6 +227,45 @@ export class ClipsRepository {
     return this.mustGet(id);
   }
 
+  /**
+   * Fusiona en una sola las filas que son el mismo archivo visto por rutas distintas (`Z:\Clips` y
+   * `\\nas\recurso\Clips`, un junction…), y deja a la resultante en `filePath`. Se conserva la de menor
+   * id —la más antigua, la que creó la captura: su id lo usan las URLs de medios y la miniatura— y se
+   * le suman los datos de las demás (ver `fusionarFilas`, la misma semántica que la migración de
+   * rutas). Con una sola fila equivale a `setPath`.
+   *
+   * Transaccional: las descartadas se borran ANTES de escribir la ruta (el índice UNIQUE no admite dos
+   * filas en ella), y si algo falla —una ruta ya ocupada por otra fila, un id que no existe— no cambia
+   * nada, ni se anotan miniaturas huérfanas. Las miniaturas de las descartadas que sobran quedan para
+   * `takeOrphanThumbnails`.
+   */
+  mergeRows(ids: number[], filePath: string): Clip {
+    const huerfanas: string[] = [];
+    const conservada = this.db.transaction(() => {
+      const leer = this.db.prepare('SELECT * FROM clips WHERE id = ?');
+      const filas = [...new Set(ids)]
+        .sort((a, b) => a - b)
+        .map((id) => {
+          const fila = leer.get(id) as ClipRow | undefined;
+          if (!fila) throw new Error(`Clip ${id} no existe.`);
+          return fila;
+        });
+      if (filas.length === 0) throw new Error('No hay filas que fusionar.');
+      const [principal, ...descartados] = filas;
+      const fusionado = fusionarFilas(
+        { ...principal, file_path: canonicalClipPath(filePath) },
+        descartados,
+        huerfanas,
+      );
+      const borrar = this.db.prepare('DELETE FROM clips WHERE id = ?');
+      for (const otro of descartados) borrar.run(otro.id);
+      guardarFusion(this.db.prepare(SQL_GUARDAR_FUSION), fusionado);
+      return principal.id;
+    })();
+    this.orphanThumbnails.push(...huerfanas);
+    return this.mustGet(conservada);
+  }
+
   /** Edit de audio del editor: pistas muteadas en la mezcla y tamaño del archivo reescrito. */
   setAudioEdit(id: number, mutedTracks: string[], sizeBytes: number): Clip {
     this.db
@@ -276,44 +315,73 @@ function dedupeByCanonicalPath(db: Database, orphanThumbnails: string[]): void {
     else grupos.set(key, [row]);
   }
 
-  const actualizar = db.prepare(
-    `UPDATE clips SET file_path = ?, game = ?, duration_seconds = ?, thumbnail_path = ?,
-                      favorite = ?, tags = ?, source = ?
-     WHERE id = ?`,
-  );
+  const actualizar = db.prepare(SQL_GUARDAR_FUSION);
   const borrar = db.prepare('DELETE FROM clips WHERE id = ?');
 
   for (const grupo of grupos.values()) {
     const [principal, ...descartados] = grupo;
-    const fusionado = { ...principal, file_path: canonicalClipPath(principal.file_path) };
-    const tags = new Set(parseTags(principal.tags));
-
-    for (const otro of descartados) {
-      fusionado.game ??= otro.game;
-      fusionado.duration_seconds ??= otro.duration_seconds;
-      fusionado.favorite ||= otro.favorite;
-      // 'scan' es el alta genérica: si el otro sabe de dónde salió el clip, gana su origen.
-      if (fusionado.source === 'scan' && otro.source !== 'scan') fusionado.source = otro.source;
-      for (const tag of parseTags(otro.tags)) tags.add(tag);
-
-      if (fusionado.thumbnail_path === null) fusionado.thumbnail_path = otro.thumbnail_path;
-      else if (otro.thumbnail_path && otro.thumbnail_path !== fusionado.thumbnail_path) {
-        orphanThumbnails.push(otro.thumbnail_path);
-      }
-      borrar.run(otro.id);
-    }
-
-    actualizar.run(
-      fusionado.file_path,
-      fusionado.game,
-      fusionado.duration_seconds,
-      fusionado.thumbnail_path,
-      fusionado.favorite,
-      JSON.stringify(normalizeTags([...tags])),
-      fusionado.source,
-      fusionado.id,
+    const fusionado = fusionarFilas(
+      { ...principal, file_path: canonicalClipPath(principal.file_path) },
+      descartados,
+      orphanThumbnails,
     );
+    for (const otro of descartados) borrar.run(otro.id);
+    guardarFusion(actualizar, fusionado);
   }
+}
+
+/** Lo que una fusión de filas escribe sobre la conservada (el título y el tamaño son los suyos). */
+const SQL_GUARDAR_FUSION = `UPDATE clips SET file_path = ?, game = ?, duration_seconds = ?, thumbnail_path = ?,
+                      favorite = ?, tags = ?, source = ?
+     WHERE id = ?`;
+
+function guardarFusion(actualizar: Statement, fusionado: ClipRow): void {
+  actualizar.run(
+    fusionado.file_path,
+    fusionado.game,
+    fusionado.duration_seconds,
+    fusionado.thumbnail_path,
+    fusionado.favorite,
+    fusionado.tags,
+    fusionado.source,
+    fusionado.id,
+  );
+}
+
+/**
+ * Suma a la fila conservada los datos que solo tengan las descartadas (que siguen en la DB: borrarlas
+ * es cosa de quien llama), con la semántica de la migración de rutas: campos vacíos → los toma de la
+ * descartada, favorito si cualquiera lo es, origen concreto frente al genérico `scan`, etiquetas
+ * unidas y la miniatura de una descartada que sobra se anota en `orphanThumbnails` para que el manager
+ * la borre del disco. Título, tamaño y pistas muteadas son los de la conservada.
+ *
+ * Devuelve la fila resultante (`tags` ya serializadas); no escribe nada. Lo comparten la migración
+ * (filas con la misma ruta escrita distinto) y `mergeRows` (el mismo archivo visto por dos caminos).
+ */
+function fusionarFilas(
+  principal: ClipRow,
+  descartados: ClipRow[],
+  orphanThumbnails: string[],
+): ClipRow {
+  const fusionado = { ...principal };
+  const tags = new Set(parseTags(principal.tags));
+
+  for (const otro of descartados) {
+    fusionado.game ??= otro.game;
+    fusionado.duration_seconds ??= otro.duration_seconds;
+    fusionado.favorite ||= otro.favorite;
+    // 'scan' es el alta genérica: si el otro sabe de dónde salió el clip, gana su origen.
+    if (fusionado.source === 'scan' && otro.source !== 'scan') fusionado.source = otro.source;
+    for (const tag of parseTags(otro.tags)) tags.add(tag);
+
+    if (fusionado.thumbnail_path === null) fusionado.thumbnail_path = otro.thumbnail_path;
+    else if (otro.thumbnail_path && otro.thumbnail_path !== fusionado.thumbnail_path) {
+      orphanThumbnails.push(otro.thumbnail_path);
+    }
+  }
+
+  fusionado.tags = JSON.stringify(normalizeTags([...tags]));
+  return fusionado;
 }
 
 function parseTags(raw: string): string[] {

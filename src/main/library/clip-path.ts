@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { parse, resolve } from 'node:path';
+import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 
 /**
  * Forma canónica de la ruta de un clip. El catálogo indexa SIEMPRE esta forma: cada vía de alta
@@ -36,6 +36,36 @@ export function volumeRootKey(filePath: string): string {
 
 /** Rutas Win32 con prefijo de espacio de nombres (`\\?\`, `\\.\`): Node no sabe comprobar su raíz. */
 const CON_PREFIJO = /^[\\/]{2}[?.][\\/]/;
+
+/** `\\?\UNC\servidor\recurso\…` es la forma con prefijo de `\\servidor\recurso\…`. */
+const CON_PREFIJO_UNC = /^[\\/]{2}[?.][\\/]UNC[\\/]/i;
+
+/** Quita el prefijo `\\?\` / `\\.\` (y el `UNC\` de su forma de red) para que `path` compare rutas. */
+function sinPrefijo(ruta: string): string {
+  if (CON_PREFIJO_UNC.test(ruta)) return `\\\\${ruta.replace(CON_PREFIJO_UNC, '')}`;
+  return ruta.replace(CON_PREFIJO, '');
+}
+
+/**
+ * ¿Cuelga `filePath` de `dir`, a cualquier profundidad? Es pura manipulación de strings (no consulta
+ * el disco: corre en el hilo principal, y una unidad de red caída lo bloquea segundos) con las reglas
+ * de Windows: sin distinguir mayúsculas, con `/` o `\`, con o sin barra final, y con la raíz de una
+ * unidad (`D:\`) o de un recurso de red (`\\nas\recurso`) como carpeta.
+ *
+ * La propia carpeta no cuenta como «dentro» de sí misma. Una carpeta vacía no contiene nada (sin
+ * esto, `path` la resolvería contra el directorio de trabajo). OJO: no pasar por `canonicalClipPath`
+ * una carpeta que sea una raíz: recorta la barra final y `D:\` queda `D:`, que `resolve` entiende como
+ * el directorio de trabajo de esa unidad.
+ *
+ * Dos formas distintas de llegar a la misma carpeta (`Z:\` y `\\nas\recurso`, un junction) NO se
+ * reconocen aquí: para eso hace falta mirar el disco.
+ */
+export function isInsideDir(dir: string, filePath: string): boolean {
+  if (dir.trim() === '') return false;
+  const rel = relative(sinPrefijo(dir), sinPrefijo(filePath));
+  // `relative` da una ruta absoluta cuando no hay camino relativo (otra unidad, otro recurso).
+  return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`);
+}
 
 /**
  * ¿Está accesible la unidad de cada ruta? Mira la raíz del volumen (`D:\`, `\\servidor\recurso\`)

@@ -6,7 +6,7 @@ import { gameFromFolderName } from '@shared/clip-naming';
 import type { GameNameContext } from '@shared/games';
 import type { Clip, ClipSource, ClipsQuery } from '@shared/library';
 import { isTempMediaFile, normalizeClipPatch, titleFromFileName } from '@shared/library';
-import { createOfflineOutputVolumeCheck } from './clip-path';
+import { createOfflineOutputVolumeCheck, isInsideDir } from './clip-path';
 import type { ClipsRepository } from './clips-repository';
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.flv']);
@@ -44,8 +44,15 @@ export class LibraryManager extends EventEmitter {
     private readonly opts: LibraryOptions,
   ) {
     super();
-    // Al migrar, el repo fusiona los clips que estaban duplicados por la ruta; sus miniaturas
-    // quedan sin dueño y las borra el manager (tocar el disco no es tarea del repositorio).
+    // Al migrar, el repo fusiona los clips que estaban duplicados por la ruta.
+    this.removeOrphanThumbnails();
+  }
+
+  /**
+   * Borra las miniaturas que quedaron sin dueño al fusionar filas (en la migración o en `reconcile`):
+   * tocar el disco no es tarea del repositorio, que solo las anota.
+   */
+  private removeOrphanThumbnails(): void {
     for (const thumbnail of this.repo.takeOrphanThumbnails()) {
       try {
         rmSync(thumbnail, { force: true });
@@ -101,16 +108,37 @@ export class LibraryManager extends EventEmitter {
    * favorito y pistas muteadas. Las filas de **otra** unidad que no está (una carpeta de salida
    * anterior) sí se dan de baja: si el owner copió esa carpeta a la nueva y quitó el USB, conservarlas
    * duplicaba la biblioteca para siempre.
+   *
+   * **La misma carpeta por dos caminos.** Una unidad de red vista como `Z:\Clips` y como
+   * `\\nas\recurso\Clips`, un junction o un volumen montado en una carpeta: si la carpeta de clips pasa de
+   * una forma a la otra, las filas de la forma vieja (su archivo existe, por la otra ruta) no cuelgan de
+   * la carpeta nueva y el escaneo daba de alta los mismos archivos otra vez. Esas «filas de fuera» se
+   * reconocen por la identidad física del archivo (volumen + índice de archivo + tamaño, `stat`):
+   * - un archivo de dentro sin fila cuyo archivo ES el de una fila de fuera **re-apunta** esa fila (no es
+   *   alta ni baja; conserva título, favorito, etiquetas, miniatura, duración y pistas muteadas);
+   * - si ya tenía fila (el duplicado que dejó la v0.9.7) se **fusionan** en la de menor id, y cada fila
+   *   que sobra cuenta como baja.
+   * Dos archivos distintos con el mismo nombre y tamaño (la carpeta copiada con el Explorador) tienen
+   * identidad distinta: siguen siendo dos filas. Sin filas de fuera —el caso normal— no se hace ninguna
+   * consulta más al disco.
    */
   reconcile(outputDir: string): { added: number; removed: number } {
     let added = 0;
     let removed = 0;
+    let unificadas = 0;
 
     const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
+    const filasDeFuera: { id: number; filePath: string }[] = [];
     for (const { id, filePath } of this.repo.allPaths()) {
       // En la unidad de la salida se mira la unidad antes que el archivo: sin montar, sus clips se
       // conservan sin preguntar por cada uno.
-      if (enSalidaSinMontar(filePath) || existsSync(filePath)) continue;
+      if (enSalidaSinMontar(filePath)) continue;
+      if (existsSync(filePath)) {
+        if (outputDir.trim() !== '' && !isInsideDir(outputDir, filePath)) {
+          filasDeFuera.push({ id, filePath });
+        }
+        continue;
+      }
       this.removeThumbnail(this.repo.get(id));
       this.repo.delete(id);
       removed++;
@@ -118,8 +146,32 @@ export class LibraryManager extends EventEmitter {
 
     // Recursivo: desde la Fase 10 los clips viven en `<salida>/<Juego|Desktop>/…` y las capturas en
     // `<Juego>/Capturas/`. La carpeta es la única pista del juego que tiene un archivo escaneado.
-    for (const filePath of mediaFilesIn(outputDir)) {
-      if (this.repo.getByPath(filePath)) continue;
+    const archivos = mediaFilesIn(outputDir);
+    // Vacío salvo que haya filas vivas de otra ruta y archivos con los que compararlas: lo normal es
+    // no pedirle nada más al disco.
+    const porIdentidad =
+      archivos.length > 0 ? idsPorIdentidad(filasDeFuera) : new Map<string, number[]>();
+    for (const filePath of archivos) {
+      const existente = this.repo.getByPath(filePath);
+
+      const huella = porIdentidad.size > 0 ? identidadDe(filePath) : null;
+      const idsDeFuera = huella === null ? undefined : porIdentidad.get(huella);
+      if (huella !== null && idsDeFuera) {
+        porIdentidad.delete(huella); // cada fila de fuera se usa una sola vez
+        try {
+          removed += this.unificar(filePath, existente, idsDeFuera);
+          unificadas++;
+        } catch (err) {
+          // Una fila que no se deja no corta el escaneo: queda como estaba y se reintenta en el próximo.
+          console.error(
+            '[library] no se pudo unificar una fila con la ruta de su mismo archivo:',
+            err,
+          );
+        }
+        continue;
+      }
+
+      if (existente) continue;
       let stats: Stats;
       try {
         stats = statSync(filePath);
@@ -137,8 +189,25 @@ export class LibraryManager extends EventEmitter {
       added++;
     }
 
-    if (added || removed) this.emit('changed');
+    if (added || removed || unificadas) this.emit('changed');
     return { added, removed };
+  }
+
+  /**
+   * El archivo `filePath` (de dentro de la carpeta de clips) es el mismo que el de las filas `idsDeFuera`,
+   * que lo catalogaron por otro camino. Si no tenía fila propia, la primera se re-apunta a esta ruta y
+   * conserva todo; si la tenía (el duplicado de la v0.9.7) o hay varias de fuera, se fusionan en la de
+   * menor id y la miniatura que sobra se borra. Devuelve cuántas filas desaparecen (las bajas).
+   */
+  private unificar(filePath: string, existente: Clip | null, idsDeFuera: number[]): number {
+    const ids = [...new Set(existente ? [existente.id, ...idsDeFuera] : idsDeFuera)];
+    if (ids.length === 1) {
+      this.repo.setPath(ids[0], filePath);
+      return 0;
+    }
+    this.repo.mergeRows(ids, filePath);
+    this.removeOrphanThumbnails();
+    return ids.length - 1;
   }
 
   /**
@@ -269,6 +338,38 @@ export class LibraryManager extends EventEmitter {
 
 function fileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
+}
+
+/**
+ * Identidad física de un archivo: volumen + índice de archivo + tamaño (en Windows, el número de serie
+ * del volumen y el índice NTFS/SMB del archivo). Dos rutas que llevan al mismo archivo —`Z:\` y
+ * `\\nas\recurso\`, un junction, un hard link— dan la misma; dos copias, no, aunque tengan el mismo
+ * nombre, tamaño y fecha. `null` si no se puede saber: el `stat` falla (permisos, archivo que
+ * desapareció), el servidor no da índice de archivo (`ino` 0, algunos SMB) o el archivo está vacío
+ * (en FAT/exFAT no ocupa clúster y su índice no lo distingue de otro vacío): no hay forma de afirmar
+ * que dos rutas son el mismo archivo y se tratan como distintos.
+ */
+function identidadDe(filePath: string): string | null {
+  try {
+    const stats = statSync(filePath, { bigint: true });
+    if (stats.ino === 0n || stats.size === 0n) return null;
+    return `${stats.dev}:${stats.ino}:${stats.size}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Ids de las filas por identidad física del archivo; las que no tienen identidad no entran. */
+function idsPorIdentidad(filas: { id: number; filePath: string }[]): Map<string, number[]> {
+  const porIdentidad = new Map<string, number[]>();
+  for (const { id, filePath } of filas) {
+    const huella = identidadDe(filePath);
+    if (huella === null) continue;
+    const ids = porIdentidad.get(huella);
+    if (ids) ids.push(id);
+    else porIdentidad.set(huella, [id]);
+  }
+  return porIdentidad;
 }
 
 /**

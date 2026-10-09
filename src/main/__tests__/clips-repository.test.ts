@@ -358,3 +358,89 @@ describe('ClipsRepository — migración: fusión de duplicados existentes', () 
     vieja.close();
   });
 });
+
+describe('ClipsRepository — mergeRows (filas que son el mismo archivo por rutas distintas)', () => {
+  /** Dos filas del mismo archivo vistas por dos caminos: la antigua (con miniatura) y la nueva. */
+  function dosFilas() {
+    const antigua = repo.insert(
+      nuevo({ filePath: 'E:\\Clips\\Fortnite\\a.mp4', title: 'mi jugada', source: 'recording' }),
+    );
+    repo.setMedia(antigua.id, {
+      durationSeconds: 10.9,
+      thumbnailPath: `C:\\thumbs\\${antigua.id}.jpg`,
+    });
+    const nueva = repo.insert(
+      nuevo({
+        filePath: 'D:\\Clips\\Fortnite\\a.mp4',
+        title: 'a',
+        game: 'Fortnite',
+        source: 'scan',
+      }),
+    );
+    repo.update(nueva.id, { favorite: true, tags: ['ace'] });
+    repo.setMedia(nueva.id, { thumbnailPath: `C:\\thumbs\\${nueva.id}.jpg` });
+    repo.update(antigua.id, { tags: ['clutch'] });
+    return { antigua, nueva };
+  }
+
+  it('conserva la fila de menor id con la ruta pedida y le suma los datos de la descartada', () => {
+    const { antigua, nueva } = dosFilas();
+    repo.takeOrphanThumbnails();
+
+    const clip = repo.mergeRows([nueva.id, antigua.id], 'D:\\Clips\\Fortnite\\a.mp4');
+
+    expect(clip.id).toBe(antigua.id);
+    expect(clip.filePath).toBe('D:\\Clips\\Fortnite\\a.mp4');
+    expect(clip.title).toBe('mi jugada'); // el de la conservada, como en la migración
+    expect(clip.game).toBe('Fortnite'); // la conservada no tenía
+    expect(clip.durationSeconds).toBe(10.9);
+    expect(clip.favorite).toBe(true);
+    expect(clip.tags.sort()).toEqual(['ace', 'clutch']);
+    expect(clip.source).toBe('recording');
+    expect(clip.thumbnailPath).toBe(`C:\\thumbs\\${antigua.id}.jpg`);
+    expect(repo.get(nueva.id)).toBeNull();
+    expect(repo.list()).toHaveLength(1);
+    // La miniatura de la descartada queda anotada para que la borre el manager.
+    expect(repo.takeOrphanThumbnails()).toEqual([`C:\\thumbs\\${nueva.id}.jpg`]);
+  });
+
+  it('con tres filas suma las tres, y una ruta ya usada por una de ellas no choca', () => {
+    const { antigua, nueva } = dosFilas();
+    const tercera = repo.insert(nuevo({ filePath: 'Z:\\Clips\\Fortnite\\a.mp4' }));
+    repo.update(tercera.id, { tags: ['final'] });
+
+    const clip = repo.mergeRows([tercera.id, antigua.id, nueva.id], 'D:\\Clips\\Fortnite\\a.mp4');
+
+    expect(clip.id).toBe(antigua.id);
+    expect(clip.tags.sort()).toEqual(['ace', 'clutch', 'final']);
+    expect(repo.list()).toHaveLength(1);
+  });
+
+  it('es atómica: si la ruta ya es de otra fila, no se borra ni cambia nada', () => {
+    const { antigua, nueva } = dosFilas();
+    const ocupante = repo.insert(nuevo({ filePath: 'D:\\Clips\\ocupada.mp4' }));
+
+    expect(() => repo.mergeRows([antigua.id, nueva.id], 'D:\\Clips\\ocupada.mp4')).toThrow();
+
+    expect(repo.get(nueva.id)?.filePath).toBe('D:\\Clips\\Fortnite\\a.mp4');
+    expect(repo.get(antigua.id)?.filePath).toBe('E:\\Clips\\Fortnite\\a.mp4');
+    expect(repo.get(ocupante.id)).not.toBeNull();
+    expect(repo.takeOrphanThumbnails().filter((t) => t.includes(`${nueva.id}.jpg`))).toEqual([]);
+  });
+
+  it('con una sola fila solo cambia la ruta (re-apuntar)', () => {
+    const { antigua } = dosFilas();
+
+    const clip = repo.mergeRows([antigua.id], 'Y:\\otra\\a.mp4');
+
+    expect(clip.filePath).toBe('Y:\\otra\\a.mp4');
+    expect(clip.title).toBe('mi jugada');
+  });
+
+  it('una fila que no existe lanza sin tocar las demás', () => {
+    const { antigua } = dosFilas();
+
+    expect(() => repo.mergeRows([antigua.id, 99999], 'D:\\Clips\\x.mp4')).toThrow(/no existe/i);
+    expect(repo.get(antigua.id)?.filePath).toBe('E:\\Clips\\Fortnite\\a.mp4');
+  });
+});

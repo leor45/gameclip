@@ -2,7 +2,7 @@ import { existsSync, statfsSync } from 'node:fs';
 import { dirname, parse } from 'node:path';
 import type { CaptureSettings } from '@shared/capture';
 import type { Clip, StorageStats } from '@shared/library';
-import { createOfflineOutputVolumeCheck } from './clip-path';
+import { createOfflineOutputVolumeCheck, isInsideDir } from './clip-path';
 import type { LibraryManager } from './manager';
 
 export interface StorageManagerDeps {
@@ -20,14 +20,19 @@ export class StorageManager {
     private readonly deps: StorageManagerDeps = {},
   ) {}
 
+  /**
+   * Uso de la carpeta de clips y espacio del disco. Mide lo mismo que el límite (ver
+   * `enforceLimit`): solo cuentan los clips que cuelgan de `outputDir` y no están en su unidad sin
+   * montar. Si no, el indicador de la barra lateral y de Ajustes → Almacenamiento marcaría «por
+   * encima del límite» sin que el auto-borrado hiciera nada.
+   */
   getStats(outputDir: string): StorageStats {
     let clipsBytes = 0;
     let recordingsBytes = 0;
     let screenshotsBytes = 0;
-    // La unidad de la carpeta de clips sin montar no ocupa espacio medible (ver enforceLimit).
-    const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
+    const cuenta = clipsDeLaCarpeta(outputDir);
     for (const clip of this.library.list()) {
-      if (enSalidaSinMontar(clip.filePath)) continue;
+      if (!cuenta(clip.filePath)) continue;
       if (clip.kind === 'image') screenshotsBytes += clip.sizeBytes;
       else if (clip.source === 'recording') recordingsBytes += clip.sizeBytes;
       else clipsBytes += clip.sizeBytes;
@@ -53,11 +58,19 @@ export class StorageManager {
    * videos, aunque las capturas cuenten para medirlo); con `onlyDeleteRecordings` respeta también
    * ese filtro. Devuelve las rutas eliminadas.
    *
-   * Con `outputDir` (la carpeta de clips ya resuelta), los clips de su unidad cuando no está montada
-   * ni cuentan para el uso ni se borran: son las filas sin archivo que el escaneo conserva
-   * (D5-BUG-3), «borrarlos» no libera nada (el archivo sigue en el USB) y destruye sus ediciones. Las
-   * filas de otras unidades cuentan como siempre y no se consulta su disco; las de una unidad que ya
-   * no está las da de baja el escaneo. Sin `outputDir` no se deja fuera nada.
+   * Con `outputDir` (la carpeta de clips ya resuelta) **solo cuentan para el uso y solo son elegibles
+   * para borrar los clips que cuelgan de ella**. Quien cambia la carpeta de clips conserva la anterior
+   * (y, si la copió con el Explorador, tiene los mismos clips dos veces: la copia, ya catalogada, y los
+   * originales, cuyas filas siguen vivas mientras su archivo exista). Contar la carpeta anterior medía
+   * el doble y el auto-borrado se llevaba los clips más viejos —los originales o las copias— con el
+   * uso real por debajo del límite: pérdida de datos. Lo de fuera no es de la carpeta que GameClip
+   * gestiona, así que ni se mide ni se toca.
+   *
+   * Además, los clips de la unidad de la carpeta de clips cuando no está montada tampoco cuentan ni se
+   * borran: son las filas sin archivo que el escaneo conserva (D5-BUG-3), «borrarlos» no libera nada
+   * (el archivo sigue en el USB) y destruye sus ediciones. Esa unidad es la única a la que se le
+   * pregunta al disco; el resto se juzga por la ruta (una unidad de red caída bloquea el hilo
+   * principal segundos). Sin `outputDir` no se deja fuera nada.
    */
   async enforceLimit(
     settings: CaptureSettings,
@@ -66,12 +79,12 @@ export class StorageManager {
     if (settings.storageLimitGb <= 0 || !settings.autoDeleteOldest) return [];
 
     const limitBytes = settings.storageLimitGb * 1024 ** 3;
-    const enSalidaSinMontar = createOfflineOutputVolumeCheck(opts.outputDir ?? '');
+    const cuenta = clipsDeLaCarpeta(opts.outputDir);
     // Ascendente por fecha: recorremos del más viejo al más nuevo, saltando los no elegibles
     // (equivale a "parar si no quedan elegibles" sin tener que re-consultar el repositorio).
     const clips = this.library
       .list()
-      .filter((c) => !enSalidaSinMontar(c.filePath))
+      .filter((c) => cuenta(c.filePath))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     let used = clips.reduce((sum, c) => sum + c.sizeBytes, 0);
     const deleted: string[] = [];
@@ -109,6 +122,18 @@ export class StorageManager {
     // rmSync interno (force:true) es un no-op.
     await this.library.deleteClip(clip.id);
   }
+}
+
+/**
+ * ¿Cuenta este clip para el uso y el límite? Sí si cuelga de la carpeta de clips y no vive en su
+ * unidad sin montar. Sin carpeta (o vacía) cuenta todo. El orden importa: lo de fuera se descarta por
+ * la ruta, sin tocar el disco; la comprobación de la unidad (una sola consulta por pasada) solo se
+ * hace para lo que está dentro.
+ */
+function clipsDeLaCarpeta(outputDir: string | undefined): (filePath: string) => boolean {
+  if (!outputDir?.trim()) return () => true;
+  const enSalidaSinMontar = createOfflineOutputVolumeCheck(outputDir);
+  return (filePath) => isInsideDir(outputDir, filePath) && !enSalidaSinMontar(filePath);
 }
 
 /** Sube por los padres hasta encontrar un directorio existente, o la raíz de la unidad. */

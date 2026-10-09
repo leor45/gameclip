@@ -340,3 +340,329 @@ describe('createVolumeAccessCheck', () => {
     expect(accesible('relativo\\a.mp4')).toBe(true);
   });
 });
+
+describe('LibraryManager.reconcile — la misma carpeta por dos caminos (Bug 6 de la tanda E)', () => {
+  // Una unidad de red vista como `Z:\Clips` y como `\\nas\recurso\Clips`, una carpeta tras un junction
+  // o un volumen montado en carpeta: si la carpeta de clips pasa de una forma a la otra, las filas de la
+  // forma vieja siguen vivas (su archivo existe) y el escaneo daba de alta los mismos archivos por la
+  // forma nueva. Los junctions de aquí son reales (no piden administrador en Windows).
+  const enlace = join(dir, 'enlace');
+  const otroEnlace = join(dir, 'otro-enlace');
+  const viejaDir = join(dir, 'vieja');
+  const bigint = () =>
+    vi.mocked(statSync).mock.calls.filter(([, opts]) => (opts as { bigint?: boolean })?.bigint);
+
+  function enlazar(ruta: string, destino = outputDir): string {
+    real.symlinkSync(destino, ruta, 'junction');
+    return ruta;
+  }
+
+  beforeEach(() => {
+    rmSync(viejaDir, { recursive: true, force: true });
+    for (const e of [enlace, otroEnlace]) {
+      if (real.existsSync(e)) real.rmdirSync(e); // quita solo el junction, no su destino
+    }
+  });
+
+  afterEach(() => {
+    for (const e of [enlace, otroEnlace]) {
+      if (real.existsSync(e)) real.rmdirSync(e);
+    }
+  });
+
+  /** Fila con todo lo que el usuario pudo haberle puesto: título, favorito, etiquetas, miniatura, pistas. */
+  function clipEditado(manager: LibraryManager, ruta: string) {
+    const fila = insertar(ruta, 'mi jugada');
+    manager.updateClip(fila.id, { favorite: true, tags: ['final', 'clutch'] });
+    manager.setClipMedia(fila.id, { durationSeconds: 12.5, thumbnailDataUrl: dataUrl });
+    manager.setAudioEdit(fila.id, ['mic']);
+    return fila;
+  }
+
+  it('catalogado por la ruta real y la carpeta pasa al junction: se re-apunta la fila, no se duplica', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const fila = clipEditado(manager, ruta);
+    enlazar(enlace);
+    const cambios = vi.fn();
+    manager.on('changed', cambios);
+
+    expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 0 });
+
+    const clips = manager.list();
+    expect(clips).toHaveLength(1);
+    const clip = clips[0];
+    expect(clip.id).toBe(fila.id); // las URLs de medios y la miniatura siguen valiendo
+    expect(clip.filePath).toBe(join(enlace, 'Fortnite', 'a.mp4'));
+    expect(clip.title).toBe('mi jugada');
+    expect(clip.favorite).toBe(true);
+    expect(clip.tags.sort()).toEqual(['clutch', 'final']);
+    expect(clip.durationSeconds).toBe(12.5);
+    expect(clip.mutedTracks).toEqual(['mic']);
+    expect(existsSync(clip.thumbnailPath!)).toBe(true);
+    expect(cambios).toHaveBeenCalledTimes(1); // re-apuntar cambia la biblioteca: el renderer se entera
+  });
+
+  it('el camino inverso (catalogado por el junction, la carpeta pasa a la ruta real) también', () => {
+    archivo('Fortnite', 'a.mp4');
+    enlazar(enlace);
+    const manager = crearManager();
+    const fila = clipEditado(manager, join(enlace, 'Fortnite', 'a.mp4'));
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list()).toHaveLength(1);
+    expect(manager.getClip(fila.id)?.filePath).toBe(join(outputDir, 'Fortnite', 'a.mp4'));
+    expect(manager.getClip(fila.id)?.favorite).toBe(true);
+  });
+
+  it('tras re-apuntar, el re-etiquetado (que corre después en el guardado) deja el juego de la carpeta', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const fila = repo.insert({
+      filePath: ruta,
+      title: 'a',
+      game: null,
+      sizeBytes: 1,
+      createdAt: '2026-07-01T10:00:00.000Z',
+      source: 'replay',
+    });
+    enlazar(enlace);
+
+    manager.reconcile(enlace);
+    manager.relabelGames(enlace);
+
+    expect(manager.getClip(fila.id)?.game).toBe('Fortnite');
+  });
+
+  it('un duplicado que ya dejó la v0.9.7 (las dos filas) se fusiona en una: la más antigua, con la ruta de dentro', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    const manager = crearManager();
+    const antigua = clipEditado(manager, ruta);
+    enlazar(enlace);
+    const duplicada = repo.insert({
+      filePath: join(enlace, 'Fortnite', 'a.mp4'),
+      title: 'a',
+      game: 'Otro',
+      sizeBytes: 18,
+      createdAt: '2026-07-02T10:00:00.000Z',
+      source: 'scan',
+    });
+    manager.updateClip(duplicada.id, { tags: ['ace'] });
+    const miniaturaDuplicada = manager.setClipMedia(duplicada.id, {
+      thumbnailDataUrl: dataUrl,
+    }).thumbnailPath!;
+
+    expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 1 });
+
+    const clips = manager.list();
+    expect(clips).toHaveLength(1);
+    const clip = clips[0];
+    expect(clip.id).toBe(antigua.id); // el menor id: el que creó la captura
+    expect(clip.filePath).toBe(join(enlace, 'Fortnite', 'a.mp4'));
+    expect(clip.title).toBe('mi jugada');
+    expect(clip.favorite).toBe(true);
+    expect(clip.tags.sort()).toEqual(['ace', 'clutch', 'final']); // etiquetas unidas
+    expect(clip.durationSeconds).toBe(12.5);
+    expect(existsSync(clip.thumbnailPath!)).toBe(true);
+    expect(existsSync(miniaturaDuplicada)).toBe(false); // la miniatura que sobra se borra
+    expect(manager.getClip(duplicada.id)).toBeNull();
+  });
+
+  it('el duplicado cuya fila más antigua es la de dentro: conserva su ruta y suma lo de la de fuera', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    enlazar(enlace);
+    const manager = crearManager();
+    const dentro = insertar(join(enlace, 'Fortnite', 'a.mp4'), 'a'); // id menor: la de dentro
+    const fuera = clipEditado(manager, ruta);
+
+    expect(manager.reconcile(enlace)).toEqual({ added: 0, removed: 1 });
+
+    const clips = manager.list();
+    expect(clips).toHaveLength(1);
+    expect(clips[0].id).toBe(dentro.id);
+    expect(clips[0].filePath).toBe(join(enlace, 'Fortnite', 'a.mp4'));
+    expect(clips[0].favorite).toBe(true); // venía de la fila de fuera
+    expect(clips[0].tags.sort()).toEqual(['clutch', 'final']);
+    expect(manager.getClip(fuera.id)).toBeNull();
+  });
+
+  it('tres caminos al mismo archivo: una sola fila, y se cuenta cada descartada', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    enlazar(enlace);
+    enlazar(otroEnlace);
+    const manager = crearManager();
+    const primera = insertar(ruta, 'primera');
+    insertar(join(enlace, 'Fortnite', 'a.mp4'), 'segunda');
+
+    expect(manager.reconcile(otroEnlace)).toEqual({ added: 0, removed: 1 });
+
+    expect(manager.list().map((c) => [c.id, c.filePath])).toEqual([
+      [primera.id, join(otroEnlace, 'Fortnite', 'a.mp4')],
+    ]);
+  });
+
+  it('dos archivos DISTINTOS con el mismo nombre y tamaño (las copias del Bug 1) siguen siendo dos filas', () => {
+    const original = join(viejaDir, 'Fortnite', 'a.mp4');
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    writeFileSync(original, 'contenido-de-video');
+    const manager = crearManager();
+    const filaVieja = insertar(original, 'original');
+    real.mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+    real.copyFileSync(original, join(outputDir, 'Fortnite', 'a.mp4')); // misma ruta relativa, nombre y tamaño
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+
+    expect(manager.list()).toHaveLength(2);
+    expect(manager.getClip(filaVieja.id)?.filePath).toBe(original); // sigue apuntando a su archivo
+    expect(real.existsSync(original)).toBe(true);
+  });
+
+  it('un hard link es el mismo archivo físico: se trata como el mismo clip', () => {
+    const original = join(viejaDir, 'Fortnite', 'a.mp4');
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    writeFileSync(original, 'contenido-de-video');
+    const manager = crearManager();
+    const filaVieja = insertar(original, 'original');
+    mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+    real.linkSync(original, join(outputDir, 'Fortnite', 'a.mp4'));
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 0, removed: 0 });
+
+    expect(manager.list().map((c) => c.id)).toEqual([filaVieja.id]);
+    expect(manager.getClip(filaVieja.id)?.filePath).toBe(join(outputDir, 'Fortnite', 'a.mp4'));
+  });
+
+  it('una fila de fuera que no coincide con nada de dentro se queda como estaba (carpeta anterior legítima)', () => {
+    const original = join(viejaDir, 'Fortnite', 'a.mp4');
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    writeFileSync(original, 'contenido-de-video');
+    const manager = crearManager();
+    const filaVieja = clipEditado(manager, original);
+    archivo('Terraria', 'otro.mp4');
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+
+    expect(manager.getClip(filaVieja.id)?.filePath).toBe(original);
+    expect(manager.getClip(filaVieja.id)?.favorite).toBe(true);
+  });
+
+  it('sin filas de fuera no se pregunta por la identidad de nada', () => {
+    archivo('Fortnite', 'a.mp4');
+    archivo('Terraria', 'b.mp4');
+    insertar(archivo('Valorant', 'c.mp4'));
+    vi.mocked(statSync).mockClear();
+    const manager = crearManager();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 2, removed: 0 });
+
+    expect(bigint()).toEqual([]);
+  });
+
+  it('con filas de fuera se mira la identidad de ellas y de cada archivo de dentro, y nada más', () => {
+    // Carpeta anterior legítima con 2 clips (sin copiar), y la actual con 3 filas ya catalogadas más 1 nuevo.
+    mkdirSync(viejaDir, { recursive: true });
+    const manager = crearManager();
+    for (const n of ['x.mp4', 'y.mp4']) {
+      writeFileSync(join(viejaDir, n), 'v'.repeat(500));
+      insertar(join(viejaDir, n));
+    }
+    for (const n of ['a.mp4', 'b.mp4', 'c.mp4']) insertar(archivo(n));
+    archivo('nuevo.mp4');
+    vi.mocked(statSync).mockClear();
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+
+    // 2 filas de fuera + los 4 archivos de dentro: una sola consulta por archivo, ninguna repetida.
+    const consultados = bigint().map(([p]) => String(p));
+    expect(consultados).toHaveLength(6);
+    expect(new Set(consultados).size).toBe(6);
+    expect(consultados).toContain(join(outputDir, 'nuevo.mp4'));
+  });
+
+  it('si la identidad de una fila de fuera no se puede leer, esa fila no se fusiona y el escaneo sigue', () => {
+    const original = join(viejaDir, 'Fortnite', 'a.mp4');
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    writeFileSync(original, 'contenido-de-video');
+    real.mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+    real.linkSync(original, join(outputDir, 'Fortnite', 'a.mp4')); // sería el mismo archivo
+    archivo('Terraria', 'b.mp4');
+    vi.mocked(statSync).mockImplementation(((path: fs.PathLike, opts?: unknown) => {
+      if (String(path) === original && (opts as { bigint?: boolean })?.bigint) {
+        throw errorFs('EPERM', 'stat', original);
+      }
+      return real.statSync(path, opts as never);
+    }) as typeof statSync);
+    const manager = crearManager();
+    insertar(original, 'original');
+
+    let resultado: { added: number; removed: number } | undefined;
+    expect(() => {
+      resultado = manager.reconcile(outputDir);
+    }).not.toThrow();
+
+    expect(resultado).toEqual({ added: 2, removed: 0 }); // el hard link se da de alta como siempre
+    expect(manager.list()).toHaveLength(3);
+  });
+
+  it('un servidor que no da identificador de archivo (ino 0) no identifica: no se fusiona', () => {
+    const original = join(viejaDir, 'Fortnite', 'a.mp4');
+    mkdirSync(join(viejaDir, 'Fortnite'), { recursive: true });
+    writeFileSync(original, 'contenido-de-video');
+    real.mkdirSync(join(outputDir, 'Fortnite'), { recursive: true });
+    real.linkSync(original, join(outputDir, 'Fortnite', 'a.mp4'));
+    vi.mocked(statSync).mockImplementation(((path: fs.PathLike, opts?: unknown) => {
+      const st = real.statSync(path, opts as never);
+      return (opts as { bigint?: boolean })?.bigint ? { ...st, ino: 0n } : st;
+    }) as typeof statSync);
+    const manager = crearManager();
+    insertar(original, 'original');
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+    expect(manager.list()).toHaveLength(2);
+  });
+
+  it('un archivo vacío no tiene identidad fiable (en FAT/exFAT no ocupa clúster): no se fusiona', () => {
+    const original = join(viejaDir, 'a.mp4');
+    mkdirSync(viejaDir, { recursive: true });
+    writeFileSync(original, '');
+    real.linkSync(original, join(outputDir, 'a.mp4'));
+    const manager = crearManager();
+    insertar(original, 'original');
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 1, removed: 0 });
+    expect(manager.list()).toHaveLength(2);
+  });
+
+  it('una fila de fuera con la unidad de la salida sin montar no se consulta (no hay identidad que pedir)', () => {
+    const unidad = unidadAusente();
+    const manager = crearManager();
+    insertar(`${unidad}Clips\\Fortnite\\a.mp4`);
+    vi.mocked(statSync).mockClear();
+
+    expect(manager.reconcile(`${unidad}Clips`)).toEqual({ added: 0, removed: 0 });
+
+    expect(bigint()).toEqual([]);
+  });
+
+  it('un fallo al fusionar no aborta el escaneo: lo demás se cataloga', () => {
+    const ruta = archivo('Fortnite', 'a.mp4');
+    enlazar(enlace);
+    const manager = crearManager();
+    insertar(ruta);
+    archivo('Terraria', 'b.mp4');
+    const rota = vi.spyOn(repo, 'setPath').mockImplementation(() => {
+      throw new Error('disco de la DB lleno');
+    });
+    const errores = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      expect(() => manager.reconcile(enlace)).not.toThrow();
+    } finally {
+      rota.mockRestore();
+      errores.mockRestore();
+    }
+
+    expect(manager.list().map((c) => c.title).sort()).toEqual(['b', 'clip']);
+  });
+});

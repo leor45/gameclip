@@ -1586,8 +1586,9 @@ audio por app a «todo el PC junto» sin necesidad. Los dos ejes deben desacopla
 Salieron al revisar los arreglos de la tanda D. **No los introdujo ningún arreglo**: pasan igual en la
 v0.9.7. Se trabajan desde `main` (que ya integra las tandas C y D), cada uno en su rama `fix/`.
 
-1. **Repuntar la carpeta de clips con el USB viejo aún conectado puede borrar clips reales** (Medio,
-   pérdida de datos). Si el owner copia su carpeta (`E:\Clips` → `D:\Clips`) y cambia la carpeta en
+1. ✅ **Repuntar la carpeta de clips con el USB viejo aún conectado puede borrar clips reales** (Medio,
+   pérdida de datos). *Arreglado en `fix/biblioteca-filas-fuera-de-la-carpeta` (pendiente de integrar):
+   el límite y `getStats` solo cuentan y borran lo que cuelga de la carpeta de clips (`isInsideDir`).* Si el owner copia su carpeta (`E:\Clips` → `D:\Clips`) y cambia la carpeta en
    **Ajustes** con el USB todavía conectado, el guardado escanea la carpeta nueva y da de alta las
    copias (`scan`) mientras las filas del USB siguen vivas (sus archivos existen); `aplicarLimite`
    corre justo después y cuenta las dos copias. Con el auto-borrado activo puede borrar clips reales,
@@ -1607,7 +1608,10 @@ v0.9.7. Se trabajan desde `main` (que ya integra las tandas C y D), cada uno en 
    devuelve la lista calculada antes del refresco del índice, y puede sobrescribir la que ese refresco
    acaba de auto-sincronizar y mandar por `SettingsChanged`. Dónde: `setExcluded` en
    `src/main/index.ts` y `NoSonJuegos.tsx`.
-6. **La misma carpeta por dos caminos se cataloga dos veces** (Bajo): una unidad de red vista como
+6. ✅ **La misma carpeta por dos caminos se cataloga dos veces** (Bajo). *Arreglado en
+   `fix/biblioteca-filas-fuera-de-la-carpeta` (pendiente de integrar): `reconcile` re-apunta o fusiona
+   por identidad física del archivo (volumen + índice + tamaño); también deshace el duplicado ya
+   existente.* Una unidad de red vista como
    `Z:\…` y como `\\nas\recurso\…`, o una carpeta de clips detrás de un junction o de un volumen
    montado en carpeta (la comprobación de unidad ve `C:\`). Duplica la biblioteca mientras ambas
    formas existen.

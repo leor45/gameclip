@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
@@ -307,45 +307,47 @@ describe('StorageManager — clips de una unidad que no está (regresiones B1-1,
 
     const stats = new StorageManager(manager).getStats(salidaEnUsb);
 
-    expect(stats.clipsBytes).toBe(100);
+    // El `real.mp4` cuelga de otra carpeta (la anterior): tampoco cuenta (Bug 1 de la tanda E).
+    expect(stats.clipsBytes).toBe(0);
     expect(stats.recordingsBytes).toBe(0);
     expect(stats.screenshotsBytes).toBe(0);
   });
 
-  it('regresión 1.2: getStats solo consulta la raíz de la carpeta de clips; lo demás cuenta como siempre', async () => {
+  it('regresión 1.2: getStats solo consulta la raíz de la carpeta de clips, no las demás unidades', async () => {
     await clip('real.mp4', 100);
     filaEn(unidadSalida, 'muerto.mp4', 500);
-    filaEn(otraUnidad, 'de-antes.mp4', 70); // otra unidad caída: cuenta, y no se le pregunta nada
+    filaEn(otraUnidad, 'de-antes.mp4', 70); // otra unidad caída: no se le pregunta nada
     vi.mocked(existsSync).mockClear();
 
     const stats = new StorageManager(manager).getStats(salidaEnUsb);
 
-    expect(stats.clipsBytes).toBe(170);
+    expect(stats.clipsBytes).toBe(0);
     expect(consultas().filter((p) => p === unidadSalida.toLowerCase())).toHaveLength(1);
     expect(consultas().some((p) => p.startsWith(otraUnidad.toLowerCase()))).toBe(false);
     expect(consultas().some((p) => p.endsWith('.mp4'))).toBe(false);
   });
 
-  it('regresión 1.2: el límite deja fuera solo la unidad de la carpeta de clips sin montar', async () => {
+  it('regresión 1.2: el límite no borra los clips de la unidad de la carpeta de clips sin montar ni consulta otras unidades', async () => {
     const unidad = 1000;
     const muerto = filaEn(unidadSalida, 'muerto.mp4', unidad, {
       createdAt: '2025-12-31T00:00:00.000Z', // el más viejo de todos
     });
-    const a = await clip('a.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
+    await clip('a.mp4', unidad, { createdAt: '2026-01-01T00:00:00.000Z' });
     await clip('b.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
     filaEn(otraUnidad, 'de-antes.mp4', unidad, { createdAt: '2026-01-03T00:00:00.000Z' });
     vi.mocked(existsSync).mockClear();
     const sm = new StorageManager(manager);
 
-    // Uso: a + b + de-antes = 3 (el muerto de la salida no cuenta); límite: 2 → cae `a`. Contando el
-    // muerto caía él primero sin liberar nada; sin contar `de-antes`, no caía nada.
+    // Límite ínfimo: lo único que podría caer es el muerto de la salida (las demás filas cuelgan de
+    // otra carpeta, ya no son de esta). Contándolo, caía él sin liberar nada y se destruían sus ediciones.
     const borrados = await sm.enforceLimit(
-      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+      settings({ storageLimitGb: unidad / 2 / 1024 ** 3, autoDeleteOldest: true }),
       { outputDir: salidaEnUsb },
     );
 
-    expect(borrados).toEqual([a.filePath]);
+    expect(borrados).toEqual([]);
     expect(manager.getClip(muerto.id)).not.toBeNull();
+    expect(manager.list()).toHaveLength(4);
     expect(consultas().filter((p) => p === unidadSalida.toLowerCase())).toHaveLength(1);
     expect(consultas().some((p) => p.startsWith(otraUnidad.toLowerCase()))).toBe(false);
   });
@@ -369,7 +371,8 @@ describe('StorageManager — clips de una unidad que no está (regresiones B1-1,
     await clip('b.mp4', unidad, { createdAt: '2026-01-02T00:00:00.000Z' });
 
     const borrados = await new StorageManager(manager).enforceLimit(
-      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+      // Límite ínfimo: solo el muerto (dentro del recurso caído) podría caer; a y b cuelgan de otra carpeta.
+      settings({ storageLimitGb: unidad / 2 / 1024 ** 3, autoDeleteOldest: true }),
       { outputDir: recurso },
     );
 
@@ -411,5 +414,197 @@ describe('StorageManager — clips de una unidad que no está (regresiones B1-1,
     });
 
     expect(new StorageManager(manager).getStats(outputDir).clipsBytes).toBe(100);
+  });
+});
+
+describe('StorageManager — clips fuera de la carpeta de clips (Bug 1 de la tanda E)', () => {
+  // El owner copia `E:\Clips` a la carpeta nueva y la cambia en Ajustes con el USB todavía puesto:
+  // el escaneo da de alta las copias mientras las filas (y los archivos) del USB siguen vivos. Solo lo
+  // que cuelga de la carpeta de clips cuenta para el límite y puede borrarse; lo demás es de otra
+  // carpeta que GameClip ya no gestiona, y borrarlo era perder los originales.
+  const viejaDir = join(dir, 'vieja');
+  const nombres = ['uno.mp4', 'dos.mp4', 'tres.mp4'];
+  const dias = ['2026-01-01', '2026-01-02', '2026-01-03'];
+
+  /** Registra un clip real (archivo + fila) en una carpeta cualquiera. */
+  function clipEn(carpeta: string, nombre: string, bytes: number, createdAt: string) {
+    mkdirSync(carpeta, { recursive: true });
+    const ruta = join(carpeta, nombre);
+    writeFileSync(ruta, Buffer.alloc(bytes, 'x'));
+    return repo.insert({
+      filePath: ruta,
+      title: nombre,
+      game: null,
+      sizeBytes: bytes,
+      createdAt: `${createdAt}T00:00:00.000Z`,
+      source: 'replay',
+    });
+  }
+
+  /** Originales en la carpeta vieja y copias en la de clips, con las mismas fechas (el Explorador conserva el mtime). */
+  function copiasYOriginales(bytes: number) {
+    const originales = nombres.map((n, i) => clipEn(viejaDir, n, bytes, dias[i]));
+    const copias = nombres.map((n, i) => clipEn(outputDir, n, bytes, dias[i]));
+    return { originales, copias };
+  }
+
+  beforeEach(() => {
+    rmSync(viejaDir, { recursive: true, force: true });
+  });
+
+  it('el escenario del bug: límite entre una copia y la suma → no se borra nada y los originales siguen en disco', async () => {
+    const unidad = 1000;
+    const { originales, copias } = copiasYOriginales(unidad);
+    const sm = new StorageManager(manager);
+
+    // Uso real de la carpeta de clips: 3 unidades. Límite: 4. Contando también los originales eran 6
+    // y caían, de los más viejos a los más nuevos, copias Y originales.
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 4) / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir },
+    );
+
+    expect(borrados).toEqual([]);
+    expect(manager.list()).toHaveLength(6);
+    for (const original of originales) expect(real.existsSync(original.filePath)).toBe(true);
+    for (const copia of copias) expect(real.existsSync(copia.filePath)).toBe(true);
+  });
+
+  it('de punta a punta: el guardado de Ajustes (escaneo + límite) tras copiar la carpeta no pierde nada', async () => {
+    const unidad = 1000;
+    // Solo los originales están catalogados; las copias las da de alta el escaneo del guardado.
+    const originales = nombres.map((n, i) => clipEn(viejaDir, n, unidad, dias[i]));
+    for (const n of nombres) real.copyFileSync(join(viejaDir, n), join(outputDir, n));
+    const sm = new StorageManager(manager);
+
+    expect(manager.reconcile(outputDir)).toEqual({ added: 3, removed: 0 });
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 4) / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir },
+    );
+
+    expect(borrados).toEqual([]);
+    expect(manager.list()).toHaveLength(6);
+    for (const original of originales) expect(real.existsSync(original.filePath)).toBe(true);
+  });
+
+  it('sigue borrando los más viejos de DENTRO cuando de verdad se supera el límite, y no toca los de fuera', async () => {
+    const unidad = 1000;
+    const { originales, copias } = copiasYOriginales(unidad);
+    const sm = new StorageManager(manager);
+
+    // Límite: 2 unidades; dentro hay 3 → cae la copia más vieja. Los originales (con la misma fecha
+    // que ella) no son elegibles.
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 2) / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir },
+    );
+
+    expect(borrados).toEqual([copias[0].filePath]);
+    expect(real.existsSync(copias[0].filePath)).toBe(false);
+    for (const original of originales) {
+      expect(real.existsSync(original.filePath)).toBe(true);
+      expect(manager.getClip(original.id)).not.toBeNull();
+    }
+    expect(manager.list()).toHaveLength(5);
+  });
+
+  it('la carpeta de clips escrita con otra capitalización, con / o con barra final sigue siendo la misma', async () => {
+    const unidad = 1000;
+    copiasYOriginales(unidad);
+    const sm = new StorageManager(manager);
+    const limite = settings({ storageLimitGb: (unidad * 4) / 1024 ** 3, autoDeleteOldest: true });
+
+    for (const variante of [
+      outputDir.toUpperCase(),
+      outputDir.replace(/\\/g, '/'),
+      `${outputDir}\\`,
+    ]) {
+      expect(await sm.enforceLimit(limite, { outputDir: variante })).toEqual([]);
+      expect(sm.getStats(variante).clipsBytes).toBe(unidad * 3);
+    }
+    expect(manager.list()).toHaveLength(6);
+  });
+
+  it('sin outputDir se comporta como siempre: todo el catálogo cuenta', async () => {
+    const unidad = 1000;
+    const { originales } = copiasYOriginales(unidad);
+    const sm = new StorageManager(manager);
+
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: (unidad * 4) / 1024 ** 3, autoDeleteOldest: true }),
+    );
+
+    // 6 unidades contra límite 4: caen 2, y entre ellos están los originales (más viejos o empatados).
+    expect(borrados).toHaveLength(2);
+    expect(originales.some((o) => !real.existsSync(o.filePath))).toBe(true);
+  });
+
+  it('getStats mide lo mismo que el límite: lo de fuera de la carpeta no cuenta', () => {
+    const unidad = 1000;
+    copiasYOriginales(unidad);
+    clipEn(viejaDir, 'grabacion.mp4', 500, '2026-01-04');
+    db.prepare("UPDATE clips SET source = 'recording' WHERE title = 'grabacion.mp4'").run();
+    clipEn(viejaDir, 'captura.png', 40, '2026-01-04');
+    const sm = new StorageManager(manager);
+
+    const stats = sm.getStats(outputDir);
+
+    expect(stats.clipsBytes).toBe(unidad * 3);
+    expect(stats.recordingsBytes).toBe(0);
+    expect(stats.screenshotsBytes).toBe(0);
+    // Y apuntando la carpeta de clips a la vieja, cuentan sus filas y no las otras.
+    const vieja = sm.getStats(viejaDir);
+    expect(vieja.clipsBytes).toBe(unidad * 3);
+    expect(vieja.recordingsBytes).toBe(500);
+    expect(vieja.screenshotsBytes).toBe(40);
+  });
+
+  it('una carpeta hermana con el mismo prefijo en el nombre no cuenta como la carpeta de clips', async () => {
+    const hermana = `${outputDir} copia`;
+    try {
+      clipEn(hermana, 'hermano.mp4', 700, '2026-01-01');
+      await clip('propio.mp4', 100);
+
+      expect(new StorageManager(manager).getStats(outputDir).clipsBytes).toBe(100);
+    } finally {
+      rmSync(hermana, { recursive: true, force: true });
+    }
+  });
+
+  it('la carpeta de clips es la raíz de una unidad: cuelga todo lo de esa unidad', () => {
+    const raiz = parse(outputDir).root; // p. ej. C:\
+    repo.insert({
+      filePath: join(outputDir, 'x.mp4'),
+      title: 'x',
+      game: null,
+      sizeBytes: 123,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      source: 'replay',
+    });
+
+    expect(new StorageManager(manager).getStats(raiz).clipsBytes).toBe(123);
+    expect(new StorageManager(manager).getStats(raiz.toLowerCase()).clipsBytes).toBe(123);
+  });
+
+  it('combinado con la unidad sin montar: lo de la unidad ausente y lo de otras carpetas, fuera', async () => {
+    const [unidadSalida] = unidadesAusentes();
+    const salidaEnUsb = `${unidadSalida}Clips`;
+    const unidad = 1000;
+    const muerto = filaEn(unidadSalida, 'muerto.mp4', unidad, {
+      createdAt: '2025-12-31T00:00:00.000Z',
+    });
+    const { originales } = copiasYOriginales(unidad);
+    const sm = new StorageManager(manager);
+
+    const borrados = await sm.enforceLimit(
+      settings({ storageLimitGb: unidad / 2 / 1024 ** 3, autoDeleteOldest: true }),
+      { outputDir: salidaEnUsb },
+    );
+
+    expect(borrados).toEqual([]);
+    expect(manager.getClip(muerto.id)).not.toBeNull();
+    for (const original of originales) expect(real.existsSync(original.filePath)).toBe(true);
+    expect(manager.list()).toHaveLength(7);
   });
 });
