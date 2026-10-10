@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
 import { isManualGame } from '@shared/games';
 import type { GameIndex } from '@shared/games';
+import DurationMenu from './DurationMenu';
+import GameIcon from './GameIcon';
 
 const STATE_LABEL: Record<CaptureStatus['state'], string> = {
   unavailable: 'Captura no disponible',
@@ -10,18 +12,6 @@ const STATE_LABEL: Record<CaptureStatus['state'], string> = {
   buffering: 'Buffer activo',
   recording: 'Grabando',
 };
-
-/**
- * Duraciones del clip retroactivo, dentro de los límites que ya valida el dominio (10–300 s): ningún
- * valor del control puede ser rechazado por la normalización. El valor fino sigue en Ajustes.
- */
-const DURACIONES: { seconds: number; label: string }[] = [
-  { seconds: 30, label: '30 s' },
-  { seconds: 60, label: '1 m' },
-  { seconds: 120, label: '2 m' },
-  { seconds: 180, label: '3 m' },
-  { seconds: 300, label: '5 m' },
-];
 
 export default function CaptureBar() {
   const [status, setStatus] = useState<CaptureStatus | null>(null);
@@ -77,83 +67,104 @@ export default function CaptureBar() {
     }
   }
 
+  const ultimoClip = status.lastClipPath?.split(/[\\/]/).pop();
+
   return (
     <div className="capture-bar" data-state={status.state}>
-      <span className={`capture-pill capture-pill-game${juego ? ' is-on' : ''}`}>
-        <span aria-hidden="true">🎮</span>
-        <span className="capture-game-name">{juego ?? 'Esperando juego'}</span>
-        {manual && (
-          <span className="capture-tag" title="Juego añadido por vos en Ajustes → Grabación">
-            manual
-          </span>
-        )}
+      <GameIcon game={juego ?? null} size="lg" />
+      <span className={`cap-game gc-display${juego ? '' : ' is-wait'}`}>
+        {juego ?? 'Esperando juego'}
       </span>
-
-      <span className="capture-pill capture-pill-state">
-        <span className={`capture-dot ${grabando ? 'rec' : activo ? 'on' : 'off'}`} />
-        {STATE_LABEL[status.state]}
-      </span>
-
-      {status.error && <span className="capture-error">{status.error}</span>}
-      <span className="capture-spacer" />
-
-      {status.lastClipPath && (
-        <span className="capture-last" title={status.lastClipPath}>
-          Último clip: {status.lastClipPath.split(/[\\/]/).pop()}
+      {manual && (
+        <span className="cap-tag" title="Juego añadido por vos en Ajustes → Grabación">
+          manual
         </span>
       )}
 
-      {settings && (
-        <label className="capture-pill capture-pill-clip">
-          Clip
-          <select
-            aria-label="Duración del clip"
-            value={settings.replaySeconds}
-            disabled={ocupado}
-            onChange={(e) => void cambiarDuracion(Number(e.target.value))}
-          >
-            {/* El valor guardado puede no ser un preset (Ajustes admite cualquiera): se muestra. */}
-            {!DURACIONES.some((d) => d.seconds === settings.replaySeconds) && (
-              <option value={settings.replaySeconds}>{settings.replaySeconds} s</option>
-            )}
-            {DURACIONES.map((d) => (
-              <option key={d.seconds} value={d.seconds}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      {/* Con el buffer activo (el estado normal) basta el punto; el resto de estados se escriben. */}
+      {status.state === 'buffering' ? (
+        <span
+          className="gc-dot on"
+          role="img"
+          aria-label={STATE_LABEL.buffering}
+          title={STATE_LABEL.buffering}
+        />
+      ) : (
+        <>
+          <span className={`gc-dot${grabando ? ' rec' : ''}`} aria-hidden="true" />
+          <span className={`cap-state${grabando ? ' is-rec' : ''}`}>{STATE_LABEL[status.state]}</span>
+        </>
       )}
 
-      {activo && (
-        <button
-          type="button"
-          disabled={ocupado}
-          onClick={() => void accion(() => window.gameclip.capture.saveReplay())}
-        >
-          Guardar clip
-        </button>
+      {status.error && (
+        <span className="cap-error" title={status.error}>
+          {status.error}
+        </span>
       )}
+      <span className="cap-spacer" />
+
+      {status.lastClipPath && (
+        <span className="cap-last" title={status.lastClipPath}>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="3" width="13" height="10" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M6.5 6l3.5 2-3.5 2z" fill="currentColor" />
+          </svg>
+          <span className="cap-last-name">{ultimoClip}</span>
+        </span>
+      )}
+
+      {/* Una sola instancia del menú: al cambiar de estado solo cambia la presentación (no se remonta). */}
+      <div className={activo ? 'cap-split' : 'cap-split-solo'}>
+        {activo && (
+          <button
+            type="button"
+            className="cap-split-main"
+            disabled={ocupado}
+            onClick={() => void accion(() => window.gameclip.capture.saveReplay())}
+          >
+            Guardar clip
+          </button>
+        )}
+        {/* Sin «Guardar clip» (captura no lista) la duración sigue al alcance, como el selector de antes. */}
+        {settings && (
+          <DurationMenu
+            variant={activo ? 'split' : 'solo'}
+            seconds={settings.replaySeconds}
+            disabled={ocupado}
+            onSelect={cambiarDuracion}
+          />
+        )}
+      </div>
+
       {activo && !grabando && (
         <button
           type="button"
-          className="secondary"
+          className="gc-btn ghost icon cap-rec"
+          aria-label="Grabar"
+          title="Grabar"
           disabled={ocupado}
           onClick={() => void accion(() => window.gameclip.capture.startRecording())}
         >
-          Grabar
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5" fill="currentColor" />
+          </svg>
         </button>
       )}
       {grabando && (
         <button
           type="button"
-          className="danger"
+          className="gc-btn danger icon cap-stop"
+          aria-label="Detener"
+          title="Detener"
           disabled={ocupado}
           onClick={() => void accion(() => window.gameclip.capture.stopRecording())}
         >
-          Detener
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" />
+          </svg>
         </button>
       )}
     </div>
   );
 }
+

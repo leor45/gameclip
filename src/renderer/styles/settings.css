@@ -1,0 +1,1053 @@
+/* ── Ajustes · rediseño «Portada oscura» ──
+   Tokens y primitivas en ../styles.css. Esta hoja solo lleva las reglas de su área. */
+
+/* ── Layout: sub-navegación fija + sección con scroll propio y pie fijo ─────── */
+
+/* Con Ajustes abierto, el contenedor de la app no hace scroll ni pone márgenes: la sección ocupa todo
+   el alto disponible y solo se desplaza su formulario (la barra superior y la lateral no se mueven,
+   y el pie con «Guardar ajustes» queda siempre a la vista). */
+.app-content:has(> .ajustes) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ajustes {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.ajustes-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 20px 12px;
+  border-right: 1px solid var(--rule);
+  overflow-y: auto;
+}
+
+/* El h1 «Ajustes» es la etiqueta pequeña encima de la sub-navegación. */
+.app-content .ajustes-title {
+  margin: 0 0 10px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.ajustes-nav-link {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.ajustes-nav-link:hover {
+  color: var(--paper);
+  background: var(--page);
+}
+
+.ajustes-nav-link.active {
+  color: var(--paper);
+  background: var(--page);
+  box-shadow: inset 2px 0 0 var(--sello);
+}
+
+.ajustes-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ajustes-content > .placeholder {
+  padding: 24px 32px;
+}
+
+/* ── Formulario de sección ─────────────────────────────────────────────────── */
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-scroll {
+  /* Bloque contenedor de lo posicionado dentro (.settings-sr, inputs de tarjetas y fichas): sin él,
+     un absoluto podía salirse del scroll y desbordar el documento entero. */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  max-width: 760px;
+  padding: 22px 32px 28px;
+}
+
+.app-content .settings-title {
+  margin: 0 0 14px;
+  font-size: 34px;
+}
+
+/* Cada grupo: filete de 1 px arriba y su etiqueta pequeña (la <legend>, con .gc-label) encima. */
+.settings-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 16px 0 20px;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  /* Un <fieldset> ignora por defecto el ancho del padre: su min-width es min-content, así que crece
+     con su contenido (la fila de alta de juego) y desborda el form. min-width:0 lo obliga a
+     respetar el ancho del form, y entonces la fila interna sí encoge/envuelve. */
+  min-width: 0;
+}
+
+/* Flotada, la leyenda deja de cortar el filete y pasa a ser un elemento más del grupo. */
+.settings-form legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 2px;
+}
+
+.settings-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.settings-form label.settings-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.settings-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+  align-items: start;
+}
+
+.settings-fields.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-subtitle {
+  margin-top: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--paper);
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.settings-hint em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Aviso: filete amarillo a la izquierda. .is-error (rojo) para errores y lo irreversible. */
+.settings-warning {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 2px solid var(--sello);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--page);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--paper);
+}
+
+.settings-warning.is-error {
+  border-left-color: var(--rec);
+}
+
+.settings-body > .settings-warning {
+  margin-bottom: 16px;
+}
+
+.settings-body a,
+.settings-link {
+  color: var(--sello);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.settings-body a:hover,
+.settings-link:hover {
+  color: var(--sello-hover);
+}
+
+/* Texto solo para lectores de pantalla (nombre accesible de los deslizadores de la mezcla). */
+.settings-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Pie fijo: «Guardar ajustes» ───────────────────────────────────────────── */
+
+.settings-savebar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex: none;
+  padding: 12px 32px;
+  border-top: 1px solid var(--rule);
+  background: var(--page);
+  box-shadow: 0 -12px 22px -14px rgba(0, 0, 0, 0.75);
+  position: relative;
+  z-index: 1;
+}
+
+.settings-savebar-msg {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.settings-savebar-msg.is-error {
+  color: var(--rec);
+}
+
+.settings-savebar .gc-btn {
+  flex: none;
+}
+
+/* ── Tarjetas excluyentes (modo de grabación, presets de calidad) ──────────── */
+
+.settings-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-cards.is-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-form .settings-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.settings-card strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.settings-card-desc {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+
+.settings-form .settings-card:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+
+.settings-form .settings-card.active,
+.settings-form .settings-card:has(input:checked) {
+  border-color: var(--sello);
+  box-shadow: inset 0 0 0 1px var(--sello);
+}
+
+.settings-form .settings-card:disabled {
+  cursor: default;
+}
+
+.settings-form .settings-card:disabled:not(.active) {
+  opacity: 0.55;
+}
+
+.settings-form .settings-card:has(input:focus-visible) {
+  outline: 2px solid var(--sello);
+  outline-offset: 2px;
+}
+
+/* El radio sigue ahí (valor, evento, nombre accesible); la tarjeta entera lo dibuja. */
+.settings-card-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Control segmentado (Audio a grabar). */
+.settings-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.settings-form .settings-seg-option {
+  position: relative;
+  flex-direction: row;
+  padding: 7px 14px;
+  border-right: 1px solid var(--rule);
+  color: var(--dim);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.settings-form .settings-seg-option:last-child {
+  border-right: 0;
+}
+
+.settings-form .settings-seg-option:hover {
+  color: var(--paper);
+}
+
+.settings-form .settings-seg-option:has(input:checked) {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.settings-form .settings-seg-option:has(input:focus-visible) {
+  outline: 2px solid var(--sello);
+  outline-offset: -2px;
+}
+
+/* ── Filas de alta (juego, app, carpeta) ───────────────────────────────────── */
+
+/* Columnas deterministas: proceso | ejecutable | nombre | botón. Junto con min-width:0 en el
+   fieldset, no desborda. */
+.settings-addrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.settings-addrow.is-two {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.settings-addrow.is-one {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* min-width: 0 deja que el <select> con opciones larguísimas encoja en su celda en vez de estirarla. */
+.settings-addrow label {
+  min-width: 0;
+}
+
+.settings-path {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* ── Listas (juegos a mano, «no son juegos», mezcla de audio) ──────────────── */
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.settings-list > li {
+  border-bottom: 1px solid var(--rule);
+}
+
+.settings-listfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Quitar: cuadrado pequeño con ×, rojo al pasar. */
+.settings-remove {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.settings-remove:hover {
+  border-color: var(--rec);
+  background: var(--rec-soft);
+  color: var(--rec);
+}
+
+.settings-remove-slot {
+  width: 26px;
+}
+
+/* Juegos añadidos a mano: icono · nombre y ejecutable · renombrar · quitar. */
+.settings-game-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 200px) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.settings-game-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-game-name b,
+.settings-game-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-game-name b {
+  font-weight: 600;
+}
+
+.settings-game-name small {
+  font: 500 12px/1.3 var(--font-mono);
+  color: var(--dim);
+}
+
+.settings-game-rename {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: 13px;
+}
+
+/* «No son juegos»: casilla · icono · nombre · origen · quitar. Desactivada = tachada. */
+.settings-excl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.settings-form .settings-excl-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: var(--paper);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings-excl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-excl-row.is-off .settings-excl-name {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.settings-origen {
+  padding: 2px 7px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  font: 500 11px/1.2 var(--font-mono);
+  color: var(--dim);
+}
+
+.settings-origen.is-manual {
+  border-color: var(--sello);
+  color: var(--sello);
+}
+
+/* Mezcla de audio: casilla + icono + nombre · volumen · % · quitar. */
+.settings-mix-row {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) 46px auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.settings-form .settings-mix-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--paper);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings-mix-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.settings-mix-val,
+.settings-range-val {
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.settings-mix-row.is-off .settings-mix-name {
+  color: var(--dim);
+}
+
+/* Deslizador con su valor al lado (Avanzado). */
+.settings-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+/* ── Atajos ────────────────────────────────────────────────────────────────── */
+
+.hotkey-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.hotkey-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.hotkey-row.is-inline {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.hotkey-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hotkey-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--paper);
+}
+
+.hotkey-desc,
+.hotkey-listening {
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+.hotkey-kbd {
+  min-width: 64px;
+  text-align: center;
+}
+
+/* A la escucha: la tecla y el aviso en amarillo. */
+.hotkey-row.is-listening .hotkey-kbd {
+  border-color: var(--sello);
+  color: var(--sello);
+}
+
+.hotkey-listening {
+  color: var(--sello);
+}
+
+/* Choque con otro atajo: la tecla en rojo. */
+.hotkey-row.is-clash .hotkey-kbd {
+  border-color: var(--rec);
+  color: var(--rec);
+}
+
+.hotkey-row.is-clash .hotkey-label {
+  color: var(--rec);
+}
+
+/* Atajo solo lectura dentro de otras secciones (General, Grabación). */
+.hotkey-info-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.hotkey-info-label {
+  color: var(--dim);
+}
+
+/* En la rejilla de General el atajo va debajo de su etiqueta, como un campo más. */
+.settings-fields > .hotkey-info-inline .hotkey-info-label {
+  flex-basis: 100%;
+}
+
+/* ── General: llegada desde la barra superior ──────────────────────────────── */
+
+.settings-arrive .gc-field {
+  transition:
+    border-color 0.6s ease,
+    box-shadow 0.6s ease;
+}
+
+.settings-form .settings-arrive.is-marked {
+  color: var(--paper);
+}
+
+.settings-arrive.is-marked .gc-field {
+  border-color: var(--sello);
+  box-shadow: 0 0 0 3px var(--sello-soft);
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-arrive .gc-field {
+    transition: none;
+  }
+}
+
+/* ── Avanzado: overlay de rendimiento ──────────────────────────────────────── */
+
+/* Métricas como fichas que se encienden en amarillo; por dentro siguen siendo casillas. */
+.settings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-form .settings-chip {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.settings-form .settings-chip:hover {
+  border-color: var(--dim);
+}
+
+.settings-form .settings-chip:has(input:checked) {
+  border-color: var(--sello);
+  color: var(--paper);
+}
+
+.settings-form .settings-chip:has(input:checked)::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sello);
+}
+
+.settings-form .settings-chip:has(input:focus-visible) {
+  outline: 2px solid var(--sello);
+  outline-offset: 2px;
+}
+
+.settings-chip-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.perf-preset {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.perf-preset-nombre {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+/* Mini-pantalla 3×3: el preset actual en amarillo; el centro, vacío (no elegible). */
+.perf-pos {
+  display: grid;
+  grid-template-columns: repeat(3, 22px);
+  grid-template-rows: repeat(3, 14px);
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+}
+
+.perf-pos i {
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+.perf-pos i.is-on {
+  background: var(--sello);
+}
+
+.perf-pos i.is-no {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.settings-form .perf-color-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.perf-color-ctl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.perf-color-ctl input[type='color'] {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+  cursor: pointer;
+}
+
+/* ── Almacenamiento: barra de uso apilada ──────────────────────────────────── */
+
+.storage-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--rule);
+}
+
+.storage-seg-clips {
+  background: var(--sello);
+}
+
+.storage-seg-recordings {
+  background: #c99a1a;
+}
+
+.storage-seg-screenshots {
+  background: #8a6c1e;
+}
+
+.storage-seg-other {
+  background: #4a4f5c;
+}
+
+.storage-seg-free {
+  background: var(--rule);
+}
+
+.storage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 500 12px/1.3 var(--font-mono);
+  color: var(--dim);
+}
+
+.storage-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.storage-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* En la leyenda, «Libre» se distingue del fondo de la página. */
+.storage-dot.storage-seg-free {
+  background: #3a3f4b;
+}
+
+/* ── Desarrollo: índice de detección ───────────────────────────────────────── */
+
+.deteccion-detalle > summary {
+  cursor: pointer;
+  color: var(--paper);
+  font-size: 14px;
+}
+
+.deteccion-detalle > summary:hover {
+  color: var(--sello);
+}
+
+.deteccion-tabla-scroll {
+  max-height: 340px;
+  margin-top: 10px;
+  overflow-y: auto;
+  border-top: 1px solid var(--rule);
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.deteccion-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.deteccion-tabla th,
+.deteccion-tabla td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.deteccion-tabla thead th {
+  position: sticky;
+  top: 0;
+  background: var(--ink);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.deteccion-icono {
+  width: 26px;
+}
+
+.deteccion-exes code {
+  font: 500 12px/1.3 var(--font-mono);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+/* ── Grabación: modal de elección de monitor ───────────────────────────────── */
+
+.gc-modal.display-picker {
+  width: min(680px, 100%);
+}
+
+.display-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.display-picker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--page);
+  color: var(--paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.display-picker-card:hover {
+  border-color: var(--dim);
+}
+
+.display-picker-card.active {
+  border-color: var(--sello);
+  box-shadow: inset 0 0 0 1px var(--sello);
+}
+
+.display-picker-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+}
+
+.display-picker-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.display-picker-badge {
+  font: 500 11px/1 var(--font-mono);
+  color: var(--dim);
+}
+
+/* ── Ventanas estrechas ────────────────────────────────────────────────────── */
+
+@media (max-width: 860px) {
+  .ajustes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .ajustes-nav {
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .app-content .ajustes-title {
+    margin: 0 6px 0 0;
+  }
+
+  .ajustes-nav-link.active {
+    box-shadow: inset 0 -2px 0 var(--sello);
+  }
+
+  .settings-body {
+    padding: 18px 20px 24px;
+  }
+
+  .settings-savebar {
+    padding: 10px 20px;
+  }
+
+  .settings-cards,
+  .settings-cards.is-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-fields.is-three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-addrow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .settings-cards,
+  .settings-cards.is-four,
+  .settings-fields,
+  .settings-fields.is-three,
+  .settings-addrow,
+  .settings-addrow.is-two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-game-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .settings-game-rename {
+    grid-column: 2 / 3;
+  }
+
+  .settings-mix-row {
+    grid-template-columns: minmax(0, 1fr) 46px auto;
+  }
+
+  .settings-mix-volume {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

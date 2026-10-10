@@ -28,14 +28,19 @@ export default function RenderDialog({
   const [calidad, setCalidad] = useState<ExportQuality>('media');
 
   return (
-    <div className="eav-modal-backdrop" onClick={rendering ? undefined : onClose}>
-      <div className="eav-modal" role="dialog" aria-label="Renderizar vídeo" onClick={(e) => e.stopPropagation()}>
-        <h2>Renderizar vídeo</h2>
+    <div className="gc-modal-backdrop" onClick={rendering ? undefined : onClose}>
+      <div
+        className="gc-modal eav-modal"
+        role="dialog"
+        aria-label="Renderizar vídeo"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="gc-modal-title gc-display">Renderizar vídeo</h2>
 
         <fieldset className="eav-modal-section" disabled={rendering}>
-          <legend>Calidad</legend>
+          <legend className="gc-label">Calidad</legend>
           {CALIDADES.map((c) => (
-            <label key={c.valor} className="eav-radio">
+            <label key={c.valor} className={`eav-radio${calidad === c.valor ? ' is-on' : ''}`}>
               <input
                 type="radio"
                 name="render-calidad"
@@ -61,16 +66,16 @@ export default function RenderDialog({
           <div className="eav-modal-progress">
             <progress aria-label="Progreso del render" max={1} value={progress} />
             <span>{Math.round(progress * 100)} %</span>
-            <button type="button" className="eav-btn" onClick={onCancelRender}>
+            <button type="button" className="gc-btn ghost" onClick={onCancelRender}>
               Cancelar
             </button>
           </div>
         ) : (
-          <div className="eav-modal-actions">
-            <button type="button" className="eav-btn" onClick={onClose}>
+          <div className="gc-modal-actions">
+            <button type="button" className="gc-btn ghost" onClick={onClose}>
               Cancelar
             </button>
-            <button type="button" className="eav-btn eav-btn-primary" onClick={() => onRender(calidad)}>
+            <button type="button" className="gc-btn" onClick={() => onRender(calidad)}>
               Renderizar vídeo
             </button>
           </div>

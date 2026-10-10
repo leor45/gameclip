@@ -5,6 +5,7 @@ import type { AppVersionInfo } from '@shared/ipc';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import AuthGate from './auth/AuthGate';
 import CaptureBar from './components/CaptureBar';
+import HdrRestartPrompt from './components/HdrRestartPrompt';
 import Sidebar from './components/Sidebar';
 import UpdateModal from './components/UpdateModal';
 import { UpdateProvider } from './updates/UpdateContext';
@@ -89,6 +90,7 @@ export default function App() {
       <UpdateProvider>
         <HashRouter>
           <Root />
+          <HdrRestartPrompt />
         </HashRouter>
       </UpdateProvider>
     </AuthProvider>

@@ -41,12 +41,12 @@ export default function ReframeControls({ reframe, onChange }: Props) {
 
   return (
     <div className="eav-reframe" role="group" aria-label="Relación de aspecto y encuadre">
-      <div className="eav-reframe-aspects">
+      <div className="eav-reframe-aspects eav-segmented">
         {ASPECT_OPTIONS.map((opt) => (
           <button
             key={opt.key}
             type="button"
-            className={`eav-chip${reframe.aspect === opt.key ? ' is-active' : ''}`}
+            className={`eav-opt${reframe.aspect === opt.key ? ' is-active' : ''}`}
             aria-pressed={reframe.aspect === opt.key}
             onClick={() => setAspect(opt.key)}
           >
@@ -57,30 +57,33 @@ export default function ReframeControls({ reframe, onChange }: Props) {
 
       {active && (
         <div className="eav-reframe-fit">
-          <button
-            type="button"
-            className={`eav-chip${isCover ? ' is-active' : ''}`}
-            aria-pressed={isCover}
-            onClick={() => onChange({ ...reframe, mode: 'cover' })}
-            title="Recorta para llenar el marco (reposicionable)"
-          >
-            Recorte
-          </button>
-          <button
-            type="button"
-            className={`eav-chip${!isCover ? ' is-active' : ''}`}
-            aria-pressed={!isCover}
-            onClick={() => onChange({ ...reframe, mode: 'contain' })}
-            title="Imagen entera con barras negras"
-          >
-            Barras
-          </button>
+          <div className="eav-segmented">
+            <button
+              type="button"
+              className={`eav-opt${isCover ? ' is-active' : ''}`}
+              aria-pressed={isCover}
+              onClick={() => onChange({ ...reframe, mode: 'cover' })}
+              title="Recorta para llenar el marco (reposicionable)"
+            >
+              Recorte
+            </button>
+            <button
+              type="button"
+              className={`eav-opt${!isCover ? ' is-active' : ''}`}
+              aria-pressed={!isCover}
+              onClick={() => onChange({ ...reframe, mode: 'contain' })}
+              title="Imagen entera con barras negras"
+            >
+              Barras
+            </button>
+          </div>
 
           {isCover && (
             <label className="eav-reframe-zoom" title="Zoom del encuadre">
               🔍
               <input
                 type="range"
+                className="gc-range"
                 min={MIN_ZOOM}
                 max={MAX_ZOOM}
                 step={0.05}
@@ -90,7 +93,7 @@ export default function ReframeControls({ reframe, onChange }: Props) {
               />
               <button
                 type="button"
-                className="eav-chip"
+                className="gc-btn ghost sm"
                 onClick={() => onChange({ ...reframe, zoom: MIN_ZOOM, offset: { x: 0, y: 0 } })}
                 title="Centrar y restablecer el zoom"
               >

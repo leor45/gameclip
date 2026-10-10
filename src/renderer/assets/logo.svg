@@ -1,0 +1,13 @@
+<!-- Icono de GameClip: mando oscuro recortado sobre baldosa amarilla (#f5c518, el acento de la app).
+     La cruceta y los botones son huecos (fill-rule evenodd), no formas encima: así no se emborronan
+     al escalar a 16 px. Fuente única de icon.ico e icon.png (`npm run icon`). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <rect width="100" height="100" rx="22" fill="#f5c518" />
+  <path
+    fill="#111318"
+    fill-rule="evenodd"
+    d="M32 28h36a23 23 0 0 1 22 17l8 29a14 14 0 0 1-26 9l-7-12H35l-7 12a14 14 0 0 1-26-9l8-29a23 23 0 0 1 22-17z
+       M30 44h9v8h8v9h-8v8h-9v-8h-8v-9h8v-8z
+       M67 45a6 6 0 1 1 0 12 6 6 0 0 1 0-12z
+       M79 58a6 6 0 1 1 0 12 6 6 0 0 1 0-12z" />
+</svg>

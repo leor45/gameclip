@@ -59,7 +59,7 @@ describe('Ajustes — Atajos', () => {
     const user = await irAAtajos();
 
     await user.click(botonEditar('replayHotkey'));
-    expect(lista().getByText('Pulsa una combinación…')).toBeInTheDocument();
+    expect(lista().getByText('Pulsa una tecla… (Esc cancela)')).toBeInTheDocument();
 
     await user.keyboard('{Alt>}c{/Alt}');
     expect(lista().getByText('Alt+C')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('Ajustes — Atajos', () => {
     await user.click(botonEditar('recordingHotkey'));
     await user.keyboard('{Escape}');
 
-    expect(lista().queryByText('Pulsa una combinación…')).not.toBeInTheDocument();
+    expect(lista().queryByText('Pulsa una tecla… (Esc cancela)')).not.toBeInTheDocument();
     expect(lista().getByText('F7')).toBeInTheDocument(); // sigue el default
   });
 
@@ -88,7 +88,7 @@ describe('Ajustes — Atajos', () => {
     await user.keyboard('{F9}'); // F9 es el push to talk por defecto
 
     expect(screen.getByText(/reservada para el push to talk/)).toBeInTheDocument();
-    expect(lista().getByText('Pulsa una combinación…')).toBeInTheDocument(); // sigue escuchando
+    expect(lista().getByText('Pulsa una tecla… (Esc cancela)')).toBeInTheDocument(); // sigue escuchando
     expect(lista().queryByText('F9')).not.toBeInTheDocument();
   });
 
@@ -144,10 +144,10 @@ describe('Ajustes — Atajos', () => {
     expect(fireEvent.contextMenu(window)).toBe(false); // sin menú contextual mientras escucha
     expect(screen.getByText(/solo sirven los botones laterales/)).toBeInTheDocument();
     fireEvent.mouseDown(window, { button: 1 });
-    expect(lista().getByText('Pulsa una combinación…')).toBeInTheDocument(); // sigue escuchando
+    expect(lista().getByText('Pulsa una tecla… (Esc cancela)')).toBeInTheDocument(); // sigue escuchando
 
     await user.click(lista().getByRole('button', { name: 'Cancelar' }));
-    expect(lista().queryByText('Pulsa una combinación…')).not.toBeInTheDocument();
+    expect(lista().queryByText('Pulsa una tecla… (Esc cancela)')).not.toBeInTheDocument();
     expect(lista().getByText('F8')).toBeInTheDocument();
     expect(screen.queryByText(/solo sirven los botones laterales/)).not.toBeInTheDocument();
   });
@@ -159,7 +159,7 @@ describe('Ajustes — Atajos', () => {
     await user.click(botonEditar('replayHotkey'));
     fireEvent.mouseDown(window, { button: 3 });
     expect(screen.getByText(/Mouse4 está reservada para el push to talk/)).toBeInTheDocument();
-    expect(lista().getByText('Pulsa una combinación…')).toBeInTheDocument();
+    expect(lista().getByText('Pulsa una tecla… (Esc cancela)')).toBeInTheDocument();
   });
 
   it('sin capturar, los botones del ratón no tocan los atajos', async () => {

@@ -58,6 +58,10 @@ export const IpcChannel = {
   ClipCaptureFrame: 'clip:capture-frame',
   PerfOverlayPreview: 'perf-overlay:preview',
   PerfPawnIoInstalled: 'perf:pawnio-installed',
+  IconsForGame: 'icons:for-game',
+  IconsForExe: 'icons:for-exe',
+  LibraryGameStats: 'library:game-stats',
+  UiHdrRestartAnswer: 'ui:hdr-restart-answer',
 } as const;
 
 // Eventos push main → renderer (webContents.send).
@@ -69,7 +73,28 @@ export const IpcEvent = {
   ExportProgress: 'export:progress',
   OverlayState: 'overlay:state',
   PerfOverlayData: 'perf-overlay:data',
+  /** El main pide al renderer que pregunte si reiniciar para aplicar la compatibilidad HDR. */
+  UiAskHdrRestart: 'ui:ask-hdr-restart',
 } as const;
+
+/** Cuántos clips hay por juego, para el filtro de la Biblioteca (ordenado de más a menos). */
+export interface LibraryGameStats {
+  /** Todos los clips del catálogo. */
+  total: number;
+  /** Clips sin juego (grabaciones y capturas de escritorio). */
+  desktop: number;
+  /** Juegos con al menos un clip, de más a menos clips (empate: por nombre). */
+  games: { name: string; count: number }[];
+}
+
+/** Pregunta de reinicio por la compatibilidad HDR de las capturas (main → renderer). */
+export interface HdrRestartRequest {
+  /** Identifica la pregunta: la respuesta debe traer el mismo id. */
+  id: string;
+}
+
+/** Respuesta: reiniciar ya o aplicar el ajuste en el próximo arranque. */
+export type HdrRestartAnswer = 'now' | 'later';
 
 // Estado que el main empuja a la página del overlay in-game.
 export interface OverlayState {
@@ -180,6 +205,19 @@ export interface IpcContract {
   [IpcChannel.PerfOverlayPreview]: { request: PerfOverlayConfig; response: void };
   /** ¿Está PawnIO instalado? Condiciona **solo** el aviso de Temp CPU (ver `perf-metrics/pawnio.ts`). */
   [IpcChannel.PerfPawnIoInstalled]: { request: void; response: boolean };
+  /**
+   * Icono del juego (por su nombre para mostrar), como data URL PNG de 64 px. null si no se conoce
+   * su ejecutable o el ejecutable no trae icono: el renderer pone el logo de GameClip.
+   */
+  [IpcChannel.IconsForGame]: { request: { name: string }; response: string | null };
+  /** Icono de un ejecutable (`Discord.exe`), igual que el de un juego. */
+  [IpcChannel.IconsForExe]: { request: { executable: string }; response: string | null };
+  [IpcChannel.LibraryGameStats]: { request: void; response: LibraryGameStats };
+  /** Respuesta del renderer a `ui:ask-hdr-restart`. */
+  [IpcChannel.UiHdrRestartAnswer]: {
+    request: { id: string; answer: HdrRestartAnswer };
+    response: void;
+  };
 }
 
 /** Resultado de guardar un fotograma como captura. */
@@ -236,6 +274,8 @@ export interface LibraryApi {
   list(query?: ClipsQuery): Promise<Clip[]>;
   get(id: number): Promise<Clip | null>;
   games(): Promise<string[]>;
+  /** Clips por juego (y de escritorio y en total), para los contadores del filtro. */
+  gameStats(): Promise<LibraryGameStats>;
   update(id: number, patch: ClipPatch): Promise<Clip>;
   remove(id: number): Promise<void>;
   openFolder(id: number): Promise<void>;
@@ -302,6 +342,20 @@ export interface PerfApi {
   isPawnIoInstalled(): Promise<boolean>;
 }
 
+export interface IconsApi {
+  /** Icono de un juego por su nombre para mostrar; null → el renderer pone el logo. Nunca rechaza. */
+  forGame(name: string): Promise<string | null>;
+  /** Icono de un ejecutable (apps de audio, juegos añadidos a mano). Nunca rechaza. */
+  forExe(executable: string): Promise<string | null>;
+}
+
+export interface UiApi {
+  /** Suscribe a la pregunta de reinicio por HDR; devuelve la función para desuscribirse. */
+  onAskHdrRestart(listener: (request: HdrRestartRequest) => void): () => void;
+  /** Responde a la pregunta con el mismo id. */
+  answerHdrRestart(id: string, answer: HdrRestartAnswer): Promise<void>;
+}
+
 // API que el preload expone en window.gameclip.
 export interface GameclipApi {
   getAppVersion(): Promise<AppVersionInfo>;
@@ -314,4 +368,6 @@ export interface GameclipApi {
   editor: EditorApi;
   overlay: OverlayApi;
   perf: PerfApi;
+  icons: IconsApi;
+  ui: UiApi;
 }

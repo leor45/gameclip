@@ -1532,6 +1532,29 @@ Lo que cazaron antes de integrar, todo corregido:
 
 **Para las notas de la v0.9.8:** el cambio de comportamiento del límite con una carpeta anterior.
 
+## Rediseño «Portada oscura» (2026-10-09) — ✅ entregado en `feature/rediseno-portada-oscura` (pendiente de merge)
+
+- [x] Sistema visual común: tokens (tinta, página, filete, papel, sello amarillo, rojo REC), fuentes
+      empaquetadas (Anton, Barlow, Geist Mono), primitivas (botones, interruptor, campo, tecla, modal).
+- [x] Barra lateral: «Comprobar actualizaciones» con sus 4 estados, almacenamiento como barra, sesión y versión.
+- [x] Barra superior variante A: botón dividido «Guardar clip | duración ▾» con menú propio y enlace a
+      Ajustes → General (foco en la duración del buffer); Grabar/Detener como iconos; estado escrito solo
+      fuera de «Buffer activo».
+- [x] Biblioteca: grupos por fecha, reproductor en panel con el índice en filas (↑ ↓, Intro, Esc), filtro de
+      juego propio con iconos, contadores, orden y buscador; acciones al pasar el cursor o con el foco.
+- [x] Iconos oficiales de juegos y apps (`app.getFileIcon`; logo del paquete para apps de la Store) con
+      caché en disco y memoria y el logo de GameClip de reserva. Nunca se lee la memoria del proceso del juego.
+- [x] Modales propios en lugar de `confirm`/`alert` (eliminar y su error) y de la pregunta nativa de reinicio
+      por HDR (con el diálogo nativo de respaldo si la ventana está oculta).
+- [x] Ajustes: las 8 secciones con pie «Guardar ajustes» fijo y scroll propio; iconos fijos en la mezcla.
+- [x] Editor: sin clip, básico, avanzado (ondas por rol) y diálogo de render; login y registro.
+
+> Solo diseño: la funcionalidad de hoy se conserva; las excepciones aprobadas por el owner están en
+> `spec/work/feature-rediseno-portada-oscura/spec.md`. Hecho por áreas en paralelo con revisores de bugs
+> introducidos en cada una (varias rondas en iconos y Biblioteca) y verificado en la app real por CDP.
+> Limitación conocida: el icono se busca por el nombre guardado en el clip; un juego renombrado por su
+> launcher (p. ej. «FINAL FANTASY VII REMAKE» → «… INTERGRADE») o desinstalado lleva el logo de reserva.
+
 ## Resueltos fuera del código
 
 ### ✅ Los juegos con anti-cheat exigen que `obs64.exe` esté FIRMADO (Helldivers 2) — ya no es un bug
@@ -1678,6 +1701,15 @@ v0.9.7. Todos Bajo o Muy bajo; ninguno pierde clips.
    - **Síntoma:** una carpeta renombrada solo en mayúsculas no ASCII (ñ/Ñ) duplica sus clips.
    - **Relacionado:** una fila guardada con prefijo `\\?\` también se duplicaría.
 10. **Biblioteca: el escaneo no entra en junctions, enlaces de directorio ni volúmenes montados dentro de la carpeta de clips.**
+11. **Sugerencia de nombre de un juego manual: lee el proceso del juego con `PROCESS_VM_READ`.**
+    - **Causa:** `src/main/games/exe-metadata.ts` usa `Get-Process -Name '<proceso>'` + `MainModule.FileVersionInfo`, que abre el proceso con lectura de memoria (riesgo con anti-cheat de kernel). Además interpola el nombre entre comillas simples.
+    - **Arreglo propuesto:** leer la versión del archivo (`FileVersionInfo` sobre la ruta) con la ruta obtenida por `QueryFullProcessImageNameW` y `PROCESS_QUERY_LIMITED_INFORMATION`, como ya hace el servicio de iconos; nombre por variable de entorno.
+    - **Relacionado:** revisar qué propiedades lee `src/main/library/foreground.ts` con `Get-Process -Id`.
+    - Encontrado por la revisión del rediseño (2026-10-09).
+12. **Editor avanzado: los atajos (S, Supr, Ctrl+Z/Y) siguen activos con el diálogo de render abierto.**
+    - **Síntoma:** con el foco en un botón del diálogo, pulsar S divide o Supr borra un segmento de la timeline por detrás.
+    - **Causa:** el manejador de `EditorAvanzado.tsx` solo ignora INPUT/TEXTAREA/SELECT; `RenderDialog` no es `aria-modal` ni bloquea el fondo.
+    - Encontrado por la revisión del rediseño (2026-10-09).
 
 ## Futuro (fuera de alcance por ahora)
 

@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import type { AppVersionInfo } from '@shared/ipc';
+import logoUrl from '../assets/logo.svg';
 import { useAuth } from '../auth/AuthContext';
 import { useUpdates } from '../updates/UpdateContext';
 import StorageIndicator from './StorageIndicator';
@@ -21,7 +22,10 @@ export default function Sidebar({ versionInfo }: SidebarProps) {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">GameClip</div>
+      <div className="sidebar-brand">
+        <img src={logoUrl} alt="" draggable={false} />
+        <span className="gc-display">GameClip</span>
+      </div>
       <nav className="sidebar-nav">
         {links.map((link) => (
           <NavLink
@@ -45,10 +49,20 @@ export default function Sidebar({ versionInfo }: SidebarProps) {
         )}
         <button
           type="button"
-          className="update-check"
+          className={`update-check${comprobando ? ' is-busy' : ''}`}
           onClick={() => void comprobar()}
           disabled={comprobando}
         >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M13.5 8a5.5 5.5 0 1 1-1.7-3.97M13.5 2.5v3h-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           {comprobando ? 'Comprobando…' : 'Comprobar actualizaciones'}
         </button>
         {comprobadoManual && !hayUpdate && !comprobando && (

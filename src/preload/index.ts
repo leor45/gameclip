@@ -7,11 +7,15 @@ import type {
   ExporterApi,
   GameclipApi,
   GamesApi,
+  HdrRestartAnswer,
+  HdrRestartRequest,
+  IconsApi,
   LibraryApi,
   OverlayApi,
   OverlayState,
   PerfApi,
   PerfOverlayData,
+  UiApi,
 } from '@shared/ipc';
 import type { PerfOverlayConfig } from '@shared/perf';
 import type { CaptureSettings, CaptureStatus } from '@shared/capture';
@@ -59,6 +63,7 @@ const library: LibraryApi = {
   list: (query?: ClipsQuery) => ipcRenderer.invoke(IpcChannel.LibraryList, query ?? {}),
   get: (id: number) => ipcRenderer.invoke(IpcChannel.LibraryGet, { id }),
   games: () => ipcRenderer.invoke(IpcChannel.LibraryGames),
+  gameStats: () => ipcRenderer.invoke(IpcChannel.LibraryGameStats),
   update: (id: number, patch: ClipPatch) =>
     ipcRenderer.invoke(IpcChannel.LibraryUpdate, { id, patch }),
   remove: (id: number) => ipcRenderer.invoke(IpcChannel.LibraryDelete, { id }),
@@ -115,6 +120,24 @@ const perf: PerfApi = {
   isPawnIoInstalled: () => ipcRenderer.invoke(IpcChannel.PerfPawnIoInstalled),
 };
 
+// Los iconos son decoración: un fallo del main nunca puede romper la vista (null → logo).
+const icons: IconsApi = {
+  forGame: (name: string) =>
+    ipcRenderer.invoke(IpcChannel.IconsForGame, { name }).catch(() => null),
+  forExe: (executable: string) =>
+    ipcRenderer.invoke(IpcChannel.IconsForExe, { executable }).catch(() => null),
+};
+
+const ui: UiApi = {
+  onAskHdrRestart: (listener: (request: HdrRestartRequest) => void) => {
+    const wrapped = (_event: unknown, request: HdrRestartRequest) => listener(request);
+    ipcRenderer.on(IpcEvent.UiAskHdrRestart, wrapped);
+    return () => ipcRenderer.removeListener(IpcEvent.UiAskHdrRestart, wrapped);
+  },
+  answerHdrRestart: (id: string, answer: HdrRestartAnswer) =>
+    ipcRenderer.invoke(IpcChannel.UiHdrRestartAnswer, { id, answer }),
+};
+
 const api: GameclipApi = {
   getAppVersion: (): Promise<AppVersionInfo> => ipcRenderer.invoke(IpcChannel.AppVersion),
   checkForUpdate: () => ipcRenderer.invoke(IpcChannel.AppCheckUpdate),
@@ -125,6 +148,8 @@ const api: GameclipApi = {
   editor,
   overlay,
   perf,
+  icons,
+  ui,
 };
 
 contextBridge.exposeInMainWorld('gameclip', api);

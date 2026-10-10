@@ -1,9 +1,10 @@
 import { useUpdates } from '../updates/UpdateContext';
+import Modal from './Modal';
 
 /**
  * Aviso modal de versión nueva, solo al arrancar (una vez por lanzamiento). El aviso pasivo del
  * sidebar cubre el resto de la sesión. Abrir el release va al navegador vía `window.open`, que el
- * `setWindowOpenHandler` del main redirige a `shell.openExternal`.
+ * `setWindowOpenHandler` del main redirige a `shell.openExternal`. Esc o clic fuera = «Ahora no».
  */
 export default function UpdateModal() {
   const { result, mostrarModalArranque, descartarModal } = useUpdates();
@@ -15,27 +16,24 @@ export default function UpdateModal() {
   };
 
   return (
-    <div className="update-modal-backdrop" onClick={descartarModal}>
-      <div
-        className="update-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-modal-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="update-modal-title">Hay una versión nueva</h2>
-        <p>
-          GameClip <strong>v{result.latest}</strong> ya está disponible. Tienes la v{result.current}.
-        </p>
-        <div className="update-modal-actions">
-          <button type="button" className="secondary" onClick={descartarModal}>
+    <Modal
+      title="Hay una versión nueva"
+      className="update-modal"
+      onDismiss={descartarModal}
+      actions={
+        <>
+          <button type="button" className="gc-btn ghost" data-autofocus onClick={descartarModal}>
             Ahora no
           </button>
-          <button type="button" onClick={verRelease}>
+          <button type="button" className="gc-btn" onClick={verRelease}>
             Ver release
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p>
+        GameClip <strong>v{result.latest}</strong> ya está disponible. Tienes la v{result.current}.
+      </p>
+    </Modal>
   );
 }

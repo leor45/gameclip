@@ -94,6 +94,7 @@ export function crearGameclipMock() {
       list: vi.fn().mockResolvedValue([]),
       get: vi.fn().mockResolvedValue(null),
       games: vi.fn().mockResolvedValue([]),
+      gameStats: vi.fn().mockResolvedValue({ total: 0, desktop: 0, games: [] }),
       update: vi.fn().mockImplementation((id, patch) => Promise.resolve({ id, ...patch })),
       remove: vi.fn().mockResolvedValue(undefined),
       openFolder: vi.fn().mockResolvedValue(undefined),
@@ -131,6 +132,15 @@ export function crearGameclipMock() {
       onData: vi.fn().mockReturnValue(() => undefined),
       // Por defecto instalado: el aviso de descarga es la excepción, no el estado normal.
       isPawnIoInstalled: vi.fn().mockResolvedValue(true),
+    },
+    // Sin icono por defecto: la UI pinta el logo de GameClip.
+    icons: {
+      forGame: vi.fn().mockResolvedValue(null),
+      forExe: vi.fn().mockResolvedValue(null),
+    },
+    ui: {
+      onAskHdrRestart: vi.fn().mockReturnValue(() => undefined),
+      answerHdrRestart: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
