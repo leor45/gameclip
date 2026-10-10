@@ -1532,7 +1532,7 @@ Lo que cazaron antes de integrar, todo corregido:
 
 **Para las notas de la v0.9.8:** el cambio de comportamiento del límite con una carpeta anterior.
 
-## Rediseño «Portada oscura» (2026-10-09) — ✅ entregado en `feature/rediseno-portada-oscura` (pendiente de merge)
+## Rediseño «Portada oscura» (2026-10-09) — ✅ publicado en v1.0.0 (portable)
 
 - [x] Sistema visual común: tokens (tinta, página, filete, papel, sello amarillo, rojo REC), fuentes
       empaquetadas (Anton, Barlow, Geist Mono), primitivas (botones, interruptor, campo, tecla, modal).
@@ -1555,7 +1555,7 @@ Lo que cazaron antes de integrar, todo corregido:
 > Limitación conocida: el icono se busca por el nombre guardado en el clip; un juego que ya estaba
 > desinstalado antes del pulido lleva el logo de reserva.
 
-## Pulido del rediseño (2026-10-09) — ✅ entregado en `feature/rediseno-pulido` (pendiente de merge)
+## Pulido del rediseño (2026-10-09) — ✅ publicado en v1.0.0 (portable)
 
 Tras un día de uso del build de prueba. Maqueta: https://claude.ai/artifact/VWnoLwJAijuNBzGmQQhR9d
 
@@ -1574,7 +1574,7 @@ Tras un día de uso del build de prueba. Maqueta: https://claude.ai/artifact/VWn
 - [x] Reproductor propio: posición con arrastre y hora al pasar el ratón, ±10 s, volumen, velocidad, imagen
       en imagen y pantalla completa; teclado ← → (±5 s), J L (±10 s), Espacio/K, M, F.
 
-## Editor avanzado: timeline por trozos (2026-10-09) — ✅ entregado en `feature/editor-avanzado-timeline` (pendiente de merge)
+## Editor avanzado: timeline por trozos (2026-10-09) — ✅ publicado en v1.0.0 (portable)
 
 Maqueta: https://claude.ai/artifact/4wraWefCYqivnXti8XFYok
 

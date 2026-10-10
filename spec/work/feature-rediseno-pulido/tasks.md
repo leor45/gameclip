@@ -37,6 +37,6 @@ Pasos pequeños y verificables. Una tarea a la vez; marcar al completar.
 
 ## Cierre
 
-- [ ] Aprobación del owner
-- [ ] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`)
+- [x] Aprobación del owner (2026-10-10)
+- [x] Merge a `main` con `--no-ff` y rama borrada (`git branch -d`) — publicado en v1.0.0
 - [x] `spec/constitution/roadmap.md` actualizado
