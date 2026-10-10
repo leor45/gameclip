@@ -1,87 +1,51 @@
-import { useEffect, useRef } from 'react';
-import { wheelToGain, type Segment } from '@shared/timeline';
+import { useMemo, type CSSProperties } from 'react';
+import type { Segment } from '@shared/timeline';
 import { MAX_TRACK_GAIN } from '@shared/tracks';
+import GameIcon from '../GameIcon';
 import Waveform, { waveTone } from './Waveform';
 
-interface Props {
+interface HeadProps {
   trackKey: string;
   label: string;
   gain: number;
-  peaks: number[];
   removed: boolean;
-  /** Segmentos conservados y duración de origen: la onda se dibuja compactada. */
-  segments: Segment[];
-  duration: number;
   onSetGain: (key: string, gain: number) => void;
   onToggleRemove: (key: string) => void;
 }
 
-/** Icono de basurero (mismo trazo que el resto de la app). */
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M6 1h4l.5 1H14v2H2V2h3.5L6 1zm-2.5 4h9L12 15H4L3.5 5zm3 2v6h1V7h-1zm2.5 0v6h1V7h-1z"
-      />
-    </svg>
-  );
+/** Icono de la pista según su rol: juego (mando), PC (escritorio), micrófono o el de la app. */
+function IconoPista({ trackKey, label }: { trackKey: string; label: string }) {
+  if (trackKey === 'game') return <GameIcon fixed="pad" />;
+  if (trackKey === 'pc') return <GameIcon fixed="desktop" />;
+  if (trackKey === 'mic') return <GameIcon fixed="mic" />;
+  return <GameIcon exe={label} />;
 }
 
 /**
- * Una pista de audio del timeline. La cabecera (nombre, volumen y basurero) va **fija a la
- * izquierda** (`sticky`): no la toca el recorte ni el sombreado, así que los controles se ven
- * siempre nítidos. El espectro va a lo ancho y sí se sombrea fuera del recorte. El volumen se ajusta
- * con la **rueda** sobre el espectro y con el slider de la cabecera.
+ * Cabecera de una pista de audio en la columna izquierda de la timeline: icono, nombre, volumen
+ * (0–200 %, siempre visible; por encima de 100 % el número se marca) y quitar/restaurar la pista.
+ * La rueda sobre la pista también cambia el volumen (la atiende la timeline).
  */
-export default function AudioTrackRow({
+export function AudioTrackHead({
   trackKey,
   label,
   gain,
-  peaks,
   removed,
-  segments,
-  duration,
   onSetGain,
   onToggleRemove,
-}: Props) {
-  const bodyRef = useRef<HTMLDivElement>(null);
-  // La rueda se lee de un listener nativo no-pasivo (React los registra pasivos y no deja
-  // preventDefault). Un ref al gain actual evita re-suscribir en cada cambio.
-  const gainRef = useRef(gain);
-  gainRef.current = gain;
-
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el || removed) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      onSetGain(trackKey, wheelToGain(gainRef.current, e.deltaY));
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [trackKey, removed, onSetGain]);
-
+}: HeadProps) {
   const pct = Math.round(gain * 100);
-
   return (
-    <li className={removed ? 'eav-track is-removed' : 'eav-track'}>
-      <div className="eav-track-head">
+    <div className={removed ? 'eav-track-head is-removed' : 'eav-track-head'}>
+      <IconoPista trackKey={trackKey} label={label} />
+      <div className="eav-track-main">
         <span className="eav-track-name" title={label}>
           {label}
         </span>
         {removed ? (
-          <button
-            type="button"
-            className="eav-track-restore"
-            aria-label={`Restaurar ${label}`}
-            title="Restaurar pista"
-            onClick={() => onToggleRemove(trackKey)}
-          >
-            ↺
-          </button>
+          <span className="eav-track-removed-note">Pista eliminada — no entra en el render.</span>
         ) : (
-          <>
+          <span className="eav-track-vol">
             <input
               className="eav-track-slider"
               type="range"
@@ -90,35 +54,84 @@ export default function AudioTrackRow({
               step={5}
               value={pct}
               aria-label={`Volumen de ${label}`}
+              style={{ '--v': `${(pct / (MAX_TRACK_GAIN * 100)) * 100}%` } as CSSProperties}
               onChange={(e) => onSetGain(trackKey, Number(e.target.value) / 100)}
             />
-            <span className="eav-track-pct">{pct}%</span>
-            <button
-              type="button"
-              className="eav-track-trash"
-              aria-label={`Eliminar ${label}`}
-              title="Eliminar pista"
-              onClick={() => onToggleRemove(trackKey)}
-            >
-              <TrashIcon />
-            </button>
-          </>
+            <span className={pct > 100 ? 'eav-track-pct is-loud' : 'eav-track-pct'}>{pct}%</span>
+          </span>
         )}
       </div>
+      {removed ? (
+        <button
+          type="button"
+          className="eav-track-action"
+          aria-label={`Restaurar ${label}`}
+          title="Restaurar pista"
+          onClick={() => onToggleRemove(trackKey)}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v3h3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="eav-track-action is-remove"
+          aria-label={`Eliminar ${label}`}
+          title="Quitar la pista del render"
+          onClick={() => onToggleRemove(trackKey)}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M4 4l8 8M12 4l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
 
-      <div className="eav-track-body" ref={bodyRef}>
-        {removed ? (
-          <p className="eav-track-removed-note">Pista eliminada — no entra en el render.</p>
-        ) : (
-          <Waveform
-            tone={waveTone(trackKey)}
-            peaks={peaks}
-            gain={gain}
-            segments={segments}
-            duration={duration}
-          />
-        )}
-      </div>
-    </li>
+/** Onda de UN trozo de una pista: su tramo de origen, escalada por el volumen. */
+export function AudioBlock({
+  trackKey,
+  peaks,
+  gain,
+  segment,
+  duration,
+  removed,
+}: {
+  trackKey: string;
+  peaks: number[];
+  gain: number;
+  segment: Segment;
+  duration: number;
+  removed: boolean;
+}) {
+  // Lista estable mientras el tramo no cambie: la onda (un <canvas>) solo se redibuja si cambia algo
+  // suyo, no en cada frame de reproducción.
+  const tramo = useMemo(
+    () => [{ start: segment.start, end: segment.end }],
+    [segment.start, segment.end],
+  );
+  return (
+    <Waveform
+      tone={waveTone(trackKey)}
+      peaks={peaks}
+      gain={gain}
+      segments={tramo}
+      duration={duration}
+      dimmed={removed}
+    />
   );
 }

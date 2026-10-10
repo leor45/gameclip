@@ -19,6 +19,7 @@ import {
   setTrackVolume,
   splitAt,
   timelinePxPerSecond,
+  trimSegmentEdge,
   wheelToGain,
   ZOOM_FACTOR_MAX,
   ZOOM_FACTOR_MIN,
@@ -97,7 +98,15 @@ describe('segmentos — dividir / borrar', () => {
     const seg = [{ start: 0, end: 10 }];
     expect(splitAt(seg, MIN_TRIM_SECONDS / 2)).toEqual(seg); // trozo izquierdo muy corto
     expect(splitAt(seg, 10 - MIN_TRIM_SECONDS / 2)).toEqual(seg); // trozo derecho muy corto
-    expect(splitAt([{ start: 0, end: 3 }, { start: 6, end: 10 }], 4)).toHaveLength(2); // 4 en hueco
+    expect(
+      splitAt(
+        [
+          { start: 0, end: 3 },
+          { start: 6, end: 10 },
+        ],
+        4,
+      ),
+    ).toHaveLength(2); // 4 en hueco
   });
 
   it('borra un segmento (incluido el del medio) pero nunca deja la lista vacía', () => {
@@ -168,9 +177,13 @@ describe('segmentos — tiempo de salida (timeline compactada)', () => {
 
   it('outputStarts da los offsets contiguos de salida', () => {
     expect(outputStarts(segs)).toEqual([0, 10]);
-    expect(outputStarts([{ start: 0, end: 3 }, { start: 3, end: 5 }, { start: 8, end: 10 }])).toEqual([
-      0, 3, 5,
-    ]);
+    expect(
+      outputStarts([
+        { start: 0, end: 3 },
+        { start: 3, end: 5 },
+        { start: 8, end: 10 },
+      ]),
+    ).toEqual([0, 3, 5]);
   });
 });
 
@@ -205,5 +218,50 @@ describe('volumen por pista', () => {
     expect(wheelToGain(1, 100)).toBeCloseTo(0.95); // rueda abajo
     expect(wheelToGain(2, -100)).toBe(2); // no pasa de 2
     expect(wheelToGain(0, 100)).toBe(0); // no baja de 0
+  });
+});
+
+describe('segmentos — recortar el borde de un trozo (tipo DaVinci)', () => {
+  const tres = [
+    { start: 0, end: 10 },
+    { start: 14, end: 30 },
+    { start: 30, end: 50 },
+  ];
+
+  it('recorta el inicio de un trozo intermedio sin tocar a los demás', () => {
+    const r = trimSegmentEdge(tres, 1, 'start', 18, 60);
+    expect(r).toEqual([
+      { start: 0, end: 10 },
+      { start: 18, end: 30 },
+      { start: 30, end: 50 },
+    ]);
+  });
+
+  it('devolverle tiempo nunca cruza el fin del trozo anterior', () => {
+    expect(trimSegmentEdge(tres, 1, 'start', 5, 60)[1].start).toBe(10);
+  });
+
+  it('el fin no pasa del inicio del siguiente ni de la duración', () => {
+    expect(trimSegmentEdge(tres, 0, 'end', 20, 60)[0].end).toBe(14);
+    expect(trimSegmentEdge(tres, 2, 'end', 99, 60)[2].end).toBe(60);
+  });
+
+  it('nunca deja un trozo por debajo del mínimo', () => {
+    expect(trimSegmentEdge(tres, 1, 'start', 29.9, 60)[1].start).toBe(30 - MIN_TRIM_SECONDS);
+    expect(trimSegmentEdge(tres, 1, 'end', 14.1, 60)[1].end).toBe(14 + MIN_TRIM_SECONDS);
+  });
+
+  it('el primer trozo no empieza antes de 0', () => {
+    expect(trimSegmentEdge(tres, 0, 'start', -3, 60)[0].start).toBe(0);
+  });
+
+  it('índice inválido o sin cambio: devuelve la misma lista', () => {
+    expect(trimSegmentEdge(tres, 7, 'start', 3, 60)).toBe(tres);
+    expect(trimSegmentEdge(tres, 1, 'start', 14, 60)).toBe(tres);
+  });
+
+  it('equivale a las asas globales en el primer y el último trozo', () => {
+    expect(trimSegmentEdge(tres, 0, 'start', 4, 60)).toEqual(setSegmentsStart(tres, 4, 60));
+    expect(trimSegmentEdge(tres, 2, 'end', 44, 60)).toEqual(setSegmentsEnd(tres, 44, 60));
   });
 });

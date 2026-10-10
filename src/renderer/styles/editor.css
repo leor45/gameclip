@@ -980,155 +980,357 @@ fieldset:disabled .editor-opt {
   color: var(--dim);
 }
 
-/* Timeline */
+/* Timeline por trozos (tipo DaVinci): cabeceras fijas a la izquierda, pistas a la derecha. Cada
+   segmento conservado es un bloque en todas las pistas, separado del siguiente por un hueco. */
 .eav-timeline {
+  --alto-regla: 28px;
+  --alto-video: 64px;
+  --alto-audio: 54px;
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
   overflow-y: auto;
+  overflow-x: hidden;
   background: var(--ink);
   border-top: 1px solid var(--rule);
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
 }
 
-.eav-timeline-inner {
+.eav-tl-heads {
+  border-right: 1px solid var(--rule);
+  background: var(--page);
+}
+
+.eav-tl-rulerpad {
+  height: var(--alto-regla);
+  border-bottom: 1px solid var(--rule);
+}
+
+.eav-tl-head {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--rule);
+}
+
+.eav-tl-head.is-video {
+  height: var(--alto-video);
+}
+
+.eav-tl-head.is-audio {
+  height: var(--alto-audio);
+}
+
+.eav-tl-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+.eav-tl-inner {
   position: relative;
-  padding-bottom: 8px;
+  min-width: 100%;
 }
 
-/* La regla mide 26 px: `.eav-trim-shade` arranca justo debajo (top: 26px). */
 .eav-ruler {
   position: relative;
-  height: 26px;
+  height: var(--alto-regla);
   border-bottom: 1px solid var(--rule);
   cursor: pointer;
-  user-select: none;
+  outline: none;
+}
+
+.eav-ruler:focus-visible {
+  box-shadow: inset 0 -2px 0 var(--sello);
 }
 
 .eav-tick {
   position: absolute;
-  top: 4px;
-  font: 500 10px/1.6 var(--font-mono);
-  color: var(--dim);
-  padding-left: 3px;
+  top: 9px;
+  height: calc(var(--alto-regla) - 9px);
+  padding-left: 4px;
   border-left: 1px solid var(--rule);
-  height: 18px;
+  font: 500 10.5px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  white-space: nowrap;
   pointer-events: none;
 }
 
-/* Barra de cortes: un bloque por segmento conservado. */
-.eav-segbar {
+.eav-lane {
   position: relative;
-  height: 16px;
-  margin: 4px 0 2px;
+  border-bottom: 1px solid var(--rule);
+  cursor: text;
 }
 
-.eav-seg {
+.eav-lane.is-video {
+  height: var(--alto-video);
+}
+
+.eav-lane.is-audio {
+  height: var(--alto-audio);
+}
+
+/* Un trozo: bloque con su contenido (fotogramas u onda), bordes y asas. */
+.eav-clip {
   position: absolute;
-  top: 0;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: var(--rule);
+  top: 5px;
+  bottom: 5px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--raise);
+  box-shadow: inset 0 0 0 1px rgba(236, 238, 243, 0.08);
   cursor: pointer;
+  outline: none;
+  transition:
+    left 0.16s cubic-bezier(0.2, 0.7, 0.2, 1),
+    width 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-.eav-seg:hover {
-  background: #343845;
+.eav-timeline.is-dragging .eav-clip {
+  transition: none;
 }
 
-.eav-seg.is-selected {
-  background: transparent;
+.eav-lane.is-dimmed .eav-clip {
+  opacity: 0.32;
+}
+
+/* Seleccionado: filete amarillo y velo suave, en todas las pistas a la vez. */
+.eav-clip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 5px;
+  /* Filete propio por encima de la imagen: el borde del trozo se ve también sobre los fotogramas. */
+  box-shadow: inset 0 0 0 1px rgba(236, 238, 243, 0.18);
+  pointer-events: none;
+}
+
+.eav-clip.is-selected::after {
+  background: rgba(245, 197, 24, 0.08);
   box-shadow: inset 0 0 0 2px var(--sello);
 }
 
-.eav-tracks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 0;
+.eav-clip:focus-visible::after {
+  box-shadow: inset 0 0 0 2px var(--paper);
 }
 
-/* Sin padding/borde horizontal: el espectro arranca en x=0 y alinea con la regla y el playhead. */
-.eav-track {
-  padding: 4px 0;
+.eav-clip-frames {
+  position: absolute;
+  inset: 0;
 }
 
-/* Pista eliminada: atenuada, con su nota. */
-.eav-track.is-removed {
-  opacity: 0.55;
+.eav-clip-frames img {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  object-fit: cover;
+  border-right: 1px solid rgba(0, 0, 0, 0.35);
+  user-select: none;
+  pointer-events: none;
 }
 
-/* Cabecera fija a la izquierda: los controles no los toca el recorte ni el sombreado. */
-.eav-track-head {
-  position: sticky;
+.eav-clip .waveform-canvas {
+  position: absolute;
+  top: 50%;
   left: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.eav-clip-num {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  z-index: 1;
+  font: 600 10px/1 var(--font-ui);
+  color: var(--paper);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* Asas de recorte en los bordes de cada trozo: se ven al pasar el ratón o con el trozo elegido. */
+.eav-clip-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   z-index: 2;
+  width: 10px;
+  cursor: ew-resize;
+  outline: none;
+}
+
+.eav-clip-edge.is-start {
+  left: 0;
+}
+
+.eav-clip-edge.is-end {
+  right: 0;
+}
+
+.eav-clip-edge::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sello);
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+}
+
+.eav-clip-edge.is-start::before {
+  left: 2px;
+}
+
+.eav-clip-edge.is-end::before {
+  right: 2px;
+}
+
+.eav-clip:hover .eav-clip-edge::before,
+.eav-clip.is-selected .eav-clip-edge::before,
+.eav-clip-edge:focus-visible::before {
+  opacity: 0.95;
+}
+
+.eav-clip-edge:focus-visible::before {
+  background: var(--paper);
+}
+
+/* Cabeceras de pista: icono, nombre, volumen visible y quitar/restaurar. */
+.eav-track-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: max-content;
-  max-width: 92%;
-  background: var(--page);
-  padding: 5px 14px 5px 6px;
-  border-radius: var(--radius);
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+}
+
+.eav-track-main {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
 }
 
 .eav-track-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--paper);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 150px;
-  flex-shrink: 0;
-}
-
-.eav-track-pct {
-  font: 500 12px/1 var(--font-mono);
-  color: var(--sello);
-  font-variant-numeric: tabular-nums;
-  min-width: 40px;
-  flex-shrink: 0;
-}
-
-.eav-track-trash,
-.eav-track-restore {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.eav-track-trash {
-  color: var(--rec);
-}
-
-.eav-track-trash:hover {
-  background: var(--rec-soft);
-}
-
-.eav-track-restore {
-  color: var(--dim);
-  font-size: 18px;
-}
-
-.eav-track-restore:hover {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--paper);
 }
 
-.eav-track-body {
-  margin-top: 2px;
-  background: var(--page);
+.eav-track-sub {
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--dim);
+}
+
+.eav-track-vol {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+  align-items: center;
+}
+
+.eav-track-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.eav-track-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--sello) var(--v, 50%),
+    var(--rule) var(--v, 50%)
+  );
+}
+
+.eav-track-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.eav-track-slider:focus-visible {
+  outline: none;
+}
+
+.eav-track-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--sello);
+  outline-offset: 2px;
+}
+
+.eav-track-pct {
+  font: 500 11px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--paper);
+}
+
+.eav-track-pct.is-loud {
+  color: var(--sello);
+}
+
+.eav-track-action {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.eav-track-action:hover {
+  background: var(--raise);
+  color: var(--sello);
+}
+
+.eav-track-action.is-remove:hover {
+  color: var(--rec);
+}
+
+.eav-track-action:focus-visible {
+  outline: 2px solid var(--sello);
+  outline-offset: 1px;
+}
+
+.eav-track-head.is-removed .eav-track-name {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.eav-track-removed-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: italic 11.5px/1.2 var(--font-ui);
+  color: var(--dim);
 }
 
 .waveform-canvas {
@@ -1147,38 +1349,7 @@ fieldset:disabled .editor-opt {
   --wave: var(--sello);
 }
 
-/* Deslizador de volumen dentro de la cabecera fija (no ocupa el eje de tiempo). */
-.eav-track-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 130px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--rule);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.eav-track-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--sello);
-  border: 2px solid var(--page);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-}
-
-.eav-track-removed-note {
-  margin: 0;
-  padding: 6px 8px;
-  font: italic 12px/1.2 var(--font-ui);
-  color: var(--dim);
-}
-
-/* Pista de vídeo: filmstrip de miniaturas reales (estiradas) o, sin ellas, una barra lisa. */
+/* Tira de fotogramas de borde a borde (el recorte del editor básico): miniaturas reales o barra lisa. */
 .eav-track-video-bar {
   height: 34px;
   margin-top: 4px;
@@ -1220,55 +1391,52 @@ fieldset:disabled .editor-opt {
   font-weight: 600;
 }
 
-/* Playhead, asas y sombreado del recorte: cubren toda la altura del timeline-inner. */
+/* Cabezal: línea amarilla con su triángulo sobre la regla, por encima de todas las pistas. */
 .eav-playhead {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 2px;
+  margin-left: -1px;
   background: var(--sello);
   pointer-events: none;
   z-index: 3;
 }
 
-/* Cabezal: triángulo sobre la regla (decorativo, no cambia la posición de la línea). */
 .eav-playhead::before {
   content: '';
   position: absolute;
   top: 0;
-  left: -4px;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 7px solid var(--sello);
+  left: -5px;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid var(--sello);
 }
 
-.eav-trim-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 8px;
-  margin-left: -4px;
-  cursor: ew-resize;
-  z-index: 4;
+/* Iconos de la barra (trazo propio) y teclas de atajo dentro de los botones. */
+.eav-icon {
+  flex: none;
 }
 
-.eav-trim-handle::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 3px;
-  width: 2px;
-  background: var(--paper);
+/* Botones solo de icono en la barra (deshacer, rehacer, detener, zoom): cuadrados. */
+.eav-toolbar .gc-btn.sm.icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
 }
 
-.eav-trim-shade {
-  position: absolute;
-  top: 26px;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.55);
-  pointer-events: none;
-  z-index: 1;
+.eav-toolbar .gc-kbd {
+  margin-left: 2px;
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eav-clip,
+  .eav-clip-edge::before {
+    transition: none;
+  }
 }
 
 /* ── Diálogo de render (sobre el fondo y la caja de .gc-modal) ───────────── */

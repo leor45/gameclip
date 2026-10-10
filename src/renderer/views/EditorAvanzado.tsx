@@ -13,11 +13,11 @@ import {
   keptDuration,
   nextKeptTime,
   segmentAt,
-  setSegmentsEnd,
-  setSegmentsStart,
   setTrackVolume,
   sourceToOutput,
   splitAt,
+  trimSegmentEdge,
+  wheelToGain,
   ZOOM_FACTOR_MAX,
   ZOOM_FACTOR_MIN,
   ZOOM_FACTOR_STEP,
@@ -35,11 +35,12 @@ import {
 import { editReducer, initEditState } from './editor-avanzado-edit';
 import { clipMediaUrl } from '../lib/media';
 import { LivePreviewAudio, effectiveGain, shouldResync } from '../lib/live-audio';
-import Timeline from '../components/editor-avanzado/Timeline';
-import AudioTrackRow from '../components/editor-avanzado/AudioTrackRow';
+import Timeline, { type Borde, type TimelineLane } from '../components/editor-avanzado/Timeline';
+import { AudioBlock, AudioTrackHead } from '../components/editor-avanzado/AudioTrackRow';
 import RenderDialog from '../components/editor-avanzado/RenderDialog';
 import ReframeControls from '../components/editor-avanzado/ReframeControls';
-import Filmstrip from '../components/editor-avanzado/Filmstrip';
+import { FilmstripBlock, useFilmstripFrames } from '../components/editor-avanzado/Filmstrip';
+import { EavIcon } from '../components/editor-avanzado/icons';
 import GameIcon from '../components/GameIcon';
 import { clampPanelHeight, loadPanelHeight, panelMax, savePanelHeight } from '../lib/editor-prefs';
 import {
@@ -92,6 +93,8 @@ export default function EditorAvanzado() {
   // Alto del panel inferior (transporte + timeline). Redimensionable arrastrando el divisor; el
   // vídeo (flex) ocupa el resto. Se recuerda entre sesiones/clips (localStorage).
   const [panelH, setPanelH] = useState(loadPanelHeight);
+  // Fotogramas del clip (una vez, sobre todo el origen): cada trozo de la timeline enseña los suyos.
+  const frames = useFilmstripFrames(id, duration);
 
   const [frameNotice, setFrameNotice] = useState<string | null>(null);
   const [showRender, setShowRender] = useState(false);
@@ -158,13 +161,36 @@ export default function EditorAvanzado() {
   // vídeo no debe pisar sus cortes.
   const draftRestauradoRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Borde inicial/final al empezar a recortar: el arrastre reporta un delta sobre esta base (robusto
+  // Bordes del trozo al empezar a recortarlo: el arrastre reporta un delta sobre esta base (robusto
   // frente al re-escalado de la timeline compactada).
-  const trimBaseRef = useRef({ firstStart: 0, lastEnd: 0 });
-  function beginTrim() {
-    const segs = segmentsRef.current;
-    trimBaseRef.current = { firstStart: segs[0].start, lastEnd: segs[segs.length - 1].end };
+  const trimBaseRef = useRef({ start: 0, end: 0 });
+  function beginTrim(index: number) {
+    const s = segmentsRef.current[index];
+    if (!s) return;
+    trimBaseRef.current = { start: s.start, end: s.end };
     dispatch({ type: 'beginDrag' });
+  }
+  /** Arrastre del borde de un trozo (sin historial hasta soltar: un solo paso de deshacer). */
+  function trimBy(index: number, side: Borde, delta: number) {
+    const base = side === 'start' ? trimBaseRef.current.start : trimBaseRef.current.end;
+    dispatch({
+      type: 'live',
+      segments: trimSegmentEdge(segmentsRef.current, index, side, base + delta, duration),
+    });
+  }
+  /** Teclado sobre un asa: mueve ese borde `delta` segundos (un paso de deshacer). */
+  function trimStep(index: number, side: Borde, delta: number) {
+    const cur = segmentsRef.current;
+    const s = cur[index];
+    if (!s) return;
+    const next = trimSegmentEdge(
+      cur,
+      index,
+      side,
+      (side === 'start' ? s.start : s.end) + delta,
+      duration,
+    );
+    if (next !== cur) dispatch({ type: 'commit', segments: next });
   }
 
   // Operaciones de corte (entran en el historial). Estables: leen el estado vivo por refs.
@@ -713,6 +739,60 @@ export default function EditorAvanzado() {
   const isReframed = Boolean(frameFit && videoStyle);
   const canPan = hasReframe(reframe) && reframe.mode === 'cover';
 
+  const lanes: TimelineLane[] = [
+    {
+      key: 'video',
+      kind: 'video',
+      head: (
+        <div className="eav-track-head is-video">
+          <GameIcon game={clip?.game ?? null} />
+          <div className="eav-track-main">
+            <span className="eav-track-name" title={clip?.game ?? 'Vídeo'}>
+              {clip?.game ?? 'Vídeo'}
+            </span>
+            <span className="eav-track-sub">Vídeo</span>
+          </div>
+        </div>
+      ),
+      renderBlock: (seg, _i, pps) => (
+        <FilmstripBlock frames={frames} segment={seg} duration={duration} pxPerSecond={pps} />
+      ),
+    },
+    ...tracks.map((t): TimelineLane => {
+      const key = trackKey(t);
+      const label = trackLabel(t);
+      const gain = trackGain(volumes, key);
+      const quitada = removed.has(key);
+      const peaks = waveforms.find((w) => w.key === key)?.peaks ?? [];
+      return {
+        key: `audio-${key}`,
+        kind: 'audio',
+        dimmed: quitada,
+        head: (
+          <AudioTrackHead
+            trackKey={key}
+            label={label}
+            gain={gain}
+            removed={quitada}
+            onSetGain={setGain}
+            onToggleRemove={toggleRemove}
+          />
+        ),
+        renderBlock: (seg) => (
+          <AudioBlock
+            trackKey={key}
+            peaks={peaks}
+            gain={gain}
+            segment={seg}
+            duration={duration}
+            removed={quitada}
+          />
+        ),
+        onWheel: quitada ? undefined : (deltaY) => setGain(key, wheelToGain(gain, deltaY)),
+      };
+    }),
+  ];
+
   return (
     <div className="editor-avanzado">
       <header className="eav-topbar">
@@ -731,7 +811,7 @@ export default function EditorAvanzado() {
             title="Guardar el fotograma actual como captura"
             aria-label="Capturar fotograma"
           >
-            📷
+            <EavIcon name="camera" />
           </button>
         </div>
         <div className="eav-topbar-right">
@@ -799,15 +879,20 @@ export default function EditorAvanzado() {
         <div className="eav-toolbar">
           <button
             type="button"
-            className="gc-btn sm eav-play"
+            className="gc-btn sm icon eav-play"
             onClick={() => void togglePlay()}
             disabled={audioLoading}
             aria-label={playing ? 'Pausar' : 'Reproducir'}
           >
-            {playing ? '❚❚' : '▶'}
+            <EavIcon name={playing ? 'pause' : 'play'} />
           </button>
-          <button type="button" className="gc-btn ghost sm" onClick={stop} aria-label="Detener">
-            ■
+          <button
+            type="button"
+            className="gc-btn ghost sm icon"
+            onClick={stop}
+            aria-label="Detener"
+          >
+            <EavIcon name="stop" />
           </button>
           <span className="eav-time">
             {formatDuration(sourceToOutput(segments, playhead))} /{' '}
@@ -822,7 +907,9 @@ export default function EditorAvanzado() {
             aria-label="Dividir"
             title="Dividir en el cursor (S)"
           >
-            ✂ Dividir
+            <EavIcon name="split" />
+            Dividir
+            <kbd className="gc-kbd">S</kbd>
           </button>
           <button
             type="button"
@@ -832,27 +919,29 @@ export default function EditorAvanzado() {
             aria-label="Borrar segmento"
             title="Borrar el segmento seleccionado (Supr)"
           >
-            🗑 Borrar
+            <EavIcon name="trash" />
+            Borrar
+            <kbd className="gc-kbd">Supr</kbd>
           </button>
           <button
             type="button"
-            className="gc-btn ghost sm"
+            className="gc-btn ghost sm icon"
             onClick={undo}
             disabled={edit.past.length === 0}
             aria-label="Deshacer"
             title="Deshacer (Ctrl+Z)"
           >
-            ↶
+            <EavIcon name="undo" />
           </button>
           <button
             type="button"
-            className="gc-btn ghost sm"
+            className="gc-btn ghost sm icon"
             onClick={redo}
             disabled={edit.future.length === 0}
             aria-label="Rehacer"
             title="Rehacer (Ctrl+Y)"
           >
-            ↷
+            <EavIcon name="redo" />
           </button>
           <button
             type="button"
@@ -862,7 +951,8 @@ export default function EditorAvanzado() {
             aria-label="Restablecer"
             title="Descartar los cambios y volver al vídeo original"
           >
-            ⟲ Restablecer
+            <EavIcon name="reset" />
+            Restablecer
           </button>
           <span className="eav-toolbar-spacer" />
           <span className="eav-trim-info">
@@ -871,21 +961,21 @@ export default function EditorAvanzado() {
           </span>
           <button
             type="button"
-            className="gc-btn ghost sm"
+            className="gc-btn ghost sm icon"
             onClick={() => setZoomFactor((z) => clampZoomFactor(z / ZOOM_FACTOR_STEP))}
             disabled={zoomFactor <= ZOOM_FACTOR_MIN}
             aria-label="Alejar"
           >
-            –
+            <EavIcon name="zoomOut" />
           </button>
           <button
             type="button"
-            className="gc-btn ghost sm"
+            className="gc-btn ghost sm icon"
             onClick={() => setZoomFactor((z) => clampZoomFactor(z * ZOOM_FACTOR_STEP))}
             disabled={zoomFactor >= ZOOM_FACTOR_MAX}
             aria-label="Acercar"
           >
-            +
+            <EavIcon name="zoomIn" />
           </button>
         </div>
 
@@ -894,61 +984,17 @@ export default function EditorAvanzado() {
           playhead={playhead}
           segments={segments}
           selectedSegment={selectedSegment}
+          lanes={lanes}
           onSeek={seek}
-          onSelectSegment={(i) => setSelectedSegment((prev) => (prev === i ? null : i))}
+          onSelectSegment={setSelectedSegment}
           onTrimBegin={beginTrim}
+          onTrimBy={trimBy}
           onTrimCommit={() => dispatch({ type: 'endDrag' })}
-          onTrimStartBy={(delta) =>
-            dispatch({
-              type: 'live',
-              segments: setSegmentsStart(
-                segmentsRef.current,
-                trimBaseRef.current.firstStart + delta,
-                duration,
-              ),
-            })
-          }
-          onTrimEndBy={(delta) =>
-            dispatch({
-              type: 'live',
-              segments: setSegmentsEnd(
-                segmentsRef.current,
-                trimBaseRef.current.lastEnd + delta,
-                duration,
-              ),
-            })
-          }
-        >
-          <div className="eav-track eav-track-video">
-            <div className="eav-track-head">
-              <GameIcon game={clip?.game ?? null} />
-              <span className="eav-track-name">{clip?.game ?? 'Vídeo'}</span>
-            </div>
-            <Filmstrip clipId={id} segments={segments} duration={duration} />
-          </div>
-          <ul className="eav-audio-list">
-            {tracks.map((t) => {
-              const key = trackKey(t);
-              return (
-                <AudioTrackRow
-                  key={key}
-                  trackKey={key}
-                  label={trackLabel(t)}
-                  gain={trackGain(volumes, key)}
-                  peaks={waveforms.find((w) => w.key === key)?.peaks ?? []}
-                  removed={removed.has(key)}
-                  segments={segments}
-                  duration={duration}
-                  onSetGain={setGain}
-                  onToggleRemove={toggleRemove}
-                />
-              );
-            })}
-            {tracks.length === 0 && (
-              <li className="eav-audio-empty">Este clip no tiene pistas de audio editables.</li>
-            )}
-          </ul>
-        </Timeline>
+          onTrimStep={trimStep}
+        />
+        {tracks.length === 0 && (
+          <p className="eav-audio-empty">Este clip no tiene pistas de audio editables.</p>
+        )}
       </div>
 
       {showRender && (
