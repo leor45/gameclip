@@ -47,3 +47,6 @@ Thumbs.db
 # Config local de Claude Code (plugins y skills personales, no van al repo)
 .claude/settings.local.json
 .claude/skills/tailwind-design-system/
+
+# Estado temporal de la skill de diseño impeccable (tiradas de propuestas): no va al repo
+.impeccable/questions/
