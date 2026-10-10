@@ -5,6 +5,8 @@ import { KNOWN_GAME_PROCESSES, exeKey, resolveGameName } from '@shared/games';
 import type { CustomGame, GameIndex, RunningGameMatch } from '@shared/games';
 import type { InstalledGame } from '../games/types';
 import {
+  buscarPorNombre,
+  claveCompacta,
   claveNombre,
   elegirArchivoLogo,
   elegirEjecutable,
@@ -46,6 +48,12 @@ export const CADUCIDAD_NO_VERIFICADA_MS = 5 * 60_000;
 /** Tope de claves recordadas en memoria; al pasarlo se descarta la más antigua. */
 export const MAX_CLAVES = 500;
 
+/** Tope de juegos cuyo icono se recuerda por nombre en disco (`nombres.json`). */
+export const MAX_NOMBRES = 1000;
+
+/** Archivo, dentro de la caché, con el icono recordado de cada juego por su nombre. */
+const ARCHIVO_NOMBRES = 'nombres.json';
+
 /** Lo que el servicio necesita del sistema. Todo inyectable: los tests no dependen de Electron. */
 export interface DependenciasIconos {
   /** Carpeta de la caché en disco (`userData/icons`). */
@@ -86,6 +94,14 @@ interface RutaResuelta {
   verificada: boolean;
 }
 
+/** Ganchos de `memo` para recordar iconos por nombre (solo `forGame`). */
+interface OpcionesMemo {
+  /** Icono resuelto desde una ruta verificada: se recuerda. */
+  alResolver?: (ruta: string) => void;
+  /** Sin icono por ruta: el que se recordó en otra sesión, si lo hay. */
+  recordado?: () => Promise<string | null>;
+}
+
 interface EntradaMemo {
   promesa: Promise<string | null>;
   /** Hasta cuándo vale (Infinity mientras está en vuelo o si salió de una ruta verificada). */
@@ -97,6 +113,16 @@ interface FuenteImagen {
   ruta: string;
   /** Firma del archivo (fecha + tamaño): si cambia, el icono en disco no vale. */
   firma: string;
+}
+
+/** Nombre de un PNG de la caché (`hashFuente` + `.png`): lo único que admite `nombres.json`. */
+const ARCHIVO_PNG = /^[0-9a-f]{40}\.png$/;
+
+/** ¿Dos nombres de juego son el mismo? Igual en letras y números; si alguno no tiene, literal. */
+function mismoNombre(a: string, b: string): boolean {
+  const ca = claveCompacta(a);
+  const cb = claveCompacta(b);
+  return ca && cb ? ca === cb : claveNombre(a) === claveNombre(b);
 }
 
 const FIRMA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -121,6 +147,12 @@ export class IconService {
   private readonly exesPorCarpeta = new Map<string, Promise<string[]>>();
   /** Carpeta de cada paquete de la Store (una consulta por familia). */
   private readonly paquetes = new Map<string, Promise<string | null>>();
+  /** Archivo PNG de la caché en disco de cada ruta de exe ya extraída (minúsculas). */
+  private readonly archivoPorRuta = new Map<string, string>();
+  /** `claveCompacta` del juego → PNG de la caché (`nombres.json`), cargado una vez. */
+  private nombres: Promise<Map<string, string>> | null = null;
+  /** Cola de escrituras de `nombres.json` (una detrás de otra). */
+  private escrituras: Promise<void> = Promise.resolve();
   private cacheDirLista: Promise<void> | null = null;
   /** Limpieza de temporales huérfanos al arrancar; `guardar` la espera para no pisarse con ella. */
   private readonly limpieza: Promise<void>;
@@ -153,7 +185,12 @@ export class IconService {
   forGame(nombre: unknown): Promise<string | null> {
     const valido = validarNombreJuego(nombre);
     if (!valido) return Promise.resolve(null);
-    return this.memo(`game:${claveNombre(valido)}`, () => this.rutaDeJuego(valido));
+    const compacta = claveCompacta(valido);
+    const clave = compacta || claveNombre(valido);
+    return this.memo(`game:${clave}`, () => this.rutaDeJuego(valido), {
+      alResolver: compacta ? (ruta) => this.recordar(compacta, ruta) : undefined,
+      recordado: compacta ? () => this.recordado(compacta) : undefined,
+    });
   }
 
   /** Icono de un ejecutable suelto (`Discord.exe`). Entrada del IPC: solo nombres, nunca rutas. */
@@ -168,7 +205,11 @@ export class IconService {
    * ruta no verificada, `CADUCIDAD_NO_VERIFICADA_MS`; un null, `REINTENTO_NULL_MS` (el juego puede
    * arrancar luego y entonces sí habrá ruta). Como mucho `MAX_CLAVES` entradas.
    */
-  private memo(clave: string, resolver: () => Promise<RutaResuelta | null>): Promise<string | null> {
+  private memo(
+    clave: string,
+    resolver: () => Promise<RutaResuelta | null>,
+    opciones: OpcionesMemo = {},
+  ): Promise<string | null> {
     const previo = this.porClave.get(clave);
     if (previo && this.ahora() < previo.caduca) return previo.promesa;
     this.porClave.delete(clave);
@@ -182,10 +223,17 @@ export class IconService {
         if (resuelta) {
           verificada = resuelta.verificada;
           icono = await this.iconoDeRuta(resuelta.ruta);
+          if (icono && verificada) opciones.alResolver?.(resuelta.ruta);
         }
       } catch (err) {
         this.log(`[icons] ${clave}: ${err instanceof Error ? err.message : err}`);
         icono = null;
+      }
+      if (icono === null && opciones.recordado) {
+        // Juego desinstalado (o que aún no se ubica): el icono de cuando sí estaba. Caduca como uno
+        // no verificado, para volver a probar por ruta si el juego reaparece.
+        icono = await opciones.recordado().catch(() => null);
+        verificada = false;
       }
       // Se fecha al terminar (una resolución lenta no consume la ventana).
       const t = this.ahora();
@@ -224,14 +272,21 @@ export class IconService {
    */
   private async rutaDeJuego(nombre: string): Promise<RutaResuelta | null> {
     await this.deps.indiceListo();
-    const clave = claveNombre(nombre);
+    // El nombre del clip puede no ser literal el del launcher (signos quitados, sufijo de edición):
+    // si un instalado le corresponde, se sigue también con su nombre.
+    const todos = this.deps.installed();
+    const encontrado = buscarPorNombre(nombre, todos);
+    const nombres = encontrado ? [nombre, encontrado.name] : [nombre];
+    const coincide = (otro: string): boolean => nombres.some((n) => mismoNombre(n, otro));
     const enEjecucion = this.deps
       .runningGames()
-      .filter((g) => claveNombre(g.name) === clave)
+      .filter((g) => coincide(g.name))
       .map((g) => exeKey(g.executable));
-    const { fuertes, delIndice } = this.exesDelNombre(clave);
+    const { fuertes, delIndice } = this.exesDelNombre(coincide);
 
-    const instalados = this.deps.installed().filter((j) => claveNombre(j.name) === clave);
+    const instalados = encontrado
+      ? todos.filter((j) => mismoNombre(j.name, encontrado.name))
+      : [];
     if (instalados.length > 0) {
       const procesos = enEjecucion.length > 0 ? await this.deps.rutaDeProceso(enEjecucion) : [];
       for (const juego of instalados) {
@@ -261,22 +316,25 @@ export class IconService {
    * curada, que designan el proceso real del juego. `delIndice`: las del índice, que son TODOS los exes
    * de su carpeta (no dicen cuál es el bueno, solo cuáles son suyos).
    */
-  private exesDelNombre(clave: string): { fuertes: string[]; delIndice: Set<string> } {
+  private exesDelNombre(coincide: (nombre: string) => boolean): {
+    fuertes: string[];
+    delIndice: Set<string>;
+  } {
     const index = this.deps.index();
     const customGames = this.deps.customGames();
     const ctx = { index, customGames };
     const fuertes: string[] = [];
     for (const juego of customGames) {
-      if (claveNombre(resolveGameName(juego.executable, ctx)) === clave) {
+      if (coincide(resolveGameName(juego.executable, ctx))) {
         fuertes.push(exeKey(juego.executable));
       }
     }
     for (const [exe, nombre] of Object.entries(KNOWN_GAME_PROCESSES)) {
-      if (claveNombre(nombre) === clave) fuertes.push(exe);
+      if (coincide(nombre)) fuertes.push(exe);
     }
     const delIndice = new Set<string>();
     for (const [exe, nombre] of Object.entries(index)) {
-      if (claveNombre(nombre) === clave) delIndice.add(exe);
+      if (coincide(nombre)) delIndice.add(exe);
     }
     return { fuertes: [...new Set(fuertes.filter(Boolean))], delIndice };
   }
@@ -347,9 +405,13 @@ export class IconService {
     const fuente = await this.fuenteDe(ruta);
     if (!fuente) return null;
 
-    const archivo = join(this.deps.cacheDir, `${hashFuente(fuente)}.png`);
+    const nombreArchivo = `${hashFuente(fuente)}.png`;
+    const archivo = join(this.deps.cacheDir, nombreArchivo);
     const enDisco = await readFile(archivo).catch(() => null);
-    if (enDisco && this.pngUsable(enDisco)) return aDataUrl(enDisco);
+    if (enDisco && this.pngUsable(enDisco)) {
+      this.archivoPorRuta.set(ruta.toLowerCase(), nombreArchivo);
+      return aDataUrl(enDisco);
+    }
     // Un PNG roto (apagón a mitad de escritura de una versión vieja, disco tocado) se descarta.
     if (enDisco) await rm(archivo, { force: true }).catch(() => undefined);
 
@@ -358,7 +420,7 @@ export class IconService {
         ? await this.deps.imagenDeArchivo(fuente.ruta)
         : await this.deps.iconoDeArchivo(fuente.ruta);
     if (!png || png.length === 0) return null;
-    await this.guardar(archivo, png);
+    if (await this.guardar(archivo, png)) this.archivoPorRuta.set(ruta.toLowerCase(), nombreArchivo);
     return aDataUrl(png);
   }
 
@@ -438,7 +500,7 @@ export class IconService {
   }
 
   /** Escritura atómica: a un temporal y `rename` (mismo volumen). Nunca queda un PNG a medias. */
-  private async guardar(archivo: string, png: Buffer): Promise<void> {
+  private async guardar(archivo: string, png: Buffer): Promise<boolean> {
     const temporal = `${archivo}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
     try {
       await this.limpieza;
@@ -446,12 +508,67 @@ export class IconService {
       await this.cacheDirLista;
       await writeFile(temporal, png);
       await rename(temporal, archivo);
+      return true;
     } catch (err) {
       await rm(temporal, { force: true }).catch(() => undefined);
       // Sin caché en disco el icono sale igual; la próxima sesión se vuelve a extraer.
       this.cacheDirLista = null;
       this.log(`[icons] no se pudo guardar ${archivo}: ${err instanceof Error ? err.message : err}`);
+      return false;
     }
+  }
+
+  // ---------------------------------------------------------------- icono recordado por nombre
+
+  /** `nombres.json`: un objeto `claveCompacta → archivo PNG`. Roto o ausente = vacío. */
+  private cargarNombres(): Promise<Map<string, string>> {
+    this.nombres ??= readFile(join(this.deps.cacheDir, ARCHIVO_NOMBRES), 'utf8')
+      .then((texto) => {
+        const datos: unknown = JSON.parse(texto);
+        const mapa = new Map<string, string>();
+        if (datos && typeof datos === 'object' && !Array.isArray(datos)) {
+          for (const [k, v] of Object.entries(datos)) {
+            if (typeof v === 'string' && ARCHIVO_PNG.test(v)) mapa.set(k, v);
+          }
+        }
+        return mapa;
+      })
+      .catch(() => new Map<string, string>());
+    return this.nombres;
+  }
+
+  /** Recuerda el PNG de la caché de esa ruta como icono del juego. En cola; nunca falla. */
+  private recordar(compacta: string, ruta: string): void {
+    const archivo = this.archivoPorRuta.get(ruta.toLowerCase());
+    if (!archivo) return;
+    this.escrituras = this.escrituras
+      .then(async () => {
+        const mapa = await this.cargarNombres();
+        if (mapa.get(compacta) === archivo) return;
+        mapa.delete(compacta); // al final: el Map conserva el orden y el tope quita lo más antiguo
+        mapa.set(compacta, archivo);
+        while (mapa.size > MAX_NOMBRES) {
+          const masAntigua = mapa.keys().next().value;
+          if (masAntigua === undefined) break;
+          mapa.delete(masAntigua);
+        }
+        const json = JSON.stringify(Object.fromEntries(mapa));
+        await this.guardar(join(this.deps.cacheDir, ARCHIVO_NOMBRES), Buffer.from(json, 'utf8'));
+      })
+      .catch(() => undefined);
+  }
+
+  /** Icono que se recordó para ese juego (de otra sesión), o null. */
+  private async recordado(compacta: string): Promise<string | null> {
+    const archivo = (await this.cargarNombres()).get(compacta);
+    if (!archivo) return null;
+    const png = await readFile(join(this.deps.cacheDir, archivo)).catch(() => null);
+    return png && this.pngUsable(png) ? aDataUrl(png) : null;
+  }
+
+  /** Para los tests: espera a que se escriba lo que haya en cola en `nombres.json`. */
+  esperarEscrituras(): Promise<void> {
+    return this.escrituras;
   }
 }
 

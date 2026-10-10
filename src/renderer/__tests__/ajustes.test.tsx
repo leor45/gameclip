@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import App from '../App';
-import { sesionFalsa } from './helpers';
+import { sesionFalsa, elegirOpcion, abrirOpciones } from './helpers';
 import { crearGameclipMock } from './setup';
 
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
@@ -116,16 +116,16 @@ describe('Ajustes — Calidad', () => {
 
     await user.click(screen.getByRole('button', { name: /Alta/ }));
 
-    expect(screen.getByLabelText('Resolución')).toHaveValue('1080p');
-    expect(screen.getByLabelText('FPS')).toHaveValue('60');
-    expect(screen.getByLabelText('Bitrate')).toHaveValue('15');
+    expect(screen.getByLabelText('Resolución')).toHaveAttribute('data-value', '1080p');
+    expect(screen.getByLabelText('FPS')).toHaveAttribute('data-value', '60');
+    expect(screen.getByLabelText('Bitrate')).toHaveAttribute('data-value', '15');
     expect(screen.getByRole('button', { name: /Alta/ })).toHaveClass('active');
   });
 
   it('infiere "Personalizada" cuando los valores no coinciden con ningún preset', async () => {
     const user = await irACalidad();
 
-    await user.selectOptions(screen.getByLabelText('FPS'), '144');
+    await elegirOpcion(user, screen.getByLabelText('FPS'), '144');
 
     expect(screen.getByRole('button', { name: /Personalizada/ })).toHaveClass('active');
   });
@@ -133,7 +133,7 @@ describe('Ajustes — Calidad', () => {
   it('guarda encoder y calidad seleccionados', async () => {
     const user = await irACalidad();
 
-    await user.selectOptions(screen.getByLabelText('Encoder'), 'obs_x264');
+    await elegirOpcion(user, screen.getByLabelText('Encoder'), 'obs_x264');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(mock().capture.setSettings).toHaveBeenCalledWith(
@@ -159,22 +159,25 @@ describe('Ajustes — Audio', () => {
     });
     await irAAudio();
 
-    const select = (await screen.findByLabelText('Dispositivo')) as HTMLSelectElement;
-    expect(select.value).toBe('{0.0.1.00000000}.{c125ff3b-fantasma}');
-    expect(select.selectedOptions[0]?.textContent).toContain('no conectado');
+    const select = await screen.findByLabelText('Dispositivo');
+    expect(select).toHaveAttribute('data-value', '{0.0.1.00000000}.{c125ff3b-fantasma}');
+    expect(select).toHaveTextContent('no conectado');
     expect(screen.getByTestId('aviso-mic-desconectado')).toBeInTheDocument();
   });
 
   it('regresión: la tecla de push to talk no ofrece teclas que ya son atajos', async () => {
     // Antes se podía poner F8 de PTT con F8 de «Guardar clip»: cada vez que hablabas, un clip.
     mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, pttEnabled: true });
-    await irAAudio();
+    const user = await irAAudio();
 
-    const select = (await screen.findByLabelText('Tecla de push to talk')) as HTMLSelectElement;
-    const f8 = [...select.options].find((o) => o.value === 'F8')!;
-    expect(f8.disabled).toBe(true);
+    const opciones = await abrirOpciones(
+      user,
+      await screen.findByLabelText('Tecla de push to talk'),
+    );
+    const f8 = opciones.find((o) => o.dataset.value === 'F8')!;
+    expect(f8).toHaveAttribute('aria-disabled', 'true');
     expect(f8.textContent).toContain('Guardar clip');
-    expect([...select.options].find((o) => o.value === 'F9')!.disabled).toBe(false);
+    expect(opciones.find((o) => o.dataset.value === 'F9')).not.toHaveAttribute('aria-disabled');
   });
 
   it('regresión: un push to talk guardado que choca con un atajo avisa y bloquea el guardado', async () => {
@@ -190,11 +193,14 @@ describe('Ajustes — Audio', () => {
   });
 
   it('con el micrófono guardado presente no hay aviso de desconexión', async () => {
-    mock().capture.getSettings.mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS, micDeviceId: 'device-2' });
+    mock().capture.getSettings.mockResolvedValue({
+      ...DEFAULT_CAPTURE_SETTINGS,
+      micDeviceId: 'device-2',
+    });
     await irAAudio();
 
-    const select = (await screen.findByLabelText('Dispositivo')) as HTMLSelectElement;
-    expect(select.value).toBe('device-2');
+    const select = await screen.findByLabelText('Dispositivo');
+    expect(select).toHaveAttribute('data-value', 'device-2');
     expect(screen.queryByTestId('aviso-mic-desconectado')).not.toBeInTheDocument();
     expect(screen.queryByText('Micrófono guardado (no conectado)')).not.toBeInTheDocument();
   });
@@ -231,7 +237,7 @@ describe('Ajustes — Audio', () => {
     const user = await irAAudio();
 
     await user.click(screen.getByLabelText('Apps específicas'));
-    await user.selectOptions(screen.getByLabelText('Añadir app'), 'Spotify.exe');
+    await elegirOpcion(user, screen.getByLabelText('Añadir app'), 'Spotify.exe');
     await user.click(screen.getByRole('button', { name: 'Añadir' }));
 
     const fila = await screen.findByLabelText('Spotify.exe');
@@ -273,7 +279,7 @@ describe('Ajustes — Audio', () => {
     const user = await irAAudio();
 
     await user.click(screen.getByLabelText(/Push to talk/));
-    await user.selectOptions(screen.getByLabelText('Tecla de push to talk'), 'Mouse4');
+    await elegirOpcion(user, screen.getByLabelText('Tecla de push to talk'), 'Mouse4');
     await user.click(screen.getByLabelText('Supresión de ruido (RNNoise)'));
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
@@ -374,7 +380,7 @@ describe('Ajustes — Avanzado', () => {
     await user.click(screen.getByRole('link', { name: 'Avanzado' }));
     await screen.findByLabelText('Mostrar cursor del mouse');
 
-    await user.selectOptions(screen.getByLabelText('Relación de aspecto'), 'stretch169');
+    await elegirOpcion(user, screen.getByLabelText('Relación de aspecto'), 'stretch169');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(mock().capture.setSettings).toHaveBeenCalledWith(

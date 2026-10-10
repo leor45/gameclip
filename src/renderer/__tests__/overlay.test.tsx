@@ -104,7 +104,9 @@ describe('Overlay — aviso al detectarse el juego', () => {
     act(() => emitir(estado({ notice: null })));
 
     act(() =>
-      emitir(estado({ notice: { title: 'Listo para clipear', hotkeys: [], controllerCapture: false } })),
+      emitir(
+        estado({ notice: { title: 'Listo para clipear', hotkeys: [], controllerCapture: false } }),
+      ),
     );
 
     expect(screen.getByTestId('overlay-notice').className).not.toContain('is-leaving');

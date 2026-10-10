@@ -53,3 +53,33 @@ describe('Ajustes: pie fijo con scroll propio', () => {
     expect(rule('.settings-savebar')).toMatch(/flex:\s*none/);
   });
 });
+
+describe('Ajustes: filas «grupo | controles» solo en pantalla ancha', () => {
+  const bloque = css.match(/@container ajustes \(min-width: (\d+)px\) \{([\s\S]*)\}\s*$/);
+
+  it('el formulario es el contenedor que se mide (no la ventana)', () => {
+    expect(rule('.settings-form')).toMatch(/container:\s*ajustes \/ inline-size/);
+  });
+
+  it('por debajo del umbral no cambia nada: las filas viven solo dentro de la container query', () => {
+    expect(bloque).not.toBeNull();
+    expect(Number(bloque![1])).toBeGreaterThanOrEqual(1100);
+    expect(rule('.settings-form fieldset')).toMatch(/display:\s*flex/);
+  });
+
+  it('en ancho: grupo a la izquierda, controles a la derecha, a todo el ancho y pie alineado', () => {
+    const dentro = bloque![2];
+    expect(dentro).toMatch(
+      /\.settings-form fieldset \{[^}]*grid-template-columns:\s*clamp\([^)]*\) minmax\(0, 1fr\)/,
+    );
+    expect(dentro).toMatch(/fieldset > legend \{[^}]*grid-column:\s*1/);
+    expect(dentro).toMatch(/fieldset > :not\(legend\) \{[^}]*grid-column:\s*2/);
+    // Sin tope de ancho ni centrado: el owner lo quiere a todo el ancho.
+    expect(dentro).toMatch(/\.settings-body \{[^}]*max-width:\s*none/);
+    expect(dentro).not.toMatch(/margin-inline:\s*auto/);
+    const cuerpo = dentro.match(/\.settings-body \{[^}]*padding-inline:\s*(\d+)px/)?.[1];
+    const pie = dentro.match(/\.settings-savebar \{[^}]*padding-inline:\s*(\d+)px/)?.[1];
+    expect(cuerpo).toBeDefined();
+    expect(pie).toBe(cuerpo);
+  });
+});

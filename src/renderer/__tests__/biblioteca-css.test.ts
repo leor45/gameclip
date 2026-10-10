@@ -56,7 +56,9 @@ describe('Biblioteca: rediseño «Portada oscura»', () => {
     const visibles = lib('.clip-card:focus-within .clip-actions');
     expect(visibles).toMatch(/opacity:\s*1/);
     expect(lib('.clip-card:hover .clip-actions')).toBe(visibles);
-    expect(hojas['styles/library.css']).not.toMatch(/\.clip-actions[^{]*\{[^}]*(visibility:\s*hidden|display:\s*none)/);
+    expect(hojas['styles/library.css']).not.toMatch(
+      /\.clip-actions[^{]*\{[^}]*(visibility:\s*hidden|display:\s*none)/,
+    );
   });
 
   it('la cabecera de cada grupo por fecha queda fija al hacer scroll', () => {
@@ -74,5 +76,20 @@ describe('Biblioteca: rediseño «Portada oscura»', () => {
     for (const sel of ['.clip-thumb', '.clip-card', '.library-grid', '.chip', '.player-video']) {
       expect(() => rule(sel)).toThrow();
     }
+  });
+});
+
+describe('Biblioteca: el filete de la tarjeta apuntada no se corta (regresión)', () => {
+  // El filete es un box-shadow de 2 px por fuera de la miniatura; el cuerpo con scroll recorta lo que
+  // sale de su caja. Sin margen interior a la izquierda, en la primera columna se cortaba.
+  it('el cuerpo con scroll deja sitio a la izquierda sin mover la cuadrícula', () => {
+    const regla = lib('.library-body');
+    const pad = Number(regla.match(/padding-left:\s*(\d+)px/)?.[1] ?? 0);
+    const margen = Number(regla.match(/margin-left:\s*-(\d+)px/)?.[1] ?? -1);
+    const filete = Number(
+      lib('.clip-card:hover .clip-thumb').match(/0 0 0 (\d+)px/)?.[1] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(pad).toBeGreaterThanOrEqual(filete);
+    expect(margen).toBe(pad);
   });
 });

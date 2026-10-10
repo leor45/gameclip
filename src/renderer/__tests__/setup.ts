@@ -22,7 +22,12 @@ export function crearGameclipMock() {
     capture: {
       getStatus: vi
         .fn()
-        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: null, detectedGame: null }),
+        .mockResolvedValue({
+          state: 'buffering',
+          error: null,
+          lastClipPath: null,
+          detectedGame: null,
+        }),
       getSettings: vi.fn().mockResolvedValue({ ...DEFAULT_CAPTURE_SETTINGS }),
       setSettings: vi
         .fn()
@@ -63,11 +68,21 @@ export function crearGameclipMock() {
       ]),
       switchGame: vi
         .fn()
-        .mockResolvedValue({ state: 'buffering', error: null, lastClipPath: null, detectedGame: null }),
+        .mockResolvedValue({
+          state: 'buffering',
+          error: null,
+          lastClipPath: null,
+          detectedGame: null,
+        }),
       takeScreenshot: vi.fn().mockResolvedValue({ ok: true, path: 'C:\\v\\captura.png' }),
       startRecording: vi
         .fn()
-        .mockResolvedValue({ state: 'recording', error: null, lastClipPath: null, detectedGame: null }),
+        .mockResolvedValue({
+          state: 'recording',
+          error: null,
+          lastClipPath: null,
+          detectedGame: null,
+        }),
       stopRecording: vi.fn().mockResolvedValue({
         state: 'buffering',
         error: null,
@@ -109,9 +124,7 @@ export function crearGameclipMock() {
       onChanged: vi.fn().mockReturnValue(() => undefined),
     },
     exporter: {
-      run: vi
-        .fn()
-        .mockResolvedValue({ status: 'done', outputPath: 'C:\\v\\recorte.mp4' }),
+      run: vi.fn().mockResolvedValue({ status: 'done', outputPath: 'C:\\v\\recorte.mp4' }),
       cancel: vi.fn().mockResolvedValue(undefined),
       copyLast: vi.fn().mockResolvedValue(true),
       showLast: vi.fn().mockResolvedValue(undefined),

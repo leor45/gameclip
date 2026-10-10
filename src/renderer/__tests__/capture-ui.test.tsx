@@ -2,7 +2,11 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_SETTINGS, type CaptureSettings, type CaptureStatus } from '@shared/capture';
+import {
+  DEFAULT_CAPTURE_SETTINGS,
+  type CaptureSettings,
+  type CaptureStatus,
+} from '@shared/capture';
 import CaptureBar from '../components/CaptureBar';
 import { crearGameclipMock } from './setup';
 
@@ -352,7 +356,12 @@ describe('CaptureBar — menú de duración del clip', () => {
     const lista = screen.getByRole('listbox');
 
     act(() =>
-      empujar?.({ state: 'idle', error: null, lastClipPath: null, detectedGame: null } as CaptureStatus),
+      empujar?.({
+        state: 'idle',
+        error: null,
+        lastClipPath: null,
+        detectedGame: null,
+      } as CaptureStatus),
     );
 
     expect(await screen.findByText('Captura lista')).toBeInTheDocument();
@@ -365,10 +374,12 @@ describe('CaptureBar — menú de duración del clip', () => {
     const user = userEvent.setup();
     conAjustes({ replaySeconds: 45 }); // 6 opciones: 45 s + presets
     let empujar: ((s: CaptureSettings) => void) | null = null;
-    mock().capture.onSettingsChanged.mockImplementation((listener: (s: CaptureSettings) => void) => {
-      empujar = listener;
-      return () => undefined;
-    });
+    mock().capture.onSettingsChanged.mockImplementation(
+      (listener: (s: CaptureSettings) => void) => {
+        empujar = listener;
+        return () => undefined;
+      },
+    );
     renderBar();
 
     await user.click(await botonDuracion());
@@ -383,10 +394,12 @@ describe('CaptureBar — menú de duración del clip', () => {
   it('cambiar la duración desde Ajustes actualiza el control en el acto', async () => {
     conAjustes({ replaySeconds: 60 });
     let empujar: ((s: CaptureSettings) => void) | null = null;
-    mock().capture.onSettingsChanged.mockImplementation((listener: (s: CaptureSettings) => void) => {
-      empujar = listener;
-      return () => undefined;
-    });
+    mock().capture.onSettingsChanged.mockImplementation(
+      (listener: (s: CaptureSettings) => void) => {
+        empujar = listener;
+        return () => undefined;
+      },
+    );
     renderBar();
     const boton = await botonDuracion();
 

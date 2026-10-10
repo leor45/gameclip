@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buscarPorNombre,
+  claveCompacta,
   elegirArchivoLogo,
   elegirEjecutable,
   esRutaStore,
@@ -136,5 +138,46 @@ describe('apps de Microsoft Store', () => {
     // El nombre sin calificar también vale; nada que cuadre → null.
     expect(elegirArchivoLogo('StoreLogo.png', ['StoreLogo.png'])).toBe('StoreLogo.png');
     expect(elegirArchivoLogo('StoreLogo.png', ['Otro.png'])).toBeNull();
+  });
+});
+
+describe('buscarPorNombre', () => {
+  const j = (...nombres: string[]) => nombres.map((name) => ({ name }));
+
+  it('claveCompacta deja solo letras y números en minúsculas', () => {
+    expect(claveCompacta('Avatar: Frontiers of Pandora')).toBe('avatarfrontiersofpandora');
+    expect(claveCompacta('Avatar  Frontiers of Pandora')).toBe('avatarfrontiersofpandora');
+    expect(claveCompacta('Stellar Blade™')).toBe('stellarblade');
+  });
+
+  it('igualdad exacta antes que compacta, y compacta antes que edición', () => {
+    expect(buscarPorNombre('Hades', j('Hades II', 'Hades'))?.name).toBe('Hades');
+    expect(buscarPorNombre('Avatar  Frontiers of Pandora', j('Avatar: Frontiers of Pandora'))?.name).toBe(
+      'Avatar: Frontiers of Pandora',
+    );
+  });
+
+  it('acepta un sufijo de edición conocido con un único candidato', () => {
+    const r = buscarPorNombre('FINAL FANTASY VII REMAKE', j('FINAL FANTASY VII REMAKE INTERGRADE'));
+    expect(r?.name).toBe('FINAL FANTASY VII REMAKE INTERGRADE');
+    expect(buscarPorNombre('The Witcher 3: Wild Hunt', j('The Witcher 3: Wild Hunt - Game of the Year Edition'))?.name).toBe(
+      'The Witcher 3: Wild Hunt - Game of the Year Edition',
+    );
+    expect(buscarPorNombre('Dark Souls', j('DARK SOULS™: REMASTERED'))?.name).toBe('DARK SOULS™: REMASTERED');
+  });
+
+  it('nunca secuelas ni sufijos desconocidos', () => {
+    expect(buscarPorNombre('Hades', j('Hades II'))).toBeNull();
+    expect(buscarPorNombre('Dark Souls', j('DARK SOULS III'))).toBeNull();
+    expect(buscarPorNombre('Elden Ring', j('ELDEN RING NIGHTREIGN'))).toBeNull();
+    expect(buscarPorNombre('Doom', j('Doom Eternal'))).toBeNull();
+  });
+
+  it('dos candidatos con edición: ambiguo → null', () => {
+    expect(buscarPorNombre('Juego', j('Juego Remastered', 'Juego Definitive Edition'))).toBeNull();
+  });
+
+  it('nombre vacío o sin letras → null', () => {
+    expect(buscarPorNombre('™', j('Algo'))).toBeNull();
   });
 });

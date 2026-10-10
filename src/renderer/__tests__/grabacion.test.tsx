@@ -1,9 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CAPTURE_SETTINGS } from '@shared/capture';
 import App from '../App';
-import { sesionFalsa } from './helpers';
+import { sesionFalsa, elegirOpcion, abrirOpciones } from './helpers';
 import { crearGameclipMock } from './setup';
 
 type GameclipMock = ReturnType<typeof crearGameclipMock>;
@@ -35,9 +35,7 @@ describe('Ajustes — Grabación', () => {
   it('cambia el modo de grabación con los radios y lo guarda', async () => {
     const user = await irAGrabacion();
 
-    await user.click(
-      screen.getByLabelText(/Grabar automáticamente la sesión de juego completa/),
-    );
+    await user.click(screen.getByLabelText(/Grabar automáticamente la sesión de juego completa/));
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
@@ -67,7 +65,7 @@ describe('Ajustes — Grabación', () => {
   it('añade un juego manual desde el combo de procesos y lo quita con el basurero', async () => {
     const user = await irAGrabacion();
 
-    await user.selectOptions(screen.getByLabelText('Proceso en ejecución'), 'Spotify.exe');
+    await elegirOpcion(user, screen.getByLabelText('Proceso en ejecución'), 'Spotify.exe');
     await user.click(screen.getByRole('button', { name: 'Añadir juego' }));
 
     expect(await screen.findByText('Spotify.exe')).toBeInTheDocument();
@@ -111,7 +109,10 @@ describe('Ajustes — Grabación', () => {
   it('el listado muestra el nombre con su ejecutable debajo cuando el juego tiene nombre', async () => {
     mock().capture.getSettings.mockResolvedValue({
       ...DEFAULT_CAPTURE_SETTINGS,
-      customGames: [{ executable: 'MilesMorales.exe', name: 'Spiderman' }, { executable: 'Otro.exe' }],
+      customGames: [
+        { executable: 'MilesMorales.exe', name: 'Spiderman' },
+        { executable: 'Otro.exe' },
+      ],
     });
     await irAGrabacion();
 
@@ -215,8 +216,7 @@ describe('Ajustes — Grabación', () => {
 
     // El selector de capturas lista los mismos monitores, así que el texto se busca DENTRO de este.
     const selector = screen.getByLabelText('Monitor');
-    await within(selector).findByText('Monitor 2');
-    await user.selectOptions(selector, '1');
+    await elegirOpcion(user, selector, '1');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
@@ -229,8 +229,7 @@ describe('Ajustes — Grabación', () => {
     const user = await irAGrabacion();
 
     const selector = screen.getByLabelText('Monitor de las capturas');
-    await within(selector).findByText('Monitor 2');
-    await user.selectOptions(selector, '1');
+    await elegirOpcion(user, selector, '1');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
@@ -296,7 +295,7 @@ describe('Ajustes — Grabación', () => {
   it('guarda las pistas de audio del clip de escritorio', async () => {
     const user = await irAGrabacion();
 
-    await user.selectOptions(screen.getByLabelText('Audio del clip de escritorio'), 'separate');
+    await elegirOpcion(user, screen.getByLabelText('Audio del clip de escritorio'), 'separate');
     await user.click(screen.getByRole('button', { name: 'Guardar ajustes' }));
 
     expect(await screen.findByText('Ajustes guardados ✓')).toBeInTheDocument();
@@ -323,8 +322,10 @@ describe('Ajustes — Grabación · No son juegos', () => {
 
     // El desplegable solo ofrece lo que no está ya en la lista.
     const select = screen.getByLabelText('Instalado');
-    expect(within(select).queryByRole('option', { name: 'Wallpaper Engine' })).toBeNull();
-    await user.selectOptions(select, 'Lossless Scaling');
+    const opciones = await abrirOpciones(user, select);
+    expect(opciones.find((o) => o.dataset.value === 'Wallpaper Engine')).toBeUndefined();
+    await user.keyboard('{Escape}');
+    await elegirOpcion(user, select, 'Lossless Scaling');
     await user.click(screen.getByRole('button', { name: 'Añadir' }));
 
     expect(mock().games.setExcluded).toHaveBeenCalledWith([

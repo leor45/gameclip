@@ -24,6 +24,40 @@
   font-size: 30px;
 }
 
+/* Flecha atrás: solo con un clip abierto; hace lo mismo que la × y que Esc. */
+.library-back {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  margin-right: -6px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--page);
+  color: var(--paper);
+  cursor: pointer;
+  animation: gc-back-in 0.16s ease-out both;
+}
+
+.library-back:hover {
+  border-color: var(--sello);
+  color: var(--sello);
+}
+
+.library-back:focus-visible {
+  outline: 2px solid var(--sello);
+  outline-offset: 2px;
+}
+
+@keyframes gc-back-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+
 .library-filters {
   flex: 1;
   display: flex;
@@ -240,6 +274,11 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Un contenedor con scroll recorta lo que sale de su caja: sin margen a la izquierda, el filete
+     amarillo de la tarjeta apuntada (2 px por fuera de la miniatura) se cortaba en la primera columna.
+     El margen interior se compensa con uno negativo: la cuadrícula no se mueve. */
+  padding-left: 4px;
+  margin-left: -4px;
   padding-right: 6px;
 }
 
@@ -551,7 +590,7 @@
 
 .lib-player-close {
   position: absolute;
-  z-index: 1;
+  z-index: 3;
   top: 10px;
   right: 10px;
   display: grid;
@@ -788,5 +827,410 @@
   .clip-thumb,
   .clip-actions:not(.panel) {
     transition: none;
+  }
+}
+
+/* ── Transición al abrir y cerrar un clip ──
+   Rápida y sin rebote: el reproductor crece desde la miniatura pulsada (Biblioteca le pasa el
+   desplazamiento y la escala de partida en --gc-from-*), el índice entra por la derecha y la info
+   sube un poco. Al cerrar, fundido corto y la cuadrícula vuelve con otro. Duraciones = ENTRADA_MS y
+   SALIDA_MS de Biblioteca.tsx. */
+.library-body.split.is-entering .lib-player-media {
+  transform-origin: top left;
+  animation: gc-clip-grow 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.library-body.split.is-entering .lib-player-info {
+  animation: gc-clip-rise 0.18s ease-out 0.04s both;
+}
+
+.library-body.split.is-entering .lib-rows {
+  animation: gc-clip-slide 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) 0.03s both;
+}
+
+.library-body.split.is-leaving > * {
+  animation: gc-clip-out 0.12s ease-in both;
+}
+
+.library-body.is-returning {
+  animation: gc-clip-back 0.16s ease-out both;
+}
+
+@keyframes gc-clip-grow {
+  from {
+    opacity: 0.4;
+    transform: translate(var(--gc-from-x, 0), var(--gc-from-y, 0)) scale(var(--gc-from-s, 0.92));
+  }
+}
+
+@keyframes gc-clip-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes gc-clip-slide {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+}
+
+@keyframes gc-clip-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes gc-clip-back {
+  from {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-back,
+  .library-body.split.is-entering .lib-player-media,
+  .library-body.split.is-entering .lib-player-info,
+  .library-body.split.is-entering .lib-rows,
+  .library-body.split.is-leaving > *,
+  .library-body.is-returning {
+    animation: none;
+  }
+}
+
+/* ── Reproductor propio (VideoPlayer) ──
+   Ocupa la caja del vídeo. Los controles van sobre un velo inferior (para leerse sobre cualquier
+   imagen) y se esconden tras un rato reproduciendo sin mover el ratón. */
+.vp {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  background: #000;
+}
+
+.vp:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--sello);
+}
+
+.vp.is-idle {
+  cursor: none;
+}
+
+.vp-big {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: auto;
+  border: 1px solid rgba(236, 238, 243, 0.25);
+  border-radius: 50%;
+  background: rgba(13, 14, 18, 0.6);
+  color: var(--paper);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+.vp-big svg {
+  width: 26px;
+  height: 26px;
+  margin-left: 3px;
+}
+
+.vp:not(.is-playing) .vp-big {
+  opacity: 1;
+}
+
+.vp-flash {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: rgba(13, 14, 18, 0.72);
+  color: var(--paper);
+  font: 500 12px/1 var(--font-mono);
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: gc-vp-flash 0.6s ease-out both;
+}
+
+.vp-flash.izq {
+  left: 8%;
+}
+
+.vp-flash.der {
+  right: 8%;
+}
+
+@keyframes gc-vp-flash {
+  0% {
+    opacity: 0;
+  }
+  15%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.vp-ctl {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  padding: 34px 12px 8px;
+  background: linear-gradient(transparent, rgba(8, 9, 12, 0.9));
+  transition: opacity 0.2s ease-out;
+}
+
+.vp.is-idle .vp-ctl {
+  opacity: 0;
+}
+
+.vp.is-idle .vp-ctl:focus-within {
+  opacity: 1;
+}
+
+/* Barra de posición: más gruesa al pasar el ratón; la bola aparece con hover, arrastre o foco. */
+.vp-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 18px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.vp-rail {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(236, 238, 243, 0.22);
+  transition: height 0.12s ease-out;
+}
+
+.vp-track:hover .vp-rail,
+.vp-track.is-drag .vp-rail,
+.vp-track:focus-visible .vp-rail {
+  height: 6px;
+}
+
+.vp-buf,
+.vp-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 2px;
+}
+
+.vp-buf {
+  background: rgba(236, 238, 243, 0.3);
+}
+
+.vp-fill {
+  background: var(--sello);
+}
+
+.vp-knob {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: var(--sello);
+  box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.28);
+  transform: scale(0);
+  transition: transform 0.12s ease-out;
+}
+
+.vp-track:hover .vp-knob,
+.vp-track.is-drag .vp-knob,
+.vp-track:focus-visible .vp-knob {
+  transform: scale(1);
+}
+
+.vp-tip {
+  position: absolute;
+  bottom: 20px;
+  padding: 4px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font: 500 11px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.vp-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.vp-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.vp-btn:hover {
+  background: rgba(236, 238, 243, 0.12);
+}
+
+.vp-btn:focus-visible {
+  outline: 2px solid var(--sello);
+  outline-offset: -2px;
+}
+
+.vp-play svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Volumen: el deslizador se despliega al pasar el ratón o con el foco. */
+.vp-vol {
+  display: flex;
+  align-items: center;
+}
+
+.vp-vol-range {
+  width: 0;
+  height: 4px;
+  margin: 0;
+  opacity: 0;
+  appearance: none;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--paper) var(--vp-vol, 100%),
+    rgba(236, 238, 243, 0.25) var(--vp-vol, 100%)
+  );
+  cursor: pointer;
+  transition:
+    width 0.15s ease-out,
+    opacity 0.15s ease-out,
+    margin 0.15s ease-out;
+}
+
+.vp-vol:hover .vp-vol-range,
+.vp-vol:focus-within .vp-vol-range {
+  width: 72px;
+  margin: 0 8px 0 4px;
+  opacity: 1;
+}
+
+.vp-vol-range::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--paper);
+  appearance: none;
+}
+
+.vp-vol-range:focus-visible {
+  outline: 2px solid var(--sello);
+  outline-offset: 4px;
+}
+
+.vp-time {
+  margin-left: 6px;
+  color: var(--dim);
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vp-time b {
+  font-weight: 500;
+  color: var(--paper);
+}
+
+.vp-grow {
+  flex: 1;
+}
+
+.vp-rate {
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.vp-rate-wrap {
+  position: relative;
+}
+
+.vp-rate-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: grid;
+  min-width: 112px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--ink);
+  box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.8);
+}
+
+.vp-rate-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--paper);
+  font: 500 12px/1 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.vp-rate-menu button:hover,
+.vp-rate-menu button:focus-visible {
+  background: var(--page);
+  outline: none;
+}
+
+.vp-rate-menu button[aria-checked='true'] {
+  color: var(--sello);
+}
+
+.vp-rate-menu button[aria-checked='true']::after {
+  content: '●';
+  font-size: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vp-flash {
+    animation-duration: 0.01s;
   }
 }

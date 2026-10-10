@@ -47,6 +47,59 @@ export function claveNombre(nombre: string): string {
   return nombre.trim().toLowerCase();
 }
 
+/**
+ * Clave de comparación entre nombres que vienen de sitios distintos: solo letras y números, en
+ * minúsculas. El nombre guardado en un clip pierde los signos que Windows no admite en carpetas
+ * (`Avatar  Frontiers of Pandora`) y los launchers añaden marcas (`Stellar Blade™`).
+ */
+export function claveCompacta(nombre: string): string {
+  return nombre.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * Sufijos de edición (ya compactos) que un launcher añade al nombre de un juego. Lista cerrada: nunca
+ * números ni subtítulos, que distinguen secuelas y spin-offs («Hades II», «Elden Ring Nightreign»).
+ */
+const SUFIJOS_EDICION = [
+  'intergrade',
+  'remastered',
+  'gameoftheyearedition',
+  'goty',
+  'gotyedition',
+  'definitiveedition',
+  'completeedition',
+  'deluxeedition',
+  'ultimateedition',
+  'goldedition',
+  'enhancededition',
+  'directorscut',
+  'anniversaryedition',
+  'standardedition',
+];
+
+/**
+ * El juego de `candidatos` que corresponde a un nombre visible:
+ *   1. el de nombre igual (sin distinguir mayúsculas);
+ *   2. el de nombre igual en letras y números (`claveCompacta`);
+ *   3. el ÚNICO cuyo nombre es ese más un sufijo de edición (`… REMAKE INTERGRADE`).
+ * Null si no hay ninguno o si el paso 3 es ambiguo.
+ */
+export function buscarPorNombre<T extends { name: string }>(nombre: string, candidatos: T[]): T | null {
+  const clave = claveNombre(nombre);
+  const exacto = candidatos.find((c) => claveNombre(c.name) === clave);
+  if (exacto) return exacto;
+  const compacta = claveCompacta(nombre);
+  if (!compacta) return null;
+  const igual = candidatos.find((c) => claveCompacta(c.name) === compacta);
+  if (igual) return igual;
+  const conEdicion = candidatos.filter((c) => {
+    const otra = claveCompacta(c.name);
+    return otra.startsWith(compacta) && SUFIJOS_EDICION.includes(otra.slice(compacta.length));
+  });
+  const unicos = new Set(conEdicion.map((c) => claveCompacta(c.name)));
+  return unicos.size === 1 ? conEdicion[0] : null;
+}
+
 /** Letras y dígitos en minúsculas: `Monster Hunter Wilds` → `monsterhunterwilds`. */
 function compacto(texto: string): string {
   return texto.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');

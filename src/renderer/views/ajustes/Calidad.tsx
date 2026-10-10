@@ -8,6 +8,7 @@ import {
 } from '@shared/capture';
 import { SeccionForm } from './SeccionForm';
 import { useCaptureSettings } from './useCaptureSettings';
+import Select from '../../components/Select';
 
 interface Preset {
   id: string;
@@ -115,73 +116,59 @@ export default function AjustesCalidad() {
         <div className="settings-fields is-three">
           <label>
             Resolución
-            <select
-              className="gc-field"
+            <Select<OutputResolution>
               value={settings.resolution}
-              onChange={(e) => set('resolution', e.target.value as OutputResolution)}
-            >
-              <option value="native">Nativa del monitor</option>
-              <option value="1080p">1080p</option>
-              <option value="720p">720p</option>
-            </select>
+              onChange={(v) => set('resolution', v)}
+              options={[
+                { value: 'native', label: 'Nativa del monitor' },
+                { value: '1080p', label: '1080p' },
+                { value: '720p', label: '720p' },
+              ]}
+            />
           </label>
           <label>
             FPS
-            <select
-              className="gc-field"
+            <Select<CaptureFps>
               value={settings.fps}
-              onChange={(e) => set('fps', Number(e.target.value) as CaptureFps)}
-            >
-              {CAPTURE_FPS_VALUES.map((fps) => (
-                <option key={fps} value={fps}>
-                  {fps}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => set('fps', v)}
+              options={CAPTURE_FPS_VALUES.map((fps) => ({ value: fps, label: String(fps) }))}
+            />
           </label>
           <label>
             Bitrate
-            <select
-              className="gc-field"
+            <Select
               value={settings.bitrateMbps}
-              onChange={(e) => set('bitrateMbps', Number(e.target.value))}
-            >
-              <option value={0}>Automático (por calidad)</option>
-              {BITRATE_OPCIONES_MBPS.map((mbps) => (
-                <option key={mbps} value={mbps}>
-                  {mbps} Mbps
-                </option>
-              ))}
-            </select>
+              onChange={(v) => set('bitrateMbps', v)}
+              options={[
+                { value: 0, label: 'Automático (por calidad)' },
+                ...BITRATE_OPCIONES_MBPS.map((mbps) => ({ value: mbps, label: `${mbps} Mbps` })),
+              ]}
+            />
           </label>
           {settings.bitrateMbps === 0 && (
             <label>
               Calidad
-              <select
-                className="gc-field"
+              <Select<CaptureSettings['quality']>
                 value={settings.quality}
-                onChange={(e) => set('quality', e.target.value as CaptureSettings['quality'])}
-              >
-                <option value="high">Alta</option>
-                <option value="higher">Muy alta</option>
-                <option value="lossless">Sin pérdida</option>
-              </select>
+                onChange={(v) => set('quality', v)}
+                options={[
+                  { value: 'high', label: 'Alta' },
+                  { value: 'higher', label: 'Muy alta' },
+                  { value: 'lossless', label: 'Sin pérdida' },
+                ]}
+              />
             </label>
           )}
           <label>
             Encoder
-            <select
-              className="gc-field"
+            <Select
               value={settings.encoderId}
-              onChange={(e) => set('encoderId', e.target.value)}
-            >
-              <option value="">Automático</option>
-              {encoders.map((enc) => (
-                <option key={enc.id} value={enc.id}>
-                  {enc.name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => set('encoderId', v)}
+              options={[
+                { value: '', label: 'Automático' },
+                ...encoders.map((enc) => ({ value: enc.id, label: enc.name })),
+              ]}
+            />
           </label>
         </div>
       </fieldset>

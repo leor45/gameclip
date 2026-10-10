@@ -76,6 +76,8 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  /* Contenedor de la container query de pantalla ancha (al final de la hoja). */
+  container: ajustes / inline-size;
 }
 
 .settings-scroll {
@@ -1049,5 +1051,45 @@
   .settings-mix-volume {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+/* ── Pantalla ancha: filas «grupo | controles» a todo el ancho ──────────────── */
+/* Con espacio de sobra, cada grupo es una fila que ocupa todo el ancho del formulario: su etiqueta a
+   la izquierda y los controles a la derecha. Sin columna centrada ni márgenes vacíos a los lados (el
+   owner lo quiere a todo el ancho). Por debajo del umbral (portátiles, ventana estrecha) todo sigue
+   en una columna, como siempre. Container query: el ancho útil depende de la barra lateral y del
+   menú de secciones, no de la ventana. */
+@container ajustes (min-width: 1180px) {
+  .settings-body {
+    max-width: none;
+    padding-inline: 40px;
+  }
+
+  .settings-form fieldset {
+    display: grid;
+    grid-template-columns: clamp(220px, 22%, 320px) minmax(0, 1fr);
+    column-gap: 48px;
+    row-gap: 12px;
+    align-items: start;
+    padding: 20px 0 22px;
+  }
+
+  /* Flotada, la leyenda es un elemento más del grupo: aquí, la celda de la izquierda. */
+  .settings-form fieldset > legend {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    margin: 0;
+    padding-top: 3px;
+  }
+
+  .settings-form fieldset > :not(legend) {
+    grid-column: 2;
+  }
+
+  /* El botón de guardar, alineado con el borde derecho de los controles. */
+  .settings-savebar {
+    padding-inline: 40px;
   }
 }
